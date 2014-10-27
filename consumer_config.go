@@ -15,5 +15,5 @@
  * limitations under the License.
  */
 
-package main
+package go_kafka_client
 
