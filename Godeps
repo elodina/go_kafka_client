@@ -1,2 +1,3 @@
 github.com/samuel/go-zookeeper/zk 	9a466ee
 github.com/Shopify/sarama   ab8518c05fd3775bdbf06c97d97389fe8af2dfef
+github.com/jimlawless/cfg 4b1e3c1869d4e608fcbda6994e5f08dd9c6beaa1

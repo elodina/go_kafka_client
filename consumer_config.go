@@ -48,7 +48,8 @@ type ConsumerConfig struct {
 	DefaultClientId string
 }
 
-func Default(config *ConsumerConfig) {
+func DefaultConsumerConfig() *ConsumerConfig {
+	config := &ConsumerConfig{}
 	config.RefreshMetadataBackoffMs = 200
 	config.SocketTimeout = 30 * 1000
 	config.SocketBufferSize = 64 * 1024
@@ -78,4 +79,6 @@ func Default(config *ConsumerConfig) {
 	config.DefaultPartitionAssignmentStrategy = "range"/* select between "range", and "roundrobin" */
 	config.MirrorConsumerNumThreadsProp = "mirror.consumer.numthreads"
 	config.DefaultClientId = ""
+
+	return config
 }
