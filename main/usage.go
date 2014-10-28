@@ -15,15 +15,29 @@
  * limitations under the License.
  */
 
-package go_kafka_client
+package main
 
 import (
-	"github.com/jimlawless/cfg"
+	"github.com/stealthly/go_kafka_client"
 )
 
-func LoadConfiguration (path string) (map[string]string, error) {
-	cfgMap := make(map[string]string)
-	err := cfg.Load(path, cfgMap)
+func main() {
+	consumer := go_kafka_client.NewConsumer("my_topic", go_kafka_client.DefaultConsumerConfig())
+	messages := consumer.Messages()
 
-	return cfgMap, err
+	messageCount := 0
+
+	for message := range messages {
+		go_kafka_client.Logger.Printf("Consumed message %s from topic %s\n", message.Message, message.Topic)
+
+		messageCount++
+		if messageCount == 3 {
+			consumer.SwitchTopic("another_topic")
+		}
+		if messageCount == 5 {
+			consumer.Close()
+		}
+	}
+
+
 }

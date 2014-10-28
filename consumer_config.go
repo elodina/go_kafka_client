@@ -17,6 +17,13 @@
 
 package go_kafka_client
 
+import (
+	"log"
+	"os"
+)
+
+var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
+
 type ConsumerConfig struct {
 	RefreshMetadataBackoffMs int32
 	SocketTimeout int32

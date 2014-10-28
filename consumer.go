@@ -16,3 +16,77 @@
  */
 
 package go_kafka_client
+
+import (
+	"time"
+	"fmt"
+	"github.com/golang/glog"
+)
+
+type Consumer struct {
+	config *ConsumerConfig
+	topic       string
+	messages    chan *Message
+	topicSwitch chan string
+	close       chan bool
+}
+
+type Message struct {
+	Message string
+	Topic   string
+}
+
+func NewConsumer(topic string, config *ConsumerConfig) *Consumer {
+	c := &Consumer{ config : config, topic : topic }
+	c.messages = make(chan *Message)
+	c.topicSwitch = make(chan string)
+	c.close = make(chan bool)
+
+	go c.fetchLoop()
+
+	return c
+}
+
+func (c *Consumer) Messages() <-chan *Message {
+	return c.messages
+}
+
+func (c *Consumer) SwitchTopic(newTopic string) {
+	c.topic = newTopic
+	glog.Infof("Switched to topic: %s\n", newTopic)
+}
+
+func (c *Consumer) Close() {
+	c.close <- true
+}
+
+func (c *Consumer) fetchLoop() {
+	messageChannel := c.messageChannel()
+	for {
+		select {
+		case message := <- messageChannel:
+		c.messages <- message
+		case topic := <- c.topicSwitch:
+			Logger.Printf("switch topic to %s\n", topic)
+		case <-c.close:
+			Logger.Println("Closing consumer")
+			close(c.messages)
+			close(c.topicSwitch)
+			return
+		}
+	}
+}
+
+func (c *Consumer) messageChannel() <-chan *Message {
+	messages := make(chan *Message)
+
+	go func() {
+		for i := 0; i < 5; i++ {
+		time.Sleep(1 * time.Second)
+		message := &Message{ Topic : c.topic, Message : fmt.Sprintf("message %d", i) }
+		messages <- message
+	}
+	}()
+
+	return messages
+}
