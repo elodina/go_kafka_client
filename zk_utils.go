@@ -73,7 +73,7 @@ func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
 	return broker, mappingError
 }
 
-func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId, consumerInfo ConsumerInfo) error {
+func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, consumerInfo ConsumerInfo) error {
 	Logger.Printf("Trying to register consumer %s at group %s in Zookeeper\n", consumerId, group)
 	pathToConsumer := fmt.Sprintf("%s/%s/%s", ConsumersPath, group, consumerId)
 	data, mappingError := json.Marshal(consumerInfo)
