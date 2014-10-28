@@ -22,7 +22,6 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 	"encoding/json"
 	"strconv"
-	"github.com/stealthly/go-kafka/consumer"
 )
 
 var (
