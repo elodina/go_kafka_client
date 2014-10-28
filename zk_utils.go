@@ -17,5 +17,68 @@
 
 package go_kafka_client
 
+import (
+	"fmt"
+	"github.com/samuel/go-zookeeper/zk"
+	"encoding/json"
+	"strconv"
+)
 
+var (
+	ConsumersPath = "/consumers"
+	BrokerIdsPath = "/brokers/ids"
+	BrokerTopicsPath = "/brokers/topics"
+	TopicConfigPath = "/config/topics"
+	TopicConfigChangesPath = "/config/changes"
+	ControllerPath = "/controller"
+	ControllerEpochPath = "/controller_epoch"
+	ReassignPartitionsPath = "/admin/reassign_partitions"
+	DeleteTopicsPath = "/admin/delete_topics"
+	PreferredReplicaLeaderElectionPath = "/admin/preferred_replica_election"
+)
 
+func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
+	brokerIds, _, err := zkConnection.Children(BrokerIdsPath)
+	if (err != nil) {
+		return nil, err
+	}
+	brokers := make([]*BrokerInfo, len(brokerIds))
+	for i, brokerId := range brokerIds {
+		brokerIdNum, err := strconv.Atoi(brokerId)
+		if (err != nil) {
+			return nil, err
+		}
+
+		brokers[i], err = GetBrokerInfo(zkConnection, int32(brokerIdNum))
+		if (err != nil) {
+			return nil, err
+		}
+	}
+
+	return brokers, nil
+}
+
+func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
+	pathToBroker := fmt.Sprintf("%s/%d", BrokerIdsPath, brokerId)
+	data, _, zkError := zkConnection.Get(pathToBroker)
+	if (zkError != nil) {
+		return nil, zkError
+	}
+
+	broker := &BrokerInfo{}
+	mappingError := json.Unmarshal([]byte(data), broker)
+
+	return broker, mappingError
+}
+
+func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId, consumerInfo ConsumerInfo) error {
+	pathToConsumer := fmt.Sprintf("%s/%s/%s", ConsumersPath, group, consumerId)
+	data, mappingError := json.Marshal(consumerInfo)
+	if mappingError != nil {
+		return mappingError
+	}
+
+	_, zkError := zkConnection.CreateProtectedEphemeralSequential(pathToConsumer, []byte(data), zk.WorldACL(zk.PermAll))
+
+	return zkError
+}
