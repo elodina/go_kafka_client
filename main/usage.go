@@ -19,25 +19,26 @@ package main
 
 import (
 	"github.com/stealthly/go_kafka_client"
+	"time"
 )
 
 func main() {
 	consumer := go_kafka_client.NewConsumer("my_topic", go_kafka_client.DefaultConsumerConfig())
 	messages := consumer.Messages()
 
-	messageCount := 0
-
-	for message := range messages {
-		go_kafka_client.Logger.Printf("Consumed message '%v' from topic %s\n", string(message.Message), message.Topic)
-
-		messageCount++
-		if messageCount == 3 {
-			consumer.SwitchTopic("another_topic")
-		}
-		if messageCount == 5 {
-			consumer.Close()
-		}
+	go func() {for message := range messages {
+		go_kafka_client.Logger.Printf("Consumed message '%v' from topic %s\n", string(message.Value), message.Topic)
+		consumer.Ack(message.Offset, message.Topic, message.Partition)
 	}
+	}()
 
+	time.Sleep(10 * time.Second)
+	go func() {
+		consumer.SwitchTopic("another_topic")
+	}()
 
+	time.Sleep(10 * time.Second)
+	futureClose := consumer.Close()
+	<-futureClose
+	go_kafka_client.Logger.Println("Gracefully shutdown")
 }
