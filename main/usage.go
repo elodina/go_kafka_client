@@ -28,7 +28,7 @@ func main() {
 	messageCount := 0
 
 	for message := range messages {
-		go_kafka_client.Logger.Printf("Consumed message %s from topic %s\n", message.Message, message.Topic)
+		go_kafka_client.Logger.Printf("Consumed message '%v' from topic %s\n", string(message.Message), message.Topic)
 
 		messageCount++
 		if messageCount == 3 {

@@ -20,7 +20,6 @@ package go_kafka_client
 import (
 	"time"
 	"fmt"
-	"github.com/golang/glog"
 )
 
 type Consumer struct {
@@ -32,7 +31,7 @@ type Consumer struct {
 }
 
 type Message struct {
-	Message string
+	Message []byte
 	Topic   string
 }
 
@@ -52,8 +51,7 @@ func (c *Consumer) Messages() <-chan *Message {
 }
 
 func (c *Consumer) SwitchTopic(newTopic string) {
-	c.topic = newTopic
-	glog.Infof("Switched to topic: %s\n", newTopic)
+	c.topicSwitch <- newTopic
 }
 
 func (c *Consumer) Close() {
@@ -68,6 +66,7 @@ func (c *Consumer) fetchLoop() {
 		c.messages <- message
 		case topic := <- c.topicSwitch:
 			Logger.Printf("switch topic to %s\n", topic)
+			c.topic = topic
 		case <-c.close:
 			Logger.Println("Closing consumer")
 			close(c.messages)
@@ -83,7 +82,7 @@ func (c *Consumer) messageChannel() <-chan *Message {
 	go func() {
 		for i := 0; i < 5; i++ {
 		time.Sleep(1 * time.Second)
-		message := &Message{ Topic : c.topic, Message : fmt.Sprintf("message %d", i) }
+		message := &Message{ Topic : c.topic, Message : []byte(fmt.Sprintf("message %d", i)) }
 		messages <- message
 	}
 	}()

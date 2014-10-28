@@ -19,7 +19,11 @@ package go_kafka_client
 
 import (
 	"github.com/jimlawless/cfg"
+	"os"
+	"log"
 )
+
+var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
 
 func LoadConfiguration (path string) (map[string]string, error) {
 	cfgMap := make(map[string]string)
