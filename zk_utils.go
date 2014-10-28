@@ -25,15 +25,15 @@ import (
 )
 
 var (
-	ConsumersPath = "/consumers"
-	BrokerIdsPath = "/brokers/ids"
-	BrokerTopicsPath = "/brokers/topics"
-	TopicConfigPath = "/config/topics"
-	TopicConfigChangesPath = "/config/changes"
-	ControllerPath = "/controller"
-	ControllerEpochPath = "/controller_epoch"
-	ReassignPartitionsPath = "/admin/reassign_partitions"
-	DeleteTopicsPath = "/admin/delete_topics"
+	ConsumersPath                      = "/consumers"
+	BrokerIdsPath                      = "/brokers/ids"
+	BrokerTopicsPath                   = "/brokers/topics"
+	TopicConfigPath                    = "/config/topics"
+	TopicConfigChangesPath             = "/config/changes"
+	ControllerPath                     = "/controller"
+	ControllerEpochPath                = "/controller_epoch"
+	ReassignPartitionsPath             = "/admin/reassign_partitions"
+	DeleteTopicsPath                   = "/admin/delete_topics"
 	PreferredReplicaLeaderElectionPath = "/admin/preferred_replica_election"
 )
 
@@ -84,4 +84,63 @@ func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, co
 	_, zkError := zkConnection.CreateProtectedEphemeralSequential(pathToConsumer, []byte(data), zk.WorldACL(zk.PermAll))
 
 	return zkError
+}
+
+func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) {
+	Logger.Printf("Getting consumers in group %s\n", group)
+	consumers, _, err := zkConnection.Children(NewZKGroupDirs(group).ConsumerRegistryDir)
+	if (err != nil) {
+		return nil, err
+	}
+
+	return consumers, nil
+}
+
+func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTopics bool) (map[string][]string, error) {
+	dirs := NewZKGroupDirs(group)
+	consumers, _, error := zkConnection.Children(dirs.ConsumerRegistryDir)
+	if (error != nil) {
+		return nil, error
+	}
+	consumersPerTopicMap := make(map[string][]string)
+	for _, consumer := range consumers {
+		fmt.Println(consumer)
+	}
+
+	return consumersPerTopicMap, nil
+}
+
+type ZKGroupDirs struct {
+	Group               string
+	ConsumerDir         string
+	ConsumerGroupDir    string
+	ConsumerRegistryDir string
+}
+
+func NewZKGroupDirs(group string) *ZKGroupDirs {
+	consumerGroupDir := fmt.Sprintf("%s/%s", ConsumersPath, group)
+	consumerRegistryDir := fmt.Sprintf("%s/ids", consumerGroupDir)
+	return &ZKGroupDirs {
+		Group: group,
+		ConsumerDir: ConsumersPath,
+		ConsumerGroupDir: consumerGroupDir,
+		ConsumerRegistryDir: consumerRegistryDir,
+	}
+}
+
+type ZKGroupTopicDirs struct {
+	ZkGroupDirs *ZKGroupDirs
+	Topic             string
+	ConsumerOffsetDir string
+	ConsumerOwnerDir  string
+}
+
+func NewZKGroupTopicDirs(group string, topic string) *ZKGroupTopicDirs {
+	zkGroupsDirs := NewZKGroupDirs(group)
+	return &ZKGroupTopicDirs {
+		ZkGroupDirs: zkGroupsDirs,
+		Topic: topic,
+		ConsumerOffsetDir: fmt.Sprintf("%s/%s/%s", zkGroupsDirs.ConsumerGroupDir, "offsets", topic),
+		ConsumerOwnerDir: fmt.Sprintf("%s/%s/%s", zkGroupsDirs.ConsumerGroupDir, "owners", topic),
+	}
 }
