@@ -22,6 +22,7 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 	"encoding/json"
 	"strconv"
+	"github.com/stealthly/go-kafka/consumer"
 )
 
 var (
@@ -38,6 +39,7 @@ var (
 )
 
 func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
+	Logger.Printf("Getting all brokers in cluster\n")
 	brokerIds, _, err := zkConnection.Children(BrokerIdsPath)
 	if (err != nil) {
 		return nil, err
@@ -59,6 +61,7 @@ func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
 }
 
 func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
+	Logger.Printf("Getting info for broker %d\n", brokerId)
 	pathToBroker := fmt.Sprintf("%s/%d", BrokerIdsPath, brokerId)
 	data, _, zkError := zkConnection.Get(pathToBroker)
 	if (zkError != nil) {
@@ -72,6 +75,7 @@ func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
 }
 
 func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId, consumerInfo ConsumerInfo) error {
+	Logger.Printf("Trying to register consumer %s at group %s in Zookeeper\n", consumerId, group)
 	pathToConsumer := fmt.Sprintf("%s/%s/%s", ConsumersPath, group, consumerId)
 	data, mappingError := json.Marshal(consumerInfo)
 	if mappingError != nil {
