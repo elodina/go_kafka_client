@@ -48,6 +48,7 @@ func TestAll(t *testing.T) {
 	testCreatePathParentMayNotExist(t, BrokerTopicsPath)
 	testGetBrokerInfo(t)
 	testGetAllBrokersInCluster(t)
+	testRegisterConsumer(t)
 	tearDown(t)
 }
 
