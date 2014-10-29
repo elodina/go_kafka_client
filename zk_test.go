@@ -50,6 +50,7 @@ func TestAll(t *testing.T) {
 	testGetAllBrokersInCluster(t)
 	testRegisterConsumer(t)
 	testGetConsumersInGroup(t)
+	testDeregisterConsumer(t)
 	tearDown(t)
 }
 
@@ -111,4 +112,14 @@ func testGetConsumersInGroup(t *testing.T) {
 		t.Error(err)
 	}
 	Assert(t, len(consumers), 1)
+}
+
+func testDeregisterConsumer(t *testing.T) {
+	consumerId := fmt.Sprintf(consumerIdPattern, 0)
+	DeregisterConsumer(zkConnection, consumerGroup, consumerId)
+	exists, _, err := zkConnection.Exists(fmt.Sprintf("%s/%s", NewZKGroupDirs(consumerGroup).ConsumerRegistryDir, consumerId))
+	if (err != nil) {
+		t.Error(err)
+	}
+	Assert(t, exists, false)
 }

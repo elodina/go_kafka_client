@@ -94,6 +94,16 @@ func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, co
 	return CreateOrUpdatePathParentMayNotExist(zkConnection, pathToConsumer, data)
 }
 
+func DeregisterConsumer(zkConnection *zk.Conn, group string, consumerId string) error {
+	Logger.Printf("Trying to deregister consumer %s from group %s", consumerId, group)
+	pathToConsumer := fmt.Sprintf("%s/%s", NewZKGroupDirs(group).ConsumerRegistryDir, consumerId)
+	_, stat, err := zkConnection.Get(pathToConsumer)
+	if (err != nil) {
+		return err
+	}
+	return zkConnection.Delete(pathToConsumer, stat.Version)
+}
+
 func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) {
 	Logger.Printf("Getting consumers in group %s\n", group)
 	consumers, _, err := zkConnection.Children(NewZKGroupDirs(group).ConsumerRegistryDir)
