@@ -22,6 +22,7 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 	"encoding/json"
 	"strconv"
+	"path"
 )
 
 var (
@@ -89,9 +90,8 @@ func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, co
 	}
 
 	Logger.Printf("Path: %s\n", pathToConsumer)
-	_, zkError := zkConnection.CreateProtectedEphemeralSequential(pathToConsumer, []byte(data), zk.WorldACL(zk.PermAll))
 
-	return zkError
+	return CreatePathParentMayNotExist(zkConnection, pathToConsumer, []byte(data))
 }
 
 func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) {
@@ -106,9 +106,9 @@ func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) 
 
 func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTopics bool) (map[string][]string, error) {
 	dirs := NewZKGroupDirs(group)
-	consumers, _, error := zkConnection.Children(dirs.ConsumerRegistryDir)
-	if (error != nil) {
-		return nil, error
+	consumers, _, err := zkConnection.Children(dirs.ConsumerRegistryDir)
+	if (err != nil) {
+		return nil, err
 	}
 	consumersPerTopicMap := make(map[string][]string)
 	for _, consumer := range consumers {
@@ -117,13 +117,30 @@ func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTo
 
 	return consumersPerTopicMap, nil
 }
-/*
-func createPathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, data []byte) () {
-	_, err = zkConnection.CreateProtectedEphemeralSequential(pathToCreate, []byte(data), zk.WorldACL(zk.PermAll))
+
+func CreatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, data []byte) error {
+	Logger.Printf("Trying to create path %s in Zookeeper", pathToCreate)
+	_, err := zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 	if (err != nil) {
-		dir, _ = path.Split(pathToCreate)
+		Logger.Println(err)
+		if (zk.ErrNodeExists == err) {
+			return nil
+		} else {
+			parent, _ := path.Split(pathToCreate)
+			err = CreatePathParentMayNotExist(zkConnection, parent[:len(parent)-1], make([]byte, 0))
+			if (err != nil) {
+				return err
+			} else {
+				Logger.Printf("Successfully created path %s", parent[:len(parent)-1])
+			}
+
+			Logger.Printf("Trying again to create path %s in Zookeeper", pathToCreate)
+			_, err = zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
+		}
 	}
-}*/
+
+	return err
+}
 
 type ZKGroupDirs struct {
 	Group               string
