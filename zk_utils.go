@@ -82,7 +82,7 @@ func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
 
 func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, consumerInfo *ConsumerInfo) error {
 	Logger.Printf("Trying to register consumer %s at group %s in Zookeeper\n", consumerId, group)
-	pathToConsumer := fmt.Sprintf("%s/%s/%s", ConsumersPath, group, consumerId)
+	pathToConsumer := fmt.Sprintf("%s/%s", NewZKGroupDirs(group).ConsumerRegistryDir, consumerId)
 	data, mappingError := json.Marshal(consumerInfo)
 	if mappingError != nil {
 		return mappingError
@@ -117,6 +117,13 @@ func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTo
 
 	return consumersPerTopicMap, nil
 }
+/*
+func createPathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, data []byte) () {
+	_, err = zkConnection.CreateProtectedEphemeralSequential(pathToCreate, []byte(data), zk.WorldACL(zk.PermAll))
+	if (err != nil) {
+		dir, _ = path.Split(pathToCreate)
+	}
+}*/
 
 type ZKGroupDirs struct {
 	Group               string

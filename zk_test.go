@@ -2,26 +2,46 @@ package go_kafka_client
 
 import (
 	"testing"
-/*	"fmt"
+	"fmt"
 	"time"
 	"github.com/samuel/go-zookeeper/zk"
-	"os"*/
 )
 
-func TestGetAllBrokersInCluster(t *testing.T) {
-/*	os.Setenv("ZOOKEEPER_PATH", "F:\\zookeeper-3.4.6")
-	cluster, err := zk.StartTestCluster(1)
-	if (err != nil) {
-		fmt.Println(err)
+var (
+	cluster *zk.TestCluster = nil
+	zkServer *zk.TestServer = nil
+)
+
+func before(t *testing.T) {
+	testCluster, err := zk.StartTestCluster(1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	fmt.Println(cluster)
-	port := cluster.Servers[0].Port
-	c, _, err := zk.Connect([]string{fmt.Sprintf("127.0.0.1:%d", port)}, time.Second * 30000)
+
+	cluster = testCluster
+	zkServer = &testCluster.Servers[0]
+}
+
+func tearDown(t *testing.T) {
+	cluster.Stop()
+}
+
+func TestAll(t *testing.T) {
+	before(t)
+	testGetAllBrokersInCluster(t)
+	tearDown(t)
+}
+
+func testGetAllBrokersInCluster(t *testing.T) {
+	c, _, err := zk.Connect([]string{fmt.Sprintf("127.0.0.1:%d", zkServer.Port)}, time.Second * 30000)
 	if (err != nil) {
-		fmt.Println(err)
+		t.Error(err)
 	}
 	brokers, _ := GetAllBrokersInCluster(c)
+
+	Assert(t, err, nil)
+
 	for i := range brokers {
 		fmt.Printf("id=%d, %s:%d", brokers[i].Id, brokers[i].Host, brokers[i].Port)
-	}*/
+	}
 }

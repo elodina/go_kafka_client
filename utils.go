@@ -21,6 +21,7 @@ import (
 	"github.com/jimlawless/cfg"
 	"os"
 	"log"
+	"testing"
 )
 
 var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
@@ -30,4 +31,10 @@ func LoadConfiguration (path string) (map[string]string, error) {
 	err := cfg.Load(path, cfgMap)
 
 	return cfgMap, err
+}
+
+func Assert(t *testing.T, actual interface{}, expected interface{}) {
+	if actual != expected {
+		t.Errorf("Expected %v, actual %v", expected, actual)
+	}
 }
