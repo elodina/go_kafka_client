@@ -23,10 +23,10 @@ import (
 )
 
 func main() {
-	consumer := go_kafka_client.NewConsumer("my_topic", go_kafka_client.DefaultConsumerConfig())
-	messages := consumer.Messages()
+	consumer := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, go_kafka_client.DefaultConsumerConfig())
 
-	go func() {for message := range messages {
+	go func() {
+		for message := range consumer.Messages() {
 		go_kafka_client.Logger.Printf("Consumed message '%v' from topic %s\n", string(message.Value), message.Topic)
 		consumer.Ack(message.Offset, message.Topic, message.Partition)
 	}

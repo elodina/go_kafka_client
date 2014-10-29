@@ -37,6 +37,13 @@ var (
 	PreferredReplicaLeaderElectionPath = "/admin/preferred_replica_election"
 )
 
+//ConsumerInfo patterns
+//TODO any other patterns?
+var (
+	WhiteList = "white_list"
+	BlackList = "black_list"
+)
+
 func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
 	Logger.Printf("Getting all brokers in cluster\n")
 	brokerIds, _, err := zkConnection.Children(BrokerIdsPath)
@@ -73,7 +80,7 @@ func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
 	return broker, mappingError
 }
 
-func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, consumerInfo ConsumerInfo) error {
+func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, consumerInfo *ConsumerInfo) error {
 	Logger.Printf("Trying to register consumer %s at group %s in Zookeeper\n", consumerId, group)
 	pathToConsumer := fmt.Sprintf("%s/%s/%s", ConsumersPath, group, consumerId)
 	data, mappingError := json.Marshal(consumerInfo)
@@ -81,6 +88,7 @@ func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, co
 		return mappingError
 	}
 
+	Logger.Printf("Path: %s\n", pathToConsumer)
 	_, zkError := zkConnection.CreateProtectedEphemeralSequential(pathToConsumer, []byte(data), zk.WorldACL(zk.PermAll))
 
 	return zkError

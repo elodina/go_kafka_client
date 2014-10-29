@@ -17,6 +17,8 @@
 
 package go_kafka_client
 
+import "time"
+
 type ConsumerConfig struct {
 	/** a string that uniquely identifies a set of consumers within the same consumer group */
 	Groupid string
@@ -102,6 +104,9 @@ type ConsumerConfig struct {
 
 	/** Select a strategy for assigning partitions to consumer streams. Possible values: range, roundrobin */
 	PartitionAssignmentStrategy string
+
+	/** Zookeeper read timeout */
+	ZookeeperTimeout time.Duration
 }
 
 func DefaultConsumerConfig() *ConsumerConfig {
@@ -127,8 +132,10 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.AutoOffsetReset = "largest"
 	config.ClientId = ""
+	config.ConsumerId = "consumer1"
 	config.ExcludeInternalTopics = true
 	config.PartitionAssignmentStrategy = "range"/* select between "range", and "roundrobin" */
+	config.ZookeeperTimeout = 1 * time.Second
 
 	return config
 }

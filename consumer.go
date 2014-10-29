@@ -20,15 +20,19 @@ package go_kafka_client
 import (
 	"time"
 	"fmt"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 type Consumer struct {
 	config        *ConsumerConfig
 	topic         string
+	group         string
+	zookeeper     []string
 	messages      chan *Message
 	topicSwitch   chan string
 	close         chan bool
 	closeFinished chan bool
+	zkConn		  *zk.Conn
 }
 
 type Message struct {
@@ -39,15 +43,20 @@ type Message struct {
 	Offset    int64
 }
 
-func NewConsumer(topic string, config *ConsumerConfig) *Consumer {
+func NewConsumer(topic, group string, zookeeper []string, config *ConsumerConfig) *Consumer {
 	c := &Consumer{
 		config : config,
 		topic : topic,
+		group : group,
+		zookeeper : zookeeper,
 		messages : make(chan *Message),
 		topicSwitch : make(chan string),
 		close : make(chan bool),
 		closeFinished : make(chan bool),
 	}
+
+	c.connectToZookeeper()
+//	c.registerInZookeeper()
 
 	go c.fetchLoop()
 
@@ -118,4 +127,28 @@ func (c *Consumer) messageChannel() chan *Message {
 	}()
 
 	return messages
+}
+
+func (c *Consumer) connectToZookeeper() {
+	if conn, _, err := zk.Connect(c.zookeeper, c.config.ZookeeperTimeout); err != nil {
+		panic(err)
+	} else {
+		c.zkConn = conn
+	}
+}
+
+func (c *Consumer) registerInZookeeper() {
+	subscription := make(map[string]int)
+	subscription[c.topic] = 1
+
+	consumerInfo := &ConsumerInfo{
+		Version : int16(1),
+		Subscription : subscription,
+		Pattern : WhiteList,
+		Timestamp : time.Now().Unix(),
+	}
+
+	if err := RegisterConsumer(c.zkConn, c.group, c.config.ConsumerId, consumerInfo); err != nil {
+		panic(err)
+	}
 }
