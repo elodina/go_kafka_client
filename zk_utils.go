@@ -91,7 +91,7 @@ func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, co
 
 	Logger.Printf("Path: %s\n", pathToConsumer)
 
-	return CreatePathParentMayNotExist(zkConnection, pathToConsumer, []byte(data))
+	return CreateOrUpdatePathParentMayNotExist(zkConnection, pathToConsumer, data)
 }
 
 func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) {
@@ -118,16 +118,20 @@ func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTo
 	return consumersPerTopicMap, nil
 }
 
-func CreatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, data []byte) error {
+func CreateOrUpdatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, data []byte) error {
 	Logger.Printf("Trying to create path %s in Zookeeper", pathToCreate)
 	_, err := zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 	if (err != nil) {
 		Logger.Println(err)
 		if (zk.ErrNodeExists == err) {
-			return nil
+			if (len(data) > 0) {
+				return UpdateRecord(zkConnection, pathToCreate, data)
+			} else {
+				return nil
+			}
 		} else {
 			parent, _ := path.Split(pathToCreate)
-			err = CreatePathParentMayNotExist(zkConnection, parent[:len(parent)-1], make([]byte, 0))
+			err = CreateOrUpdatePathParentMayNotExist(zkConnection, parent[:len(parent)-1], make([]byte, 0))
 			if (err != nil) {
 				return err
 			} else {
@@ -138,6 +142,26 @@ func CreatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, dat
 			_, err = zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 		}
 	}
+
+	return err
+}
+
+func GetConsumer(zkConnection *zk.Conn, consumerGroup string, consumerId string) (*ConsumerInfo, error) {
+	data, _, err := zkConnection.Get(fmt.Sprintf("%s/%s",
+		NewZKGroupDirs(consumerGroup).ConsumerRegistryDir, consumerId))
+	if (err != nil) {
+		return nil, err
+	}
+	consumerInfo := &ConsumerInfo{}
+	json.Unmarshal(data, consumerInfo)
+
+	return consumerInfo, nil
+}
+
+func UpdateRecord(zkConnection *zk.Conn, pathToCreate string, dataToWrite []byte) error {
+	Logger.Printf("Trying to updated entry at path %s", pathToCreate)
+	_, stat, _ := zkConnection.Get(pathToCreate)
+	_, err := zkConnection.Set(pathToCreate, dataToWrite, stat.Version)
 
 	return err
 }

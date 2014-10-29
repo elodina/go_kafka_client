@@ -49,11 +49,12 @@ func TestAll(t *testing.T) {
 	testGetBrokerInfo(t)
 	testGetAllBrokersInCluster(t)
 	testRegisterConsumer(t)
+	testGetConsumersInGroup(t)
 	tearDown(t)
 }
 
 func testCreatePathParentMayNotExist(t * testing.T, pathToCreate string) {
-	err := CreatePathParentMayNotExist(zkConnection, pathToCreate, make([]byte, 0))
+	err := CreateOrUpdatePathParentMayNotExist(zkConnection, pathToCreate, make([]byte, 0))
 	if (err != nil) {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func testCreatePathParentMayNotExist(t * testing.T, pathToCreate string) {
 
 func testGetBrokerInfo(t *testing.T) {
 	jsonBroker, _ := json.Marshal(broker)
-	CreatePathParentMayNotExist(zkConnection, fmt.Sprintf("%s/%d", BrokerIdsPath, broker.Id), []byte(jsonBroker))
+	CreateOrUpdatePathParentMayNotExist(zkConnection, fmt.Sprintf("%s/%d", BrokerIdsPath, broker.Id), []byte(jsonBroker))
 	brokerInfo, err := GetBrokerInfo(zkConnection, broker.Id)
 	if (err != nil) {
 		t.Error(err)
@@ -99,4 +100,15 @@ func testRegisterConsumer(t *testing.T) {
 	if (err != nil) {
 		t.Error(err)
 	}
+	actualConsumerInfo, err := GetConsumer(zkConnection, consumerGroup, fmt.Sprintf(consumerIdPattern, 0))
+
+	Assert(t, *actualConsumerInfo, *consumerInfo)
+}
+
+func testGetConsumersInGroup(t *testing.T) {
+	consumers, err := GetConsumersInGroup(zkConnection, consumerGroup)
+	if (err != nil) {
+		t.Error(err)
+	}
+	Assert(t, len(consumers), 1)
 }

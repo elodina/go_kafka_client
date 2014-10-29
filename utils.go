@@ -22,6 +22,7 @@ import (
 	"os"
 	"log"
 	"testing"
+	"reflect"
 )
 
 var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
@@ -34,7 +35,7 @@ func LoadConfiguration (path string) (map[string]string, error) {
 }
 
 func Assert(t *testing.T, actual interface{}, expected interface{}) {
-	if actual != expected {
+	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expected %v, actual %v", expected, actual)
 	}
 }
