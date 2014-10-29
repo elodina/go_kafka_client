@@ -19,7 +19,7 @@ package go_kafka_client
 
 import (
 	"time"
-	"github.com/littleinc/go-zookeeper"
+	"github.com/samuel/go-zookeeper/zk"
 	"os"
 	"os/signal"
 )
@@ -134,9 +134,14 @@ func (c *Consumer) subscribeForChanges(group string) {
 
 	go func() {
 		for {
+			emptyEvent := zk.Event{}
 			select {
 			case e := <-subscription: {
-				c.rebalance(e)
+				if e != emptyEvent {
+					c.rebalance(e)
+				} else {
+					time.Sleep(2 * time.Second)
+				}
 			}
 			case <-c.unsubscribe: {
 				Logger.Println("Unsubscribing from changes")
