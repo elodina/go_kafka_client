@@ -20,6 +20,8 @@ package go_kafka_client
 import (
 	"time"
 	"github.com/littleinc/go-zookeeper"
+	"os"
+	"os/signal"
 )
 
 type Consumer struct {
@@ -53,6 +55,8 @@ func NewConsumer(topic, group string, zookeeper []string, config *ConsumerConfig
 		closeFinished : make(chan bool),
 	}
 
+	c.addShutdownHook()
+
 	c.connectToZookeeper()
 	c.registerInZookeeper()
 	c.fetcher = newConsumerFetcherManager(topic, group, config, c.zkConn, c.messages)
@@ -81,6 +85,15 @@ func (c *Consumer) Close() <-chan bool {
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
 	Logger.Printf("Acking offset %d for topic %s and partition %d", offset, topic, partition)
 	return nil
+}
+
+func (c *Consumer) addShutdownHook() {
+	s := make(chan os.Signal, 1)
+	signal.Notify(s, os.Interrupt)
+	go func() {
+		<-s
+		c.Close()
+	}()
 }
 
 func (c *Consumer) connectToZookeeper() {
