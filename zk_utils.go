@@ -19,7 +19,7 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/samuel/go-zookeeper/zk"
+	"github.com/littleinc/go-zookeeper"
 	"encoding/json"
 	"strconv"
 	"path"

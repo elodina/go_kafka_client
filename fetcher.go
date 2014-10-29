@@ -18,7 +18,7 @@
 package go_kafka_client
 
 import (
-	"github.com/samuel/go-zookeeper/zk"
+	"github.com/littleinc/go-zookeeper"
 	"fmt"
 	"math/rand"
 	"time"

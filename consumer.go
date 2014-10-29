@@ -19,7 +19,7 @@ package go_kafka_client
 
 import (
 	"time"
-	"github.com/samuel/go-zookeeper/zk"
+	"github.com/littleinc/go-zookeeper"
 )
 
 type Consumer struct {
@@ -124,12 +124,11 @@ func (c *Consumer) subscribeForChanges(group string) {
 			select {
 			case e := <-subscription: {
 				c.rebalance(e)
-				//			c.subscribeForChanges(group)
 			}
-//			case <-c.unsubscribe: {
-//				Logger.Println("Unsubscribing from changes")
-//				break
-//			}
+			case <-c.unsubscribe: {
+				Logger.Println("Unsubscribing from changes")
+				break
+			}
 			}
 		}
 	}()
