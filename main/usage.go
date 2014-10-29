@@ -20,16 +20,40 @@ package main
 import (
 	"github.com/stealthly/go_kafka_client"
 	"time"
+	"math/rand"
+	"fmt"
 )
 
+type Worker struct {}
+
+func (w *Worker) doWork(msg *go_kafka_client.Message, consumer *go_kafka_client.Consumer) {
+	time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
+	consumer.Ack(msg.Offset, msg.Topic, msg.Partition)
+}
+
 func main() {
-	consumer := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, go_kafka_client.DefaultConsumerConfig())
+	config := go_kafka_client.DefaultConsumerConfig()
+	config.ConsumerId = fmt.Sprintf("consumer-%d", time.Now().Unix())
+	consumer := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, config)
+
+	time.Sleep(1 * time.Second)
+	config2 := go_kafka_client.DefaultConsumerConfig()
+	config2.ConsumerId = fmt.Sprintf("consumer-%d", time.Now().Unix())
+	consumer2 := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, config2)
+	fmt.Println(consumer2)
+
+	time.Sleep(1 * time.Second)
+	config3 := go_kafka_client.DefaultConsumerConfig()
+	config3.ConsumerId = fmt.Sprintf("consumer-%d", time.Now().Unix())
+	consumer3 := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, config3)
+	fmt.Println(consumer3)
 
 	go func() {
 		for message := range consumer.Messages() {
-		go_kafka_client.Logger.Printf("Consumed message '%v' from topic %s\n", string(message.Value), message.Topic)
-		consumer.Ack(message.Offset, message.Topic, message.Partition)
-	}
+			go_kafka_client.Logger.Printf("Consumed message '%v' from topic %s\n", string(message.Value), message.Topic)
+			worker := &Worker{}
+			go worker.doWork(message, consumer)
+		}
 	}()
 
 	time.Sleep(10 * time.Second)

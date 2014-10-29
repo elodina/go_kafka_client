@@ -19,7 +19,6 @@ package go_kafka_client
 
 import (
 	"time"
-	"fmt"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -28,11 +27,11 @@ type Consumer struct {
 	topic         string
 	group         string
 	zookeeper     []string
+	fetcher         *consumerFetcherManager
 	messages      chan *Message
-	topicSwitch   chan string
-	close         chan bool
+	unsubscribe   chan bool
 	closeFinished chan bool
-	zkConn		  *zk.Conn
+	zkConn          *zk.Conn
 }
 
 type Message struct {
@@ -50,15 +49,13 @@ func NewConsumer(topic, group string, zookeeper []string, config *ConsumerConfig
 		group : group,
 		zookeeper : zookeeper,
 		messages : make(chan *Message),
-		topicSwitch : make(chan string),
-		close : make(chan bool),
+		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
 	}
 
 	c.connectToZookeeper()
-//	c.registerInZookeeper()
-
-	go c.fetchLoop()
+	c.registerInZookeeper()
+	c.fetcher = newConsumerFetcherManager(topic, group, config, c.zkConn, c.messages)
 
 	return c
 }
@@ -68,11 +65,16 @@ func (c *Consumer) Messages() <-chan *Message {
 }
 
 func (c *Consumer) SwitchTopic(newTopic string) {
-	c.topicSwitch <- newTopic
+	c.fetcher.SwitchTopic(newTopic)
 }
 
 func (c *Consumer) Close() <-chan bool {
-	c.close <- true
+	Logger.Println("Closing consumer")
+	go func() {
+		<-c.fetcher.Close()
+		c.unsubscribe <- true
+		c.closeFinished <- true
+	}()
 	return c.closeFinished
 }
 
@@ -81,55 +83,8 @@ func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
 	return nil
 }
 
-func (c *Consumer) fetchLoop() {
-	messageChannel := c.messageChannel()
-	for {
-		select {
-		case message := <-messageChannel:
-		c.messages <- message
-		case topic := <-c.topicSwitch:
-			Logger.Printf("switch topic to %s\n", topic)
-			c.topic = topic
-		case <-c.close:
-			Logger.Println("Closing consumer")
-			close(messageChannel)
-			close(c.messages)
-			close(c.topicSwitch)
-			time.Sleep(3 * time.Second)
-		c.closeFinished <- true
-			return
-		}
-	}
-}
-
-func (c *Consumer) messageChannel() chan *Message {
-	messages := make(chan *Message)
-
-	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				Logger.Println("Recovered from producing into closed channel")
-			}
-		}()
-
-		i := 0
-		for {
-			time.Sleep(1 * time.Second)
-			message := &Message{
-				Offset : int64(i),
-				Topic : c.topic,
-				Key : []byte(fmt.Sprintf("key %d", i)),
-				Value : []byte(fmt.Sprintf("message %d", i)),
-			}
-			messages <- message
-			i++
-		}
-	}()
-
-	return messages
-}
-
 func (c *Consumer) connectToZookeeper() {
+	Logger.Println("Connecting to zk")
 	if conn, _, err := zk.Connect(c.zookeeper, c.config.ZookeeperTimeout); err != nil {
 		panic(err)
 	} else {
@@ -138,6 +93,7 @@ func (c *Consumer) connectToZookeeper() {
 }
 
 func (c *Consumer) registerInZookeeper() {
+	Logger.Println("Registering in zk")
 	subscription := make(map[string]int)
 	subscription[c.topic] = 1
 
@@ -151,4 +107,35 @@ func (c *Consumer) registerInZookeeper() {
 	if err := RegisterConsumer(c.zkConn, c.group, c.config.ConsumerId, consumerInfo); err != nil {
 		panic(err)
 	}
+
+	c.subscribeForChanges(c.group)
+}
+
+func (c *Consumer) subscribeForChanges(group string) {
+	Logger.Println("Subscribing for changes for", NewZKGroupDirs(group).ConsumerRegistryDir)
+
+	_, _, subscription, err := c.zkConn.ChildrenW(NewZKGroupDirs(group).ConsumerRegistryDir)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		for {
+			select {
+			case e := <-subscription: {
+				c.rebalance(e)
+				//			c.subscribeForChanges(group)
+			}
+//			case <-c.unsubscribe: {
+//				Logger.Println("Unsubscribing from changes")
+//				break
+//			}
+			}
+		}
+	}()
+}
+
+func (c *Consumer) rebalance(_ zk.Event) {
+	Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
+	time.Sleep(1 * time.Second)
 }
