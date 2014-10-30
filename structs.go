@@ -17,30 +17,34 @@
 
 package go_kafka_client
 
+import (
+	"fmt"
+)
+
 //ConsumerInfo patterns
 //TODO any other patterns?
 var (
 	WhiteListPattern = "white_list"
 	BlackListPattern = "black_list"
-	StaticPattern = "black_list"
+	StaticPattern    = "black_list"
 )
 
 type BrokerInfo struct {
 	Version int16
-	Id int32
-	Host string
-	Port uint32
+	Id      int32
+	Host    string
+	Port    uint32
 }
 
 type ConsumerInfo struct {
-	Version int16
+	Version   int16
 	Subscription map[string]int
-	Pattern string
+	Pattern   string
 	Timestamp int64
 }
 
-type TopicCount interface {
-	GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId
+type TopicsToNumStreams interface {
+	GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId
 	Pattern() string
 }
 
@@ -49,6 +53,17 @@ type ConsumerThreadId struct {
 	ThreadId int
 }
 
+type ByName []*ConsumerThreadId
+
+func (a ByName) Len() int { return len(a) }
+func (a ByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByName) Less(i, j int) bool {
+	this := fmt.Sprintf("%s-%d", a[i].Consumer, a[i].ThreadId)
+	that := fmt.Sprintf("%s-%d", a[j].Consumer, a[j].ThreadId)
+	return this < that
+}
+
 type TopicFilter interface {
+	Regex() string
 	IsTopicAllowed(topic string, excludeInternalTopics bool) bool
 }

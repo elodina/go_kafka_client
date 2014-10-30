@@ -17,18 +17,58 @@
 
 package go_kafka_client
 
+import(
+	"regexp"
+)
+
+var (
+	OffsetsTopicName = "__consumer_offsets"
+)
+
 type WhiteList struct {
 	RawRegex string
+	CompiledRegex *regexp.Regexp
+}
+
+func (wl *WhiteList) Regex() string {
+	return wl.RawRegex
 }
 
 func (wl *WhiteList) IsTopicAllowed(topic string, excludeInternalTopics bool) bool {
-	return true
+	return wl.CompiledRegex.MatchString(topic) && !(topic == OffsetsTopicName && excludeInternalTopics)
+}
+
+func NewWhiteList(regex string) *WhiteList {
+	cregexp, err := regexp.Compile(regex)
+	if (err != nil) {
+		panic(err)
+	}
+	return &WhiteList{
+		RawRegex: regex,
+		CompiledRegex: cregexp,
+	}
 }
 
 type BlackList struct {
 	RawRegex string
+	CompiledRegex *regexp.Regexp
+}
+
+func (bl *BlackList) Regex() string {
+	return bl.RawRegex
 }
 
 func (bl *BlackList) IsTopicAllowed(topic string, excludeInternalTopics bool) bool {
-	return true
+	return !bl.CompiledRegex.MatchString(topic) && !(topic == OffsetsTopicName && excludeInternalTopics)
+}
+
+func NewBlackList(regex string) *BlackList {
+	cregexp, err := regexp.Compile(regex)
+	if (err != nil) {
+		panic(err)
+	}
+	return &BlackList{
+		RawRegex: regex,
+		CompiledRegex: cregexp,
+	}
 }

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"path"
 	"github.com/samuel/go-zookeeper/zk"
+	"sort"
 )
 
 var (
@@ -107,15 +108,31 @@ func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) 
 	return consumers, nil
 }
 
-func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTopics bool) (map[string][]string, error) {
+func GetConsumersInGroupWatcher(zkConnection *zk.Conn, group string) (<- chan zk.Event, error) {
+	Logger.Printf("Getting consumers in group %s\n", group)
+	_, _, watcher, err := zkConnection.ChildrenW(NewZKGroupDirs(group).ConsumerRegistryDir)
+	if (err != nil) {
+		return nil, err
+	}
+
+	return watcher, nil
+}
+
+func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTopics bool) (map[string][]*ConsumerThreadId, error) {
 	dirs := NewZKGroupDirs(group)
 	consumers, _, err := zkConnection.Children(dirs.ConsumerRegistryDir)
 	if (err != nil) {
 		return nil, err
 	}
-	consumersPerTopicMap := make(map[string][]string)
+	consumersPerTopicMap := make(map[string][]*ConsumerThreadId)
 	for _, consumer := range consumers {
-		fmt.Println(consumer)
+		topicsToNumStreams, err := NewTopicsToNumStreams(group, consumer, zkConnection, excludeInternalTopics)
+		if (err != nil) {
+			return nil, err
+		}
+		for topic := range topicsToNumStreams.GetConsumerThreadIdsPerTopic() {
+			sort.Sort(ByName(consumersPerTopicMap[topic]))
+		}
 	}
 
 	return consumersPerTopicMap, nil
@@ -159,6 +176,16 @@ func GetConsumer(zkConnection *zk.Conn, consumerGroup string, consumerId string)
 	json.Unmarshal(data, consumerInfo)
 
 	return consumerInfo, nil
+}
+
+func GetTopics(zkConnection *zk.Conn) (topics []string, err error) {
+	topics, _, _, err = zkConnection.ChildrenW(BrokerTopicsPath)
+	return
+}
+
+func GetTopicsWatcher(zkConnection *zk.Conn) (watcher <- chan zk.Event, err error) {
+	_, _, watcher, err = zkConnection.ChildrenW(BrokerTopicsPath)
+	return
 }
 
 func UpdateRecord(zkConnection *zk.Conn, pathToCreate string, dataToWrite []byte) error {
