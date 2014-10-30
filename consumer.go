@@ -77,6 +77,10 @@ func (c *Consumer) Close() <-chan bool {
 	go func() {
 		<-c.fetcher.Close()
 		c.unsubscribe <- true
+		err := DeregisterConsumer(c.zkConn, c.group, c.config.ConsumerId)
+		if err != nil {
+			panic(err)
+		}
 		c.closeFinished <- true
 	}()
 	return c.closeFinished
