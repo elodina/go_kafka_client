@@ -94,7 +94,7 @@ func testRegisterConsumer(t *testing.T) {
 	consumerInfo := &ConsumerInfo{
 		Version : int16(1),
 		Subscription : subscription,
-		Pattern : WhiteList,
+		Pattern : WhiteListPattern,
 		Timestamp : time.Now().Unix(),
 	}
 	err := RegisterConsumer(zkConnection, consumerGroup, fmt.Sprintf(consumerIdPattern, 0), consumerInfo)

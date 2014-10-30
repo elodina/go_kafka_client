@@ -17,38 +17,18 @@
 
 package go_kafka_client
 
-//ConsumerInfo patterns
-//TODO any other patterns?
-var (
-	WhiteListPattern = "white_list"
-	BlackListPattern = "black_list"
-	StaticPattern = "black_list"
-)
-
-type BrokerInfo struct {
-	Version int16
-	Id int32
-	Host string
-	Port uint32
+type WhiteList struct {
+	RawRegex string
 }
 
-type ConsumerInfo struct {
-	Version int16
-	Subscription map[string]int
-	Pattern string
-	Timestamp int64
+func (wl *WhiteList) IsTopicAllowed(topic string, excludeInternalTopics bool) bool {
+	return true
 }
 
-type TopicCount interface {
-	GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId
-	Pattern() string
+type BlackList struct {
+	RawRegex string
 }
 
-type ConsumerThreadId struct {
-	Consumer string
-	ThreadId int
-}
-
-type TopicFilter interface {
-	IsTopicAllowed(topic string, excludeInternalTopics bool) bool
+func (bl *BlackList) IsTopicAllowed(topic string, excludeInternalTopics bool) bool {
+	return true
 }

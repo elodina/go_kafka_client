@@ -117,7 +117,7 @@ func (c *Consumer) registerInZookeeper() {
 	consumerInfo := &ConsumerInfo{
 		Version : int16(1),
 		Subscription : subscription,
-		Pattern : WhiteList,
+		Pattern : WhiteListPattern,
 		Timestamp : time.Now().Unix(),
 	}
 

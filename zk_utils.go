@@ -38,13 +38,6 @@ var (
 	PreferredReplicaLeaderElectionPath = "/admin/preferred_replica_election"
 )
 
-//ConsumerInfo patterns
-//TODO any other patterns?
-var (
-	WhiteList = "white_list"
-	BlackList = "black_list"
-)
-
 func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
 	Logger.Printf("Getting all brokers in cluster\n")
 	brokerIds, _, err := zkConnection.Children(BrokerIdsPath)
