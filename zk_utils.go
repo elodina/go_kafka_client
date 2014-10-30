@@ -61,6 +61,16 @@ func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
 	return brokers, nil
 }
 
+func GetAllBrokersInClusterWatcher(zkConnection *zk.Conn) (<- chan zk.Event, error) {
+	Logger.Printf("Subscribing for events from broker registry\n")
+	_, _, watcher, err := zkConnection.ChildrenW(BrokerIdsPath)
+	if (err != nil) {
+		return nil, err
+	}
+
+	return watcher, nil
+}
+
 func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
 	Logger.Printf("Getting info for broker %d\n", brokerId)
 	pathToBroker := fmt.Sprintf("%s/%d", BrokerIdsPath, brokerId)

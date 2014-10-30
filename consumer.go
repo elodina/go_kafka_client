@@ -131,21 +131,30 @@ func (c *Consumer) registerInZookeeper() {
 func (c *Consumer) subscribeForChanges(group string) {
 	Logger.Println("Subscribing for changes for", NewZKGroupDirs(group).ConsumerRegistryDir)
 
-	subscription, err := GetConsumersInGroupWatcher(c.zkConn, group)
+	consumersWatcher, err := GetConsumersInGroupWatcher(c.zkConn, group)
+	if err != nil {
+		panic(err)
+	}
+	topicsWatcher, err := GetTopicsWatcher(c.zkConn)
+	if err != nil {
+		panic(err)
+	}
+	brokersWatcher, err := GetAllBrokersInClusterWatcher(c.zkConn)
 	if err != nil {
 		panic(err)
 	}
 
 	go func() {
 		for {
-			emptyEvent := zk.Event{}
 			select {
-			case e := <-subscription: {
-				if e != emptyEvent {
-					c.rebalance(e)
-				} else {
-					time.Sleep(2 * time.Second)
-				}
+			case e := <-topicsWatcher: {
+				triggerRebalanceIfNeeded(e, c)
+			}
+			case e := <-consumersWatcher: {
+				triggerRebalanceIfNeeded(e, c)
+			}
+			case e := <-brokersWatcher: {
+				triggerRebalanceIfNeeded(e, c)
 			}
 			case <-c.unsubscribe: {
 				Logger.Println("Unsubscribing from changes")
@@ -154,6 +163,15 @@ func (c *Consumer) subscribeForChanges(group string) {
 			}
 		}
 	}()
+}
+
+func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
+	emptyEvent := zk.Event{}
+	if e != emptyEvent {
+		c.rebalance(e)
+	} else {
+		time.Sleep(2 * time.Second)
+	}
 }
 
 func (c *Consumer) rebalance(_ zk.Event) {
