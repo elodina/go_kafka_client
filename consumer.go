@@ -131,7 +131,7 @@ func (c *Consumer) registerInZookeeper() {
 func (c *Consumer) subscribeForChanges(group string) {
 	Logger.Println("Subscribing for changes for", NewZKGroupDirs(group).ConsumerRegistryDir)
 
-	_, _, subscription, err := c.zkConn.ChildrenW(NewZKGroupDirs(group).ConsumerRegistryDir)
+	subscription, err := GetConsumersInGroupWatcher(c.zkConn, group)
 	if err != nil {
 		panic(err)
 	}
