@@ -28,9 +28,10 @@ func NewTopicsToNumStreams(group string, consumerId string, zkConnection *zk.Con
 	}
 
 	hasWhiteList := WhiteListPattern == consumerInfo.Pattern
-	hasBlackList := WhiteListPattern == consumerInfo.Pattern
+	hasBlackList := BlackListPattern == consumerInfo.Pattern
 
 	if (len(consumerInfo.Subscription) == 0 || !(hasWhiteList || hasBlackList)) {
+		//TODO: do we really need it?
 		return &StaticTopicsToNumStreams{
 			ConsumerId: consumerId,
 			TopicsToNumStreamsMap: consumerInfo.Subscription,
@@ -38,11 +39,7 @@ func NewTopicsToNumStreams(group string, consumerId string, zkConnection *zk.Con
 	} else {
 		var regex string
 		var numStreams int
-		for k, v := range consumerInfo.Subscription {
-			regex = k
-			numStreams = v
-			break
-		}
+		for regex, numStreams = range consumerInfo.Subscription { break }
 		var filter TopicFilter
 		if (hasWhiteList) {
 			filter = NewWhiteList(regex)
@@ -80,7 +77,7 @@ func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[
 				consumers[i] = consumerThreadId
 			}
 		}
-		result[topic] = consumers
+		result[topic] = consumers[:len(consumers)]
 	}
 
 	return result

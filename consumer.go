@@ -22,6 +22,7 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 	"os"
 	"os/signal"
+	"sync"
 )
 
 type Consumer struct {
@@ -34,6 +35,7 @@ type Consumer struct {
 	unsubscribe   chan bool
 	closeFinished chan bool
 	zkConn          *zk.Conn
+	rebalanceLock sync.Mutex
 }
 
 type Message struct {
@@ -176,5 +178,7 @@ func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
 
 func (c *Consumer) rebalance(_ zk.Event) {
 	Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
-	time.Sleep(1 * time.Second)
+	c.rebalanceLock.Lock()
+	defer c.rebalanceLock.Unlock()
+
 }

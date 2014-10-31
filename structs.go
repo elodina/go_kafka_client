@@ -26,7 +26,7 @@ import (
 var (
 	WhiteListPattern = "white_list"
 	BlackListPattern = "black_list"
-	StaticPattern    = "black_list"
+	StaticPattern    = "static"
 )
 
 type BrokerInfo struct {
