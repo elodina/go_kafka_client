@@ -36,6 +36,7 @@ type Consumer struct {
 	closeFinished chan bool
 	zkConn          *zk.Conn
 	rebalanceLock sync.Mutex
+	isSuttingdown bool
 }
 
 type Message struct {
@@ -180,5 +181,32 @@ func (c *Consumer) rebalance(_ zk.Event) {
 	Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
 	c.rebalanceLock.Lock()
 	defer c.rebalanceLock.Unlock()
+	if (c.isSuttingdown) {
+		var success = false
+		var err error
+		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
+			topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.group, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
+			if (err != nil) {
+				Logger.Println(err)
+				continue
+			}
+			brokers, err := GetAllBrokersInCluster(c.zkConn)
+			if (err != nil) {
+				Logger.Println(err)
+				continue
+			}
 
+			//TODO: close fetchers
+			//TODO: release parition ownership
+
+			Logger.Println(topicPerThreadIdsMap)
+			Logger.Println(brokers)
+
+			success = true
+		}
+
+		if (!success) {
+			panic(err)
+		}
+	}
 }

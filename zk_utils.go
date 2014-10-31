@@ -148,6 +148,79 @@ func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTo
 	return consumersPerTopicMap, nil
 }
 
+func GetPartitionsForTopics(zkConnection *zk.Conn, topics []string) (map[string][]int, error) {
+	result := make(map[string][]int)
+	partitionAssignments, err := GetPartitionAssignmentsForTopics(zkConnection, topics)
+	if (err != nil) {
+		return nil, err
+	}
+	for topic, partitionAssignment := range partitionAssignments {
+		for partition, _ := range partitionAssignment {
+			result[topic] = append(result[topic], partition)
+		}
+	}
+
+	return result, nil
+}
+
+func GetReplicaAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[TopicAndPartition][]int, error) {
+	Logger.Printf("Trying to get replica assignments for topics %v\n", topics)
+	result := make(map[TopicAndPartition][]int)
+	for _, topic := range topics {
+		topicInfo, err := GetTopicInfo(zkConnection, topic)
+		if (err != nil) {
+			return nil, err
+		}
+		for partition, replicaIds := range topicInfo.Partitions {
+			partitionInt, err := strconv.Atoi(partition)
+			if (err != nil) {
+				return nil, err
+			}
+			topicAndPartition := TopicAndPartition{
+				Topic: topic,
+				Partition: partitionInt,
+			}
+			result[topicAndPartition] = replicaIds
+		}
+	}
+
+	return result, nil
+}
+
+func GetPartitionAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[string]map[int][]int, error) {
+	Logger.Printf("Trying to get partition assignments for topics %v\n", topics)
+	result := make(map[string]map[int][]int)
+	for _, topic := range topics {
+		topicInfo, err := GetTopicInfo(zkConnection, topic)
+		if (err != nil) {
+			return nil, err
+		}
+		for partition, replicaIds := range topicInfo.Partitions {
+			partitionInt, err := strconv.Atoi(partition)
+			if (err != nil) {
+				return nil, err
+			}
+			result[topic][partitionInt] = replicaIds
+		}
+	}
+
+	return result, nil
+}
+
+func GetTopicInfo(zkConnection *zk.Conn, topic string) (*TopicInfo, error) {
+	data, _, err := zkConnection.Get(fmt.Sprintf("%s/%s", BrokerTopicsPath, topic))
+	if (err != nil) {
+		return nil, err
+	}
+	topicInfo := &TopicInfo{}
+	err = json.Unmarshal(data, topicInfo)
+	if (err != nil) {
+		return nil, err
+	}
+
+	return topicInfo, nil
+}
+
 func CreateOrUpdatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, data []byte) error {
 	Logger.Printf("Trying to create path %s in Zookeeper", pathToCreate)
 	_, err := zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))

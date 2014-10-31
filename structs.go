@@ -43,6 +43,11 @@ type ConsumerInfo struct {
 	Timestamp int64
 }
 
+type TopicInfo struct {
+	Version int16
+	Partitions map[string][]int
+}
+
 type TopicsToNumStreams interface {
 	GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId
 	Pattern() string
@@ -66,4 +71,13 @@ func (a ByName) Less(i, j int) bool {
 type TopicFilter interface {
 	Regex() string
 	IsTopicAllowed(topic string, excludeInternalTopics bool) bool
+}
+
+type TopicAndPartition struct {
+	Topic string
+	Partition int
+}
+
+func (tp *TopicAndPartition) String() string {
+	return fmt.Sprintf("[%s, %d]", tp.Topic, tp.Partition)
 }
