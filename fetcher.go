@@ -24,6 +24,7 @@ import (
 	"time"
 	"sync"
 	"github.com/Shopify/sarama"
+	"math"
 )
 
 type consumerFetcherManager struct {
@@ -33,7 +34,9 @@ type consumerFetcherManager struct {
 	messages           chan *Message
 	closeFinished      chan bool
 	lock               sync.Mutex
+	mapLock            sync.Mutex
 	partitionMap map[*TopicAndPartition]*PartitionTopicInfo
+	fetcherRoutineMap map[*BrokerAndFetcherId]*consumerFetcherRoutine
 	noLeaderPartitions []*TopicAndPartition
 }
 
@@ -45,28 +48,42 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, fetchInt
 		messages : fetchInto,
 		closeFinished : make(chan bool),
 		partitionMap : make(map[*TopicAndPartition]*PartitionTopicInfo),
+		fetcherRoutineMap : make(map[*BrokerAndFetcherId]*consumerFetcherRoutine),
 	}
-
-	//	go manager.startFetchers()
 
 	return manager
 }
 
 func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo) {
-	_ = m.getLeaders()
+	go m.FindLeaders()
 
-	Logger.Println("starting fetchers")
-	numPartitions := 1
-	topic := "my_topic"
-	for i := 0; i < numPartitions; i++ {
-		id := fmt.Sprintf("fetcher-%s-%d", topic, i)
-		fetcher := newConsumerFetcher(m, id, topic, newConsumerFetcherRoutineConfig(1, "192.168.86.10", 9092))
-		m.fetchers[fmt.Sprintf("%d", i)] = fetcher
-		fetcher.fetchLoop()
-	}
+	InLock(&m.lock, func() {
+		newPartitionMap := make(map[*TopicAndPartition]*PartitionTopicInfo)
+		noLeaderPartitions := make([]*TopicAndPartition, len(topicInfos))
+		index := 0
+		for _, info := range topicInfos {
+			topicAndPartition := &TopicAndPartition{info.Topic, info.Partition}
+			newPartitionMap[topicAndPartition] = info
+
+			exists := false
+			for _, noLeader := range m.noLeaderPartitions {
+				if *topicAndPartition == *noLeader {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				noLeaderPartitions[index] = topicAndPartition
+				index++
+			}
+		}
+		m.partitionMap = newPartitionMap
+		m.noLeaderPartitions = append(m.noLeaderPartitions, noLeaderPartitions[:index]...)
+	})
 }
 
-func (m *consumerFetcherManager) LeaderFinderThread() {
+func (m *consumerFetcherManager) FindLeaders() {
+	//TODO shutdown hook for this thread
 	for {
 		leaderForPartitions := make(map[*TopicAndPartition]*BrokerInfo)
 		_ = leaderForPartitions
@@ -107,8 +124,14 @@ func (m *consumerFetcherManager) LeaderFinderThread() {
 			}
 		})
 
-//		partitionAndOffsets := make(map[*TopicAndPartition]*BrokerAndInitialOffset)
+		partitionAndOffsets := make(map[*TopicAndPartition]*BrokerAndInitialOffset)
+		for topicAndPartition, broker := range leaderForPartitions {
+			partitionAndOffsets[topicAndPartition] = &BrokerAndInitialOffset{broker, m.partitionMap[topicAndPartition].FetchedOffset}
+		}
+		m.addFetcherForPartitions(partitionAndOffsets)
 
+		m.ShutdownIdleFetchers()
+		time.Sleep(m.config.RefreshLeaderBackoff)
 	}
 }
 
@@ -159,19 +182,42 @@ func (m *consumerFetcherManager) distinctTopics() []string {
 	return topics[:i]
 }
 
-func (m *consumerFetcherManager) getLeaders() map[*TopicAndPartition]*BrokerInfo {
-	leaders := make(map[*TopicAndPartition]*BrokerInfo)
-	m.lock.Lock()
-	defer m.lock.Unlock()
+func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map[*TopicAndPartition]*BrokerAndInitialOffset) {
+	InLock(&m.mapLock, func() {
+		partitionsPerFetcher := make(map[*BrokerAndFetcherId]map[*TopicAndPartition]*BrokerAndInitialOffset)
+		for topicAndPartition, brokerAndInitialOffset := range partitionAndOffsets {
+			brokerAndFetcher := &BrokerAndFetcherId{brokerAndInitialOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
+			if partitionsPerFetcher[brokerAndFetcher] == nil {
+				partitionsPerFetcher[brokerAndFetcher] = make(map[*TopicAndPartition]*BrokerAndInitialOffset)
+			}
+			partitionsPerFetcher[brokerAndFetcher][topicAndPartition] = brokerAndInitialOffset
 
-	//TODO no leader?
-	brokers, err := GetAllBrokersInCluster(m.zkConn)
-	if err != nil {
-		panic(err)
-	}
-	_ = brokers
+			for brokerAndFetcherId, partitionOffsets := range partitionsPerFetcher {
+				if m.fetcherRoutineMap[brokerAndFetcherId] == nil {
+					fetcherRoutine := newConsumerFetcher(m,
+						fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.ConsumerId, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
+						brokerAndFetcherId.Broker,
+						m.partitionMap)
+					m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
+					fetcherRoutine.Start()
+				}
 
-	return leaders
+				partitionToOffsetMap := make(map[*TopicAndPartition]int64)
+				for tp, b := range partitionOffsets {
+					partitionToOffsetMap[tp] = b.InitOffset
+				}
+				m.fetcherRoutineMap[brokerAndFetcherId].AddPartitions(partitionToOffsetMap)
+			}
+		}
+	})
+}
+
+func (m *consumerFetcherManager) getFetcherId(topic string, partitionId int) int {
+	return int(math.Abs(float64(31 * Hash(topic) + partitionId))) % int(m.config.NumConsumerFetchers)
+}
+
+func (m *consumerFetcherManager) ShutdownIdleFetchers() {
+	//TODO implement
 }
 
 func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
@@ -191,48 +237,32 @@ func (m *consumerFetcherManager) Close() <-chan bool {
 
 type consumerFetcherRoutine struct {
 	manager *consumerFetcherManager
+	name          string
+	broker *BrokerInfo
+	partitionMap map[*TopicAndPartition]*PartitionTopicInfo
 	id            string
 	topic         string
-	config *fetcherRoutineConfig
 	close         chan bool
 	closeFinished chan bool
 }
 
-type fetcherRoutineConfig struct {
-	name             string
-	clientId         string
-	sourceBroker *BrokerInfo
-	socketTimeout    int
-	socketBufferSize int
-	fetchSize        int
-	fetcherBrokerId  int
-	maxWait          int
-	minBytes         int
-	isinterruptible  bool
-}
-
-func newConsumerFetcher(m *consumerFetcherManager, id string, topic string, config *fetcherRoutineConfig) *consumerFetcherRoutine {
+func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerInfo, partitionMap map[*TopicAndPartition]*PartitionTopicInfo) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
 		manager : m,
-		id : id,
-		topic : topic,
-		config : config,
+		name : name,
+		broker : broker,
+		partitionMap : partitionMap,
 		close : make(chan bool),
 		closeFinished : make(chan bool),
 	}
 }
 
-func newConsumerFetcherRoutineConfig(brokerId int32, brokerHost string, brokerPort uint32) *fetcherRoutineConfig {
-	broker := &BrokerInfo{
-		Version : int16(1),
-		Id : brokerId,
-		Host : brokerHost,
-		Port : brokerPort,
-	}
+func (f *consumerFetcherRoutine) Start() {
+	//TODO start fetcher
+}
 
-	return &fetcherRoutineConfig {
-		sourceBroker : broker,
-	}
+func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[*TopicAndPartition]int64) {
+	//TODO implement
 }
 
 func (f *consumerFetcherRoutine) fetchLoop() {

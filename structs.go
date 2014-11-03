@@ -99,3 +99,8 @@ type BrokerAndInitialOffset struct {
 	Broker *BrokerInfo
 	InitOffset int64
 }
+
+type BrokerAndFetcherId struct {
+	Broker *BrokerInfo
+	FetcherId int
+}

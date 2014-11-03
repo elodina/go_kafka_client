@@ -62,7 +62,7 @@ type ConsumerConfig struct {
 	RebalanceBackoffMs int32
 
 	/** backoff time to refresh the leader of a partition after it loses the current leader */
-	RefreshLeaderBackoffMs int32
+	RefreshLeaderBackoff time.Duration
 
 	/** backoff time to reconnect the offsets channel or to retry offset fetches/commits */
 	OffsetsChannelBackoffMs int32
@@ -127,7 +127,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchMinBytes = 1
 	config.FetchWaitMaxMs = 100
 	config.RebalanceBackoffMs = 2000
-	config.RefreshLeaderBackoffMs = 200
+	config.RefreshLeaderBackoff = 200 * time.Millisecond
 	config.OffsetsChannelBackoffMs = 1000
 	config.OffsetsChannelSocketTimeoutMs = 10000
 	config.OffsetsCommitMaxRetries = 5
