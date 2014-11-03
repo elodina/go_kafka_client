@@ -24,6 +24,7 @@ import (
 	"testing"
 	"reflect"
 	"math/rand"
+	"sync"
 )
 
 var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
@@ -39,6 +40,13 @@ func Assert(t *testing.T, actual interface{}, expected interface{}) {
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expected %v, actual %v", expected, actual)
 	}
+}
+
+func InLock(lock *sync.Mutex, fun func()) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	fun()
 }
 
 func shuffleArray(src []interface {}, dest [] interface {}) {
