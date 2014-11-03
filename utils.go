@@ -23,6 +23,7 @@ import (
 	"log"
 	"testing"
 	"reflect"
+	"math/rand"
 )
 
 var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
@@ -37,5 +38,13 @@ func LoadConfiguration (path string) (map[string]string, error) {
 func Assert(t *testing.T, actual interface{}, expected interface{}) {
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expected %v, actual %v", expected, actual)
+	}
+}
+
+func shuffleArray(src []interface {}, dest [] interface {}) {
+	dest := make([]int, len(src))
+	perm := rand.Perm(len(src))
+	for i, v := range perm {
+		dest[v] = src[i]
 	}
 }
