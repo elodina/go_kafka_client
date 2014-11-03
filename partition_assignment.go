@@ -53,14 +53,14 @@ func RoundRobinAssignor(context *AssignmentContext) map[*TopicAndPartition]*Cons
 		var headThreadIds []*ConsumerThreadId
 		for _, headThreadIds = range context.ConsumersForTopic { break }
 		for _, threadIds := range context.ConsumersForTopic {
-			if (reflect.DeepEqual(threadIds, headThreadIds)) {
-				panic("Round-robin assignor works only if all consumers in group subscribed to the same topics.AND if the stream counts across topics are identical for a given consumer instance.")
+			if (!reflect.DeepEqual(threadIds, headThreadIds)) {
+				panic("Round-robin assignor works only if all consumers in group subscribed to the same topics AND if the stream counts across topics are identical for a given consumer instance.")
 			}
 		}
 
-		topicsAndPartitions := make([]*TopicAndPartition, len(context.PartitionsForTopic))
+		topicsAndPartitions := make([]*TopicAndPartition, 0)
 		for topic, partitions := range context.PartitionsForTopic {
-			for partition := range partitions {
+			for _, partition := range partitions {
 				topicsAndPartitions = append(topicsAndPartitions, &TopicAndPartition{
 						Topic: topic,
 						Partition: partition,
@@ -68,9 +68,13 @@ func RoundRobinAssignor(context *AssignmentContext) map[*TopicAndPartition]*Cons
 			}
 		}
 
+		fmt.Printf("%v\n", topicsAndPartitions)
+
 		shuffledTopicsAndPartitions := make([]*TopicAndPartition, len(topicsAndPartitions))
 		ShuffleArray(&topicsAndPartitions, &shuffledTopicsAndPartitions)
 		threadIdsIterator := CircularIterator(&headThreadIds)
+
+		fmt.Printf("%v\n", shuffledTopicsAndPartitions)
 
 		for _, topicPartition := range shuffledTopicsAndPartitions {
 			consumerThreadId := threadIdsIterator.Value.(*ConsumerThreadId)
@@ -104,7 +108,7 @@ func RangeAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerT
 		nConsumersWithExtraPart := len(partitionsForTopic) % len(consumersForTopic)
 
 		for _, consumerThreadId := range consumerThreadIds {
-			myConsumerPosition := Position(consumersForTopic, consumerThreadId)
+			myConsumerPosition := Position(&consumersForTopic, consumerThreadId)
 			if (myConsumerPosition < 0) {
 				panic(fmt.Sprintf("There is no %s in consumers for topic %s", consumerThreadId, topic))
 			}
@@ -117,7 +121,7 @@ func RangeAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerT
 			if (nParts <= 0) {
 				Logger.Printf("No broker partitions consumed by consumer thread %s for topic %s", consumerThreadId, topic)
 			} else {
-				for i := startPart; i < startPart+nParts; {
+				for i := startPart; i < startPart+nParts; i++ {
 					partition := partitionsForTopic[i]
 					ownershipDecision[&TopicAndPartition{ Topic: topic, Partition: partition, }] = consumerThreadId
 				}

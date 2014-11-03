@@ -36,7 +36,7 @@ type Consumer struct {
 	closeFinished chan bool
 	zkConn          *zk.Conn
 	rebalanceLock sync.Mutex
-	isSuttingdown bool
+	isShuttingdown bool
 }
 
 type Message struct {
@@ -178,8 +178,9 @@ func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
 }
 
 func (c *Consumer) rebalance(_ zk.Event) {
+	partitionAssignor := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
-	if (c.isSuttingdown) {
+	if (c.isShuttingdown) {
 		var success = false
 		var err error
 		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
@@ -188,17 +189,21 @@ func (c *Consumer) rebalance(_ zk.Event) {
 				Logger.Println(err)
 				continue
 			}
+			Logger.Printf("%v\n", topicPerThreadIdsMap)
+
 			brokers, err := GetAllBrokersInCluster(c.zkConn)
 			if (err != nil) {
 				Logger.Println(err)
 				continue
 			}
+			Logger.Printf("%v\n", brokers)
 
 			//TODO: close fetchers
-			//TODO: release parition ownership
+			//TODO: release partition ownership
 
-			Logger.Println(topicPerThreadIdsMap)
-			Logger.Println(brokers)
+			assignmentContext := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
+			partitionOwnershipDecision := partitionAssignor(assignmentContext)
+			Logger.Printf("%v\n", partitionOwnershipDecision)
 
 			success = true
 		}

@@ -42,7 +42,7 @@ func tearDown(t *testing.T) {
 	cluster.Stop()
 }
 
-func TestAll(t *testing.T) {
+func TestZkAPI(t *testing.T) {
 	before(t)
 	testCreatePathParentMayNotExist(t, BrokerIdsPath)
 	testCreatePathParentMayNotExist(t, BrokerTopicsPath)
