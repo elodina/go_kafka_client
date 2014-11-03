@@ -25,6 +25,7 @@ import (
 	"reflect"
 	"math/rand"
 	"sync"
+	"container/ring"
 )
 
 var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
@@ -57,4 +58,15 @@ func ShuffleArray(src interface{}, dest interface{}) {
 	for i, v := range perm {
 		rDest.Index(v).Set(rSrc.Index(i))
 	}
+}
+
+func CircularIterator(src interface{}) *ring.Ring {
+	arr := reflect.ValueOf(src).Elem()
+	circle := ring.New(arr.Len())
+	for i := 0; i < arr.Len(); i++ {
+		circle.Value = arr.Index(i).Interface()
+		circle = circle.Next()
+	}
+
+	return circle
 }

@@ -19,9 +19,10 @@ package go_kafka_client
 
 import (
 	"github.com/samuel/go-zookeeper/zk"
+	"reflect"
 )
 
-type AssignStrategy func(context *AssignmentContext) map[TopicAndPartition]ConsumerThreadId
+type AssignStrategy func(context *AssignmentContext) map[*TopicAndPartition]*ConsumerThreadId
 
 func NewPartitionAssignor(strategy string) AssignStrategy {
 	switch strategy {
@@ -32,15 +33,51 @@ func NewPartitionAssignor(strategy string) AssignStrategy {
 	}
 }
 
-func RoundRobinAssignor(context *AssignmentContext) map[TopicAndPartition]ConsumerThreadId {
-	return make(map[TopicAndPartition]ConsumerThreadId)
+func RoundRobinAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerThreadId {
+	ownershipDecision := make(map[*TopicAndPartition]*ConsumerThreadId)
+
+	if (len(context.ConsumersForTopic) > 0) {
+		var headThreadIds []*ConsumerThreadId
+		for _, headThreadIds = range context.ConsumersForTopic { break }
+		for _, threadIds := range context.ConsumersForTopic {
+			if (reflect.DeepEqual(threadIds, headThreadIds)) {
+				panic("Round-robin assignor works only if all consumers in group subscribed to the same topics.AND if the stream counts across topics are identical for a given consumer instance.")
+			}
+		}
+
+		topicsAndPartitions := make([]*TopicAndPartition, len(context.PartitionsForTopic))
+		for topic, partitions := range context.PartitionsForTopic {
+			for partition := range partitions {
+				topicsAndPartitions = append(topicsAndPartitions, &TopicAndPartition{
+						Topic: topic,
+						Partition: partition,
+					})
+			}
+		}
+
+		shuffledTopicsAndPartitions := make([]*TopicAndPartition, len(topicsAndPartitions))
+		ShuffleArray(&topicsAndPartitions, &shuffledTopicsAndPartitions)
+		threadIdsIterator := CircularIterator(&headThreadIds)
+
+		for _, topicPartition := range shuffledTopicsAndPartitions {
+			consumerThreadId := threadIdsIterator.Value.(*ConsumerThreadId)
+			if (consumerThreadId.Consumer == context.ConsumerId) {
+				ownershipDecision[topicPartition] = consumerThreadId
+			}
+			threadIdsIterator = threadIdsIterator.Next()
+		}
+	}
+
+	return ownershipDecision
 }
 
-func RangeAssignor(context *AssignmentContext) map[TopicAndPartition]ConsumerThreadId {
-	return make(map[TopicAndPartition]ConsumerThreadId)
+func RangeAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerThreadId {
+	return make(map[*TopicAndPartition]*ConsumerThreadId)
 }
 
 type AssignmentContext struct {
+	ConsumerId string
+	Group string
 	MyTopicThreadIds map[string][]*ConsumerThreadId
 	PartitionsForTopic map[string][]int
 	ConsumersForTopic map[string][]*ConsumerThreadId
@@ -58,6 +95,8 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 	consumersForTopic, _ := GetConsumersPerTopic(zkConnection, group, excludeInternalTopics)
 	consumers, _ := GetConsumersInGroup(zkConnection, group)
 	return &AssignmentContext{
+		ConsumerId: consumerId,
+		Group: group,
 		MyTopicThreadIds: myTopicThreadIds,
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
