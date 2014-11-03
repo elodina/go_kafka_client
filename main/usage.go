@@ -22,6 +22,8 @@ import (
 	"time"
 	"math/rand"
 //	"fmt"
+//	"github.com/Shopify/sarama"
+//	"fmt"
 )
 
 type Worker struct {}
@@ -32,19 +34,9 @@ func (w *Worker) doWork(msg *go_kafka_client.Message, consumer *go_kafka_client.
 }
 
 func main() {
-	consumer := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, go_kafka_client.DefaultConsumerConfig())
-
-//	time.Sleep(1 * time.Second)
-//	config2 := go_kafka_client.DefaultConsumerConfig()
-//	config2.ConsumerId = fmt.Sprintf("consumer-%d", time.Now().Unix())
-//	consumer2 := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, config2)
-//	_ = consumer2
-//
-//	time.Sleep(1 * time.Second)
-//	config3 := go_kafka_client.DefaultConsumerConfig()
-//	config3.ConsumerId = fmt.Sprintf("consumer-%d", time.Now().Unix())
-//	consumer3 := go_kafka_client.NewConsumer("my_topic", "group1", []string{"192.168.86.5"}, config3)
-//	_ = consumer3
+	config := go_kafka_client.DefaultConsumerConfig()
+	config.ZookeeperConnect = []string{"192.168.86.5"}
+	consumer := go_kafka_client.NewConsumer(go_kafka_client.DefaultConsumerConfig())
 
 	go func() {
 		for message := range consumer.Messages() {

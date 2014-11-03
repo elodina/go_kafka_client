@@ -47,12 +47,12 @@ type Message struct {
 	Offset    int64
 }
 
-func NewConsumer(topic, group string, zookeeper []string, config *ConsumerConfig) *Consumer {
+func NewConsumer(config *ConsumerConfig) *Consumer {
 	c := &Consumer{
 		config : config,
-		topic : topic,
-		group : group,
-		zookeeper : zookeeper,
+		//		topic : topic,
+		//		group : group,
+		//		zookeeper : zookeeper,
 		messages : make(chan *Message),
 		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
@@ -61,8 +61,8 @@ func NewConsumer(topic, group string, zookeeper []string, config *ConsumerConfig
 	c.addShutdownHook()
 
 	c.connectToZookeeper()
-	c.registerInZookeeper()
-	c.fetcher = newConsumerFetcherManager(topic, group, config, c.zkConn, c.messages)
+	//	c.registerInZookeeper()
+	c.fetcher = newConsumerFetcherManager(config, c.zkConn, c.messages)
 
 	return c
 }
@@ -105,7 +105,7 @@ func (c *Consumer) addShutdownHook() {
 
 func (c *Consumer) connectToZookeeper() {
 	Logger.Println("Connecting to zk")
-	if conn, _, err := zk.Connect(c.zookeeper, c.config.ZookeeperTimeout); err != nil {
+	if conn, _, err := zk.Connect(c.config.ZookeeperConnect, c.config.ZookeeperTimeout); err != nil {
 		panic(err)
 	} else {
 		c.zkConn = conn

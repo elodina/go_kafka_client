@@ -22,43 +22,156 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+	"sync"
+	"github.com/Shopify/sarama"
 )
 
 type consumerFetcherManager struct {
-	topic         string
-	group         string
 	config        *ConsumerConfig
 	zkConn        *zk.Conn
 	fetchers      map[string]*consumerFetcherRoutine
-	messages      chan *Message
-	closeFinished chan bool
+	messages           chan *Message
+	closeFinished      chan bool
+	lock               sync.Mutex
+	partitionMap map[*TopicAndPartition]*PartitionTopicInfo
+	noLeaderPartitions []*TopicAndPartition
 }
 
-func newConsumerFetcherManager(topic, group string, config *ConsumerConfig, zkConn *zk.Conn, fetchInto chan *Message) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, fetchInto chan *Message) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
-		topic : topic,
-		group : group,
 		config : config,
 		zkConn : zkConn,
 		fetchers : make(map[string]*consumerFetcherRoutine),
 		messages : fetchInto,
 		closeFinished : make(chan bool),
+		partitionMap : make(map[*TopicAndPartition]*PartitionTopicInfo),
 	}
 
-	go manager.startFetchers()
+	//	go manager.startFetchers()
 
 	return manager
 }
 
-func (m *consumerFetcherManager) startFetchers() {
+func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo) {
+	_ = m.getLeaders()
+
 	Logger.Println("starting fetchers")
 	numPartitions := 1
+	topic := "my_topic"
 	for i := 0; i < numPartitions; i++ {
-		id := fmt.Sprintf("fetcher-%s-%d", m.topic, i)
-		fetcher := newConsumerFetcher(m, id, m.topic, newConsumerFetcherRoutineConfig(1, "192.168.86.10", 9092))
+		id := fmt.Sprintf("fetcher-%s-%d", topic, i)
+		fetcher := newConsumerFetcher(m, id, topic, newConsumerFetcherRoutineConfig(1, "192.168.86.10", 9092))
 		m.fetchers[fmt.Sprintf("%d", i)] = fetcher
 		fetcher.fetchLoop()
 	}
+}
+
+func (m *consumerFetcherManager) LeaderFinderThread() {
+	for {
+		leaderForPartitions := make(map[*TopicAndPartition]*BrokerInfo)
+		_ = leaderForPartitions
+		InLock(&m.lock, func() {
+			for len(m.noLeaderPartitions) == 0 {
+				Logger.Println("No partition for leader election")
+				//TODO probably replace with channel?
+				time.Sleep(2 * time.Second)
+			}
+
+			Logger.Printf("Partitions without leader %v\n", m.noLeaderPartitions)
+			brokers, err := GetAllBrokersInCluster(m.zkConn)
+			if err != nil {
+				panic(err)
+			}
+			topicsMetadata := fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
+			for _, meta := range topicsMetadata {
+				topic := meta.Name
+				for _, partition := range meta.Partitions {
+					topicAndPartition := &TopicAndPartition{topic, int(partition.ID) }
+
+					var leaderBroker *BrokerInfo = nil
+					for _, broker := range brokers {
+						if broker.Id == partition.Leader {
+							leaderBroker = broker
+							break
+						}
+					}
+
+					for i, tp := range m.noLeaderPartitions {
+						if *tp == *topicAndPartition && leaderBroker != nil {
+							leaderForPartitions[topicAndPartition] = leaderBroker
+							m.noLeaderPartitions[i] = nil
+							break
+						}
+					}
+				}
+			}
+		})
+
+//		partitionAndOffsets := make(map[*TopicAndPartition]*BrokerAndInitialOffset)
+
+	}
+}
+
+func fetchTopicMetadata(topics []string, brokers []*BrokerInfo, clientId string) *sarama.MetadataResponse {
+	shuffledBrokers := make([]*BrokerInfo, len(brokers))
+	ShuffleArray(brokers, shuffledBrokers)
+	for i := 0; i < len(shuffledBrokers); i++ {
+		brokerAddr := fmt.Sprintf("%s:%d", shuffledBrokers[i].Host, shuffledBrokers[i].Port)
+		broker := sarama.NewBroker(brokerAddr)
+		err := broker.Open(nil)
+		if err != nil {
+			Logger.Printf("Could not fetch topic metadata from broker %s\n", brokerAddr)
+			continue
+		}
+		defer broker.Close()
+
+		request := sarama.MetadataRequest{Topics: topics}
+		response, err := broker.GetMetadata(clientId, &request)
+		if err != nil {
+			Logger.Printf("Could not fetch topic metadata from broker %s\n", brokerAddr)
+			continue
+		}
+		return response
+	}
+
+	panic(fmt.Sprintf("fetching topic metadata for topics [%s] from broker [%s] failed", topics, shuffledBrokers))
+}
+
+func (m *consumerFetcherManager) distinctTopics() []string {
+	topics := make([]string, len(m.noLeaderPartitions))
+
+	i := 0
+	for j := 0; j < len(m.noLeaderPartitions); j++ {
+		current := m.noLeaderPartitions[j]
+		exists := false
+		for k := 0; k < len(topics); k++ {
+			if current.Topic == topics[k] {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			topics[i] = current.Topic
+			i++
+		}
+	}
+
+	return topics[:i]
+}
+
+func (m *consumerFetcherManager) getLeaders() map[*TopicAndPartition]*BrokerInfo {
+	leaders := make(map[*TopicAndPartition]*BrokerInfo)
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	//TODO no leader?
+	brokers, err := GetAllBrokersInCluster(m.zkConn)
+	if err != nil {
+		panic(err)
+	}
+	_ = brokers
+
+	return leaders
 }
 
 func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
@@ -147,6 +260,7 @@ func (f *consumerFetcherRoutine) fetchLoop() {
 }
 
 func (f *consumerFetcherRoutine) Close() <-chan bool {
+	//TODO fix this
 	f.close <- true
 	return f.closeFinished
 }

@@ -105,6 +105,9 @@ type ConsumerConfig struct {
 	/** Select a strategy for assigning partitions to consumer streams. Possible values: range, roundrobin */
 	PartitionAssignmentStrategy string
 
+	/* Zookeeper hosts */
+	ZookeeperConnect []string
+
 	/** Zookeeper read timeout */
 	ZookeeperTimeout time.Duration
 }
@@ -135,6 +138,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.ConsumerId = "consumer1"
 	config.ExcludeInternalTopics = true
 	config.PartitionAssignmentStrategy = "range"/* select between "range", and "roundrobin" */
+	config.ZookeeperConnect = []string{"localhost"}
 	config.ZookeeperTimeout = 1 * time.Second
 
 	return config

@@ -81,3 +81,18 @@ type TopicAndPartition struct {
 func (tp *TopicAndPartition) String() string {
 	return fmt.Sprintf("[%s, %d]", tp.Topic, tp.Partition)
 }
+
+type PartitionTopicInfo struct {
+	Topic string
+	Partition int
+	//TODO chunkQueue?
+	ConsumedOffset int64
+	FetchedOffset int64
+	FetchSize int
+	ClientId string
+}
+
+type BrokerAndInitialOffset struct {
+	Broker *BrokerInfo
+	InitOffset int64
+}
