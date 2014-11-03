@@ -29,7 +29,7 @@ import (
 
 var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
 
-func LoadConfiguration (path string) (map[string]string, error) {
+func LoadConfiguration(path string) (map[string]string, error) {
 	cfgMap := make(map[string]string)
 	err := cfg.Load(path, cfgMap)
 
@@ -49,10 +49,12 @@ func InLock(lock *sync.Mutex, fun func()) {
 	fun()
 }
 
-func shuffleArray(src []interface {}, dest [] interface {}) {
-	dest := make([]int, len(src))
-	perm := rand.Perm(len(src))
+func ShuffleArray(src interface{}, dest interface{}) {
+	rSrc := reflect.ValueOf(src).Elem()
+	rDest := reflect.ValueOf(dest).Elem()
+
+	perm := rand.Perm(rSrc.Len())
 	for i, v := range perm {
-		dest[v] = src[i]
+		rDest.Index(v).Set(rSrc.Index(i))
 	}
 }
