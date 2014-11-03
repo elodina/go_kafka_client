@@ -26,6 +26,7 @@ import (
 	"math/rand"
 	"sync"
 	"container/ring"
+	"hash/fnv"
 )
 
 var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
@@ -80,4 +81,10 @@ func Position(haystack interface {}, needle interface {}) int {
 	}
 
 	return -1
+}
+
+func Hash(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return int(h.Sum32())
 }
