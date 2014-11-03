@@ -104,25 +104,32 @@ func RangeAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerT
 		consumersForTopic := context.ConsumersForTopic[topic]
 		partitionsForTopic := context.PartitionsForTopic[topic]
 
+		Logger.Printf("partitionsForTopic: %d, consumersForTopic: %d", len(partitionsForTopic), len(consumersForTopic))
+
 		nPartsPerConsumer := len(partitionsForTopic) / len(consumersForTopic)
 		nConsumersWithExtraPart := len(partitionsForTopic) % len(consumersForTopic)
 
+		Logger.Printf("nPartsPerConsumer: %d, nConsumersWithExtraPart: %d", nPartsPerConsumer, nConsumersWithExtraPart)
+
 		for _, consumerThreadId := range consumerThreadIds {
 			myConsumerPosition := Position(&consumersForTopic, consumerThreadId)
+			Logger.Printf("myConsumerPosition: %d", myConsumerPosition)
 			if (myConsumerPosition < 0) {
 				panic(fmt.Sprintf("There is no %s in consumers for topic %s", consumerThreadId, topic))
 			}
-			startPart := nPartsPerConsumer * myConsumerPosition * int(math.Min(float64(myConsumerPosition), float64(nConsumersWithExtraPart)))
+			startPart := nPartsPerConsumer * myConsumerPosition + int(math.Min(float64(myConsumerPosition), float64(nConsumersWithExtraPart)))
 			nParts := nPartsPerConsumer
 			if (myConsumerPosition+1 <= nConsumersWithExtraPart) {
 				nParts = nPartsPerConsumer+1
 			}
+			Logger.Printf("startPart: %d, nParts: %d", startPart, nParts)
 
 			if (nParts <= 0) {
 				Logger.Printf("No broker partitions consumed by consumer thread %s for topic %s", consumerThreadId, topic)
 			} else {
 				for i := startPart; i < startPart+nParts; i++ {
 					partition := partitionsForTopic[i]
+					Logger.Printf("%s attempting to claim partition %d", consumerThreadId, partition)
 					ownershipDecision[&TopicAndPartition{ Topic: topic, Partition: partition, }] = consumerThreadId
 				}
 			}

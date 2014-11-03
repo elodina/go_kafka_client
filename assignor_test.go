@@ -19,7 +19,6 @@ package go_kafka_client
 
 import (
 	"testing"
-	"fmt"
 )
 
 var (
@@ -30,51 +29,72 @@ var (
 		&ConsumerThreadId{"consumerid2", 0},
 		&ConsumerThreadId{"consumerid2", 1},
 	}
-	myTopicThreadIds = map[string][]*ConsumerThreadId {
-		"topic1": []*ConsumerThreadId { &ConsumerThreadId{"consumerid1", 0},
-										&ConsumerThreadId{"consumerid1", 1}, },
-		"topic2": []*ConsumerThreadId { &ConsumerThreadId{"consumerid1", 0},
-										&ConsumerThreadId{"consumerid1", 1}, },
-		"topic3": []*ConsumerThreadId { &ConsumerThreadId{"consumerid1", 0},
-										&ConsumerThreadId{"consumerid1", 1}, },
-	}
 	partitionsForTopic = map[string][]int {
-		"topic1": []int{0, 1, 2, 3, 4, 5},
-		"topic2": []int{0, 1, 2, 3, 4},
-		"topic3": []int{0},
+		"topic1": []int{0, 1, 2 ,3, 4},
 	}
 	consumersForTopic = map[string][]*ConsumerThreadId {
 		"topic1": consumerThreadIds,
-		"topic2": consumerThreadIds,
-		"topic3": consumerThreadIds,
 	}
+	totalPartitions = 5
 )
 
 func TestRoundRobinAssignor(t *testing.T) {
 	assignor := NewPartitionAssignor("roundrobin")
 	context := &AssignmentContext{
-		ConsumerId: "consumerid1",
 		Group: "group",
-		MyTopicThreadIds: myTopicThreadIds,
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
 		Consumers: consumers,
 	}
-	ownershipDecision := assignor(context)
-	fmt.Printf("%v\n", ownershipDecision)
+
+	var totalDecisions = 0
+	for _, consumer := range consumers {
+		context.ConsumerId = consumer
+		context.MyTopicThreadIds = map[string][]*ConsumerThreadId {
+			"topic1": []*ConsumerThreadId {
+				&ConsumerThreadId{consumer, 0},
+				&ConsumerThreadId{consumer, 1}, },
+		}
+		ownershipDecision := assignor(context)
+		decisionsNum := len(ownershipDecision)
+		if (decisionsNum == totalPartitions) {
+			t.Errorf("Too many partitions assigned to consumer %s", consumer)
+		}
+
+		totalDecisions += decisionsNum
+		t.Logf("%v\n", ownershipDecision)
+	}
+
+	Assert(t, totalDecisions, totalPartitions)
 }
 
 
 func TestRangeAssignor(t *testing.T) {
 	assignor := NewPartitionAssignor("range")
 	context := &AssignmentContext{
-		ConsumerId: "consumerid1",
 		Group: "group",
-		MyTopicThreadIds: myTopicThreadIds,
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
 		Consumers: consumers,
 	}
-	ownershipDecision := assignor(context)
-	fmt.Printf("%v\n", ownershipDecision)
+
+	var totalDecisions = 0
+	for _, consumer := range consumers {
+		context.ConsumerId = consumer
+		context.MyTopicThreadIds = map[string][]*ConsumerThreadId {
+			"topic1": []*ConsumerThreadId {
+				&ConsumerThreadId{consumer, 0},
+				&ConsumerThreadId{consumer, 1}, },
+		}
+		ownershipDecision := assignor(context)
+		decisionsNum := len(ownershipDecision)
+		if (decisionsNum == totalPartitions) {
+			t.Errorf("too many partitions assigned to consumer %s", consumer)
+		}
+
+		totalDecisions += decisionsNum
+		t.Logf("%v\n", ownershipDecision)
+	}
+
+	Assert(t, totalDecisions, totalPartitions)
 }
