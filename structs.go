@@ -67,6 +67,9 @@ func (a ByName) Less(i, j int) bool {
 	that := fmt.Sprintf("%s-%d", a[j].Consumer, a[j].ThreadId)
 	return this < that
 }
+func (c *ConsumerThreadId) String() string {
+	return fmt.Sprintf("%s-%d", c.Consumer, c.ThreadId)
+}
 
 type TopicFilter interface {
 	Regex() string

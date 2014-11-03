@@ -70,3 +70,14 @@ func CircularIterator(src interface{}) *ring.Ring {
 
 	return circle
 }
+
+func Position(haystack interface {}, needle interface {}) int {
+	rSrc := reflect.ValueOf(haystack).Elem()
+	for position := 0; position < rSrc.Len(); position++ {
+		if (reflect.DeepEqual(rSrc.Index(position).Interface(), needle)) {
+			return position
+		}
+	}
+
+	return -1
+}

@@ -151,13 +151,13 @@ func (c *Consumer) subscribeForChanges(group string) {
 		for {
 			select {
 			case e := <-topicsWatcher: {
-				triggerRebalanceIfNeeded(e, c)
+				InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
 			}
 			case e := <-consumersWatcher: {
-				triggerRebalanceIfNeeded(e, c)
+				InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
 			}
 			case e := <-brokersWatcher: {
-				triggerRebalanceIfNeeded(e, c)
+				InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
 			}
 			case <-c.unsubscribe: {
 				Logger.Println("Unsubscribing from changes")
@@ -179,8 +179,6 @@ func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
 
 func (c *Consumer) rebalance(_ zk.Event) {
 	Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
-	c.rebalanceLock.Lock()
-	defer c.rebalanceLock.Unlock()
 	if (c.isSuttingdown) {
 		var success = false
 		var err error
