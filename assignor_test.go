@@ -39,6 +39,7 @@ var (
 )
 
 func TestRoundRobinAssignor(t *testing.T) {
+	//basic scenario
 	assignor := NewPartitionAssignor("roundrobin")
 	context := &AssignmentContext{
 		Group: "group",
@@ -66,10 +67,38 @@ func TestRoundRobinAssignor(t *testing.T) {
 	}
 
 	Assert(t, totalDecisions, totalPartitions)
+
+	//NOT every topic has the same number of streams within a consumer instance
+	failed := false
+	defer func() {
+		r := recover()
+		if (r != nil) {
+			failed = true
+		}
+	}()
+
+	context.ConsumerId = "consumerid1"
+	context.MyTopicThreadIds = map[string][]*ConsumerThreadId {
+		"topic1": []*ConsumerThreadId {
+			&ConsumerThreadId{"consumerid1", 0},
+			&ConsumerThreadId{"consumerid1", 1}, },
+	}
+	context.ConsumersForTopic = map[string][]*ConsumerThreadId {
+		"topic1": consumerThreadIds,
+		"topic2": []*ConsumerThreadId {
+			&ConsumerThreadId{"consumerid1", 0},
+			&ConsumerThreadId{"consumerid1", 1},
+			&ConsumerThreadId{"consumerid2", 0},
+		},
+	}
+	assignor(context)
+
+	Assert(t, failed, true)
 }
 
 
 func TestRangeAssignor(t *testing.T) {
+	//basic scenario
 	assignor := NewPartitionAssignor("range")
 	context := &AssignmentContext{
 		Group: "group",
