@@ -38,6 +38,7 @@ type consumerFetcherManager struct {
 	partitionMap map[*TopicAndPartition]*PartitionTopicInfo
 	fetcherRoutineMap map[*BrokerAndFetcherId]*consumerFetcherRoutine
 	noLeaderPartitions    []*TopicAndPartition
+	leaderFinderStopper   chan bool
 	leaderCond            *sync.Cond
 }
 
@@ -50,6 +51,7 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, fetchInt
 		closeFinished : make(chan bool),
 		partitionMap : make(map[*TopicAndPartition]*PartitionTopicInfo),
 		fetcherRoutineMap : make(map[*BrokerAndFetcherId]*consumerFetcherRoutine),
+		leaderFinderStopper : make(chan bool),
 	}
 	manager.leaderCond = sync.NewCond(&manager.lock)
 
@@ -87,52 +89,57 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 
 func (m *consumerFetcherManager) FindLeaders() {
 	for {
-		leaderForPartitions := make(map[*TopicAndPartition]*BrokerInfo)
-		_ = leaderForPartitions
-		InLock(&m.lock, func() {
-			for len(m.noLeaderPartitions) == 0 {
-				Logger.Println("No partition for leader election")
-				m.leaderCond.Wait()
-			}
+		select {
+		case <-m.leaderFinderStopper: return
+		default: {
+			leaderForPartitions := make(map[*TopicAndPartition]*BrokerInfo)
+			_ = leaderForPartitions
+			InLock(&m.lock, func() {
+				for len(m.noLeaderPartitions) == 0 {
+					Logger.Println("No partition for leader election")
+					m.leaderCond.Wait()
+				}
 
-			Logger.Printf("Partitions without leader %v\n", m.noLeaderPartitions)
-			brokers, err := GetAllBrokersInCluster(m.zkConn)
-			if err != nil {
-				panic(err)
-			}
-			topicsMetadata := fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
-			for _, meta := range topicsMetadata {
-				topic := meta.Name
-				for _, partition := range meta.Partitions {
-					topicAndPartition := &TopicAndPartition{topic, int(partition.ID) }
+				Logger.Printf("Partitions without leader %v\n", m.noLeaderPartitions)
+				brokers, err := GetAllBrokersInCluster(m.zkConn)
+				if err != nil {
+					panic(err)
+				}
+				topicsMetadata := fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
+				for _, meta := range topicsMetadata {
+					topic := meta.Name
+					for _, partition := range meta.Partitions {
+						topicAndPartition := &TopicAndPartition{topic, int(partition.ID) }
 
-					var leaderBroker *BrokerInfo = nil
-					for _, broker := range brokers {
-						if broker.Id == partition.Leader {
-							leaderBroker = broker
-							break
+						var leaderBroker *BrokerInfo = nil
+						for _, broker := range brokers {
+							if broker.Id == partition.Leader {
+								leaderBroker = broker
+								break
+							}
 						}
-					}
 
-					for i, tp := range m.noLeaderPartitions {
-						if *tp == *topicAndPartition && leaderBroker != nil {
-							leaderForPartitions[topicAndPartition] = leaderBroker
-							m.noLeaderPartitions[i] = nil
-							break
+						for i, tp := range m.noLeaderPartitions {
+							if *tp == *topicAndPartition && leaderBroker != nil {
+								leaderForPartitions[topicAndPartition] = leaderBroker
+								m.noLeaderPartitions[i] = nil
+								break
+							}
 						}
 					}
 				}
+			})
+
+			partitionAndOffsets := make(map[*TopicAndPartition]*BrokerAndInitialOffset)
+			for topicAndPartition, broker := range leaderForPartitions {
+				partitionAndOffsets[topicAndPartition] = &BrokerAndInitialOffset{broker, m.partitionMap[topicAndPartition].FetchedOffset}
 			}
-		})
+			m.addFetcherForPartitions(partitionAndOffsets)
 
-		partitionAndOffsets := make(map[*TopicAndPartition]*BrokerAndInitialOffset)
-		for topicAndPartition, broker := range leaderForPartitions {
-			partitionAndOffsets[topicAndPartition] = &BrokerAndInitialOffset{broker, m.partitionMap[topicAndPartition].FetchedOffset}
+			m.ShutdownIdleFetchers()
+			time.Sleep(m.config.RefreshLeaderBackoff)
 		}
-		m.addFetcherForPartitions(partitionAndOffsets)
-
-		m.ShutdownIdleFetchers()
-		time.Sleep(m.config.RefreshLeaderBackoff)
+		}
 	}
 }
 
@@ -234,15 +241,28 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 	})
 }
 
+func (m *consumerFetcherManager) CloseAllFetchers() {
+	InLock(&m.mapLock, func() {
+		for _, fetcher := range m.fetcherRoutineMap {
+			<-fetcher.Close()
+		}
+
+		for key := range m.fetcherRoutineMap {
+			delete(m.fetcherRoutineMap, key)
+		}
+	})
+}
+
 func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
 	Logger.Printf("Stop all current fetchers and switch topic to %s\n", newTopic)
 }
 
 func (m *consumerFetcherManager) Close() <-chan bool {
 	go func() {
-		for _, fetcher := range m.fetchers {
-			<-fetcher.Close()
-		}
+		m.leaderFinderStopper <- true
+		m.CloseAllFetchers()
+		m.partitionMap = nil
+		m.noLeaderPartitions = nil
 		m.closeFinished <- true
 	}()
 
