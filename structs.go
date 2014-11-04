@@ -19,6 +19,7 @@ package go_kafka_client
 
 import (
 	"fmt"
+	"github.com/Shopify/sarama"
 )
 
 //ConsumerInfo patterns
@@ -88,7 +89,7 @@ func (tp *TopicAndPartition) String() string {
 type PartitionTopicInfo struct {
 	Topic string
 	Partition int
-	//TODO chunkQueue?
+	BlockChannel chan *sarama.FetchResponseBlock
 	ConsumedOffset int64
 	FetchedOffset int64
 	FetchSize int

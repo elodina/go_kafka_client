@@ -224,6 +224,7 @@ func (m *consumerFetcherManager) getFetcherId(topic string, partitionId int) int
 	return int(math.Abs(float64(31 * Hash(topic) + partitionId))) % int(m.config.NumConsumerFetchers)
 }
 
+//TODO keysToBeRemoved is not necessary
 func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 	InLock(&m.mapLock, func() {
 		keysToBeRemoved := make([]BrokerAndFetcherId, len(m.fetcherRoutineMap))
@@ -275,7 +276,7 @@ type consumerFetcherRoutine struct {
 	broker *BrokerInfo
 	brokerAddr       string //just not to calculate each time
 	allPartitionMap map[TopicAndPartition]*PartitionTopicInfo
-	partitionMap map[TopicAndPartition]*int64 //we use a pointer to int64 so we can distinguish 0 offset and absent offset
+	partitionMap map[TopicAndPartition]int64
 	partitionMapLock sync.Mutex
 	partitionCount   int
 	id               string
@@ -293,7 +294,7 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 		broker : broker,
 		brokerAddr : fmt.Sprintf("%s:%d", broker.Host, broker.Port),
 		allPartitionMap : allPartitionMap,
-		partitionMap : make(map[TopicAndPartition]*int64),
+		partitionMap : make(map[TopicAndPartition]int64),
 		close : make(chan bool),
 		closeFinished : make(chan bool),
 		fetchRequestBlockMap : make(map[TopicAndPartition]*PartitionFetchInfo),
@@ -308,7 +309,7 @@ func (f *consumerFetcherRoutine) Start() {
 		default: {
 			InLock(&f.partitionMapLock, func() {
 				for topicAndPartition, offset := range f.partitionMap {
-					f.fetchRequestBlockMap[topicAndPartition] = &PartitionFetchInfo{*offset, f.manager.config.FetchMessageMaxBytes}
+					f.fetchRequestBlockMap[topicAndPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
 				}
 			})
 
@@ -360,18 +361,27 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 		for topic, partitionAndData := range response.Blocks {
 			for partition, data := range partitionAndData {
 				topicAndPartition := TopicAndPartition{topic, int(partition)}
-				currentOffsetPtr := f.partitionMap[topicAndPartition]
-				if currentOffsetPtr != nil && f.fetchRequestBlockMap[topicAndPartition].Offset == *currentOffsetPtr {
+				currentOffset, exists := f.partitionMap[topicAndPartition]
+				if exists && f.fetchRequestBlockMap[topicAndPartition].Offset == currentOffset {
 					switch data.Err {
-						case sarama.NoError: {
-							//TODO
+					case sarama.NoError: {
+						messages := data.MsgSet.Messages
+						newOffset := currentOffset
+						if len(messages) > 0 {
+							newOffset = messages[len(messages)-1].Offset
 						}
-						case sarama.OffsetOutOfRange: {
-							//TODO handle offset out of range
-						}
-						default: {
-							//TODO unknown error
-						}
+						f.partitionMap[topicAndPartition] = newOffset
+						f.processPartitionData(topicAndPartition, currentOffset, data)
+					}
+					case sarama.OffsetOutOfRange: {
+						newOffset := f.handleOffsetOutOfRange(topicAndPartition)
+						f.partitionMap[topicAndPartition] = newOffset
+						Logger.Printf("Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
+					}
+					default: {
+						Logger.Printf("Error for partition %s. Removing", topicAndPartition)
+						partitionsWithError[topicAndPartition] = true
+					}
 					}
 				}
 			}
@@ -384,6 +394,14 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	}
 }
 
+func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, fetchOffset int64, partitionData *sarama.FetchResponseBlock) {
+	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
+	if partitionTopicInfo.FetchedOffset != fetchOffset {
+		panic(fmt.Sprintf("Offset does not match for partition %s. PartitionTopicInfo offset: %d, fetch offset: %d\n", topicAndPartition, partitionTopicInfo.FetchedOffset, fetchOffset))
+	}
+	partitionTopicInfo.BlockChannel <- partitionData
+}
+
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {
 	Logger.Printf("Error in fetch %v. Possible cause: %s\n", request, err)
 	InLock(&f.partitionMapLock, func() {
@@ -391,6 +409,11 @@ func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, 
 			partitionsWithError[k] = true
 		}
 	})
+}
+
+func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition TopicAndPartition) int64 {
+	//TODO implement
+	return 0
 }
 
 func (f *consumerFetcherRoutine) fetchLoop() {

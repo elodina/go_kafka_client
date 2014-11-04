@@ -297,6 +297,7 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 	partTopicInfo := &PartitionTopicInfo{
 		Topic: topicPartition.Topic,
 		Partition: topicPartition.Partition,
+		BlockChannel: make(chan *sarama.FetchResponseBlock),
 		ConsumedOffset: offset,
 		FetchedOffset: offset,
 		FetchSize: int(c.config.FetchMessageMaxBytes),
