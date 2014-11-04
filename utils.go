@@ -44,6 +44,12 @@ func Assert(t *testing.T, actual interface{}, expected interface{}) {
 	}
 }
 
+func AssertNot(t *testing.T, actual interface{}, expected interface{}) {
+	if reflect.DeepEqual(actual, expected) {
+		t.Errorf("%v should not be %v", actual, expected)
+	}
+}
+
 func InLock(lock *sync.Mutex, fun func()) {
 	lock.Lock()
 	defer lock.Unlock()

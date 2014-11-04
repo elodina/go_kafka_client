@@ -1,3 +1,20 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package go_kafka_client
 
 import (
@@ -9,8 +26,6 @@ import (
 )
 
 var (
-	cluster *zk.TestCluster = nil
-	zkServer *zk.TestServer = nil
 	zkConnection *zk.Conn   = nil
 	consumerGroup           = "testGroup"
 	consumerIdPattern       = "go-consumer-%d"
@@ -22,36 +37,17 @@ var (
 							}
 )
 
-func before(t *testing.T) {
-	testCluster, err := zk.StartTestCluster(1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cluster = testCluster
-	zkServer = &testCluster.Servers[0]
-
-	conn, _, err := zk.Connect([]string{fmt.Sprintf("127.0.0.1:%d", zkServer.Port)}, time.Second*30000)
-	if (err != nil) {
-		t.Fatal(err)
-	}
-	zkConnection = conn
-}
-
-func tearDown(t *testing.T) {
-	cluster.Stop()
-}
-
 func TestZkAPI(t *testing.T) {
-	before(t)
-	testCreatePathParentMayNotExist(t, BrokerIdsPath)
-	testCreatePathParentMayNotExist(t, BrokerTopicsPath)
-	testGetBrokerInfo(t)
-	testGetAllBrokersInCluster(t)
-	testRegisterConsumer(t)
-	testGetConsumersInGroup(t)
-	testDeregisterConsumer(t)
-	tearDown(t)
+	WithZookeeper(t, func(conn *zk.Conn) {
+		zkConnection = conn
+		testCreatePathParentMayNotExist(t, BrokerIdsPath)
+		testCreatePathParentMayNotExist(t, BrokerTopicsPath)
+		testGetBrokerInfo(t)
+		testGetAllBrokersInCluster(t)
+		testRegisterConsumer(t)
+		testGetConsumersInGroup(t)
+		testDeregisterConsumer(t)
+	})
 }
 
 func testCreatePathParentMayNotExist(t * testing.T, pathToCreate string) {
