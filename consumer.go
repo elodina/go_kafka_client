@@ -27,6 +27,8 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+var InvalidOffset int64 = -1
+
 type Consumer struct {
 	config        *ConsumerConfig
 	topic         string
@@ -341,4 +343,8 @@ func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[i
 		}
 		delete(localTopicRegistry, topic)
 	}
+}
+
+func IsOffsetInvalid(offset int64) bool {
+	return offset <= InvalidOffset
 }

@@ -344,7 +344,17 @@ func (f *consumerFetcherRoutine) Start() {
 }
 
 func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
-	//TODO implement
+	InLock(&f.partitionMapLock, func() {
+		for topicAndPartition, offset := range partitionAndOffsets {
+			if _, contains := f.partitionMap[topicAndPartition]; !contains {
+				validOffset := offset
+				if IsOffsetInvalid(validOffset) {
+					validOffset = f.handleOffsetOutOfRange(topicAndPartition)
+				}
+				f.partitionMap[topicAndPartition] = validOffset
+			}
+		}
+	})
 }
 
 func (f *consumerFetcherRoutine) PartitionCount() int {
