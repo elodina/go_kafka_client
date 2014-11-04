@@ -66,6 +66,8 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
 		topicThreadIdsAndChannels : make(map[*TopicAndThreadId]chan *sarama.FetchResponseBlock),
+		topicRegistry: make(map[string]map[int]*PartitionTopicInfo),
+		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
 	}
 
 	c.addShutdownHook()

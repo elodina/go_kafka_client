@@ -282,28 +282,35 @@ func GetOffsetForTopicPartition(zkConnection *zk.Conn, group string, topicPartit
 	dirs := NewZKGroupTopicDirs(group, topicPartition.Topic)
 	offset, _, err := zkConnection.Get(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, topicPartition.Partition))
 	if (err != nil) {
-		return -1, err
+		if (err == zk.ErrNoNode) {
+			return InvalidOffset, nil
+		} else {
+			return InvalidOffset, err
+		}
 	}
 
 	offsetNum, err := strconv.Atoi(string(offset))
 	if (err != nil) {
-		return -1, err
+		return InvalidOffset, err
 	}
 
-	return int64(offsetNum), err
+	return int64(offsetNum), nil
 }
 
 func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int, consumerThreadId *ConsumerThreadId) (bool, error) {
 	pathToOwn := fmt.Sprintf("%s/%d", NewZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
-	_, err := zkConnection.Create(pathToOwn, []byte(consumerThreadId.String()), 0, zk.WorldACL(zk.PermAll))
+	err := CreateOrUpdatePathParentMayNotExist(zkConnection, pathToOwn, []byte(consumerThreadId.String()))
 	if (err != nil) {
 		if (err == zk.ErrNodeExists) {
 			Logger.Printf("waiting for the partition ownership to be deleted: %d\n", partition)
 			return false, nil
 		} else {
+			Logger.Println(err)
 			return false, err
 		}
 	}
+
+	Logger.Printf("Successfully claimed partitions for %s")
 
 	return true, nil
 }
