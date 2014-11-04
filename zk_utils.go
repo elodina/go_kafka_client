@@ -140,7 +140,8 @@ func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTo
 		if (err != nil) {
 			return nil, err
 		}
-		for topic := range topicsToNumStreams.GetConsumerThreadIdsPerTopic() {
+		consumersPerTopicMap = topicsToNumStreams.GetConsumerThreadIdsPerTopic()
+		for topic := range consumersPerTopicMap {
 			sort.Sort(ByName(consumersPerTopicMap[topic]))
 		}
 	}
@@ -195,6 +196,7 @@ func GetPartitionAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (m
 		if (err != nil) {
 			return nil, err
 		}
+		result[topic] = make(map[int][]int)
 		for partition, replicaIds := range topicInfo.Partitions {
 			partitionInt, err := strconv.Atoi(partition)
 			if (err != nil) {
