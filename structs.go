@@ -109,3 +109,8 @@ type TopicAndThreadId struct {
 	Topic string
 	ThreadId *ConsumerThreadId
 }
+
+type PartitionFetchInfo struct {
+	Offset int64
+	FetchSize int32
+}
