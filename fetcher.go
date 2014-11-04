@@ -349,7 +349,7 @@ func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndP
 			if _, contains := f.partitionMap[topicAndPartition]; !contains {
 				validOffset := offset
 				if IsOffsetInvalid(validOffset) {
-					validOffset = f.handleOffsetOutOfRange(topicAndPartition)
+					validOffset = f.handleOffsetOutOfRange(&topicAndPartition)
 				}
 				f.partitionMap[topicAndPartition] = validOffset
 			}
@@ -398,7 +398,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 						f.processPartitionData(topicAndPartition, currentOffset, data)
 					}
 					case sarama.OffsetOutOfRange: {
-						newOffset := f.handleOffsetOutOfRange(topicAndPartition)
+						newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
 						f.partitionMap[topicAndPartition] = newOffset
 						Logger.Printf("Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
 					}
@@ -439,14 +439,38 @@ func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, 
 	})
 }
 
-func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition TopicAndPartition) int64 {
-	//TODO implement
-	return 0
+func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) int64 {
+	offsetTime := sarama.LatestOffsets
+	if f.manager.config.AutoOffsetReset == SmallestOffset {
+		offsetTime = sarama.EarliestOffset
+	}
+
+	newOffset := f.earliestOrLatestOffset(topicAndPartition, offsetTime)
+	partitionTopicInfo := f.allPartitionMap[*topicAndPartition]
+	partitionTopicInfo.FetchedOffset = newOffset
+	partitionTopicInfo.ConsumedOffset = newOffset
+
+	return newOffset
 }
 
 func (f *consumerFetcherRoutine) handlePartitionsWithErrors(partitions []*TopicAndPartition) {
 	f.removePartitions(partitions)
 	f.manager.addPartitionsWithError(partitions)
+}
+
+func (f *consumerFetcherRoutine) earliestOrLatestOffset(topicAndPartition *TopicAndPartition, offsetTime sarama.OffsetTime) int64 {
+	client, err := sarama.NewClient(f.manager.config.ClientId, []string{f.brokerAddr}, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+
+	offset, err := client.GetOffset(topicAndPartition.Topic, int32(topicAndPartition.Partition), offsetTime)
+	if err != nil {
+		panic(err)
+	}
+
+	return offset
 }
 
 func (f *consumerFetcherRoutine) removePartitions(partitions []*TopicAndPartition) {

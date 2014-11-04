@@ -29,6 +29,8 @@ import (
 
 var InvalidOffset int64 = -1
 
+var SmallestOffset = "smallest"
+
 type Consumer struct {
 	config        *ConsumerConfig
 	topic         string
