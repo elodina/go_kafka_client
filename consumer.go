@@ -185,14 +185,15 @@ func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
 
 func (c *Consumer) rebalance(_ zk.Event) {
 	partitionAssignor := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)
-	Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
 	if (!c.isShuttingdown) {
+		Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
 		var success = false
 		var err error
 		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
 			topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.group, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
 			if (err != nil) {
 				Logger.Println(err)
+				time.Sleep(time.Millisecond * c.config.RebalanceBackoffMs)
 				continue
 			}
 			Logger.Printf("%v\n", topicPerThreadIdsMap)
@@ -200,33 +201,46 @@ func (c *Consumer) rebalance(_ zk.Event) {
 			brokers, err := GetAllBrokersInCluster(c.zkConn)
 			if (err != nil) {
 				Logger.Println(err)
+				time.Sleep(time.Millisecond * c.config.RebalanceBackoffMs)
 				continue
 			}
 			Logger.Printf("%v\n", brokers)
 
 			//TODO: close fetchers
-			//TODO: release partition ownership
+			c.releasePartitionOwnership(c.topicRegistry)
 
 			assignmentContext := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
 			partitionOwnershipDecision := partitionAssignor(assignmentContext)
 			topicPartitions := make([]*TopicAndPartition, len(partitionOwnershipDecision))
 			for topicPartition, _ := range partitionOwnershipDecision {
-				topicPartitions = append(topicPartitions, topicPartition)
+				topicPartitions = append(topicPartitions, &topicPartition)
 			}
 
 			offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+			if (err != nil) {
+				break
+			}
 
-			if (c.isShuttingdown || err != nil) {
+			currentTopicRegistry := make(map[string]map[int]*PartitionTopicInfo)
+
+			if (c.isShuttingdown) {
+				Logger.Printf("Aborting consumer '%s' rebalancing, since shutdown sequence started.\n", c.config.ConsumerId)
 				return
 			} else {
 				for _, topicPartition := range topicPartitions {
 					offset := offsetsFetchResponse.Blocks[topicPartition.Topic][int32(topicPartition.Partition)].Offset
-					threadId := partitionOwnershipDecision[topicPartition]
-					c.addPartitionTopicInfo(c.topicRegistry, topicPartition, offset, threadId)
+					threadId := partitionOwnershipDecision[*topicPartition]
+					c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
 				}
 			}
 
-
+			if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
+				c.topicRegistry = currentTopicRegistry
+				//TODO: update fetcher
+			} else {
+				time.Sleep(time.Millisecond * c.config.RebalanceBackoffMs)
+				continue
+			}
 
 			success = true
 		}
@@ -234,6 +248,8 @@ func (c *Consumer) rebalance(_ zk.Event) {
 		if (!success) {
 			panic(err)
 		}
+	} else {
+		Logger.Printf("Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...\n", c.config.ConsumerId)
 	}
 }
 
@@ -289,4 +305,39 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 
 	partTopicInfoMap[topicPartition.Partition] = partTopicInfo
 	c.checkPointedZkOffsets[topicPartition] = offset
+}
+
+func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]*ConsumerThreadId) bool {
+	successfullyOwnedPartitions := make(map[string]int)
+	for topicPartition, consumerThreadId := range partitionOwnershipDecision {
+		success, err := ClaimPartitionOwnership(c.zkConn, c.group, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
+		if (err != nil) {
+			panic(err)
+		}
+		if (success) {
+			successfullyOwnedPartitions[topicPartition.Topic] = topicPartition.Partition
+		}
+	}
+
+	if (len(partitionOwnershipDecision) > len(successfullyOwnedPartitions)) {
+		for topic, partition := range successfullyOwnedPartitions {
+			DeletePartitionOwnership(c.zkConn, c.group, topic, partition)
+		}
+		return false
+	}
+
+	return true
+}
+
+func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[int]*PartitionTopicInfo) {
+	Logger.Println("Releasing partition ownership")
+	for topic, partitionInfos := range localTopicRegistry {
+		for partition, _ := range partitionInfos {
+			err := DeletePartitionOwnership(c.zkConn, c.group, topic, partition)
+			if (err != nil) {
+				panic(err)
+			}
+		}
+		delete(localTopicRegistry, topic)
+	}
 }

@@ -24,7 +24,7 @@ import (
 	"math"
 )
 
-type AssignStrategy func(context *AssignmentContext) map[*TopicAndPartition]*ConsumerThreadId
+type AssignStrategy func(context *AssignmentContext) map[TopicAndPartition]*ConsumerThreadId
 
 func NewPartitionAssignor(strategy string) AssignStrategy {
 	switch strategy {
@@ -46,8 +46,8 @@ func NewPartitionAssignor(strategy string) AssignStrategy {
  * a) Every topic has the same number of streams within a consumer instance
  * b) The set of subscribed topics is identical for every consumer instance within the group.
  */
-func RoundRobinAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerThreadId {
-	ownershipDecision := make(map[*TopicAndPartition]*ConsumerThreadId)
+func RoundRobinAssignor(context *AssignmentContext) map[TopicAndPartition]*ConsumerThreadId {
+	ownershipDecision := make(map[TopicAndPartition]*ConsumerThreadId)
 
 	if (len(context.ConsumersForTopic) > 0) {
 		var headThreadIds []*ConsumerThreadId
@@ -79,7 +79,7 @@ func RoundRobinAssignor(context *AssignmentContext) map[*TopicAndPartition]*Cons
 		for _, topicPartition := range shuffledTopicsAndPartitions {
 			consumerThreadId := threadIdsIterator.Value.(*ConsumerThreadId)
 			if (consumerThreadId.Consumer == context.ConsumerId) {
-				ownershipDecision[topicPartition] = consumerThreadId
+				ownershipDecision[*topicPartition] = consumerThreadId
 			}
 			threadIdsIterator = threadIdsIterator.Next()
 		}
@@ -97,8 +97,8 @@ func RoundRobinAssignor(context *AssignmentContext) map[*TopicAndPartition]*Cons
  * will get at least one partition and the first consumer thread will get one extra partition. So the assignment will be:
  * p0 -> C1-0, p1 -> C1-0, p2 -> C1-1, p3 -> C2-0, p4 -> C2-1
  */
-func RangeAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerThreadId {
-	ownershipDecision := make(map[*TopicAndPartition]*ConsumerThreadId)
+func RangeAssignor(context *AssignmentContext) map[TopicAndPartition]*ConsumerThreadId {
+	ownershipDecision := make(map[TopicAndPartition]*ConsumerThreadId)
 
 	for topic, consumerThreadIds := range context.MyTopicThreadIds {
 		consumersForTopic := context.ConsumersForTopic[topic]
@@ -130,7 +130,7 @@ func RangeAssignor(context *AssignmentContext) map[*TopicAndPartition]*ConsumerT
 				for i := startPart; i < startPart+nParts; i++ {
 					partition := partitionsForTopic[i]
 					Logger.Printf("%s attempting to claim partition %d", consumerThreadId, partition)
-					ownershipDecision[&TopicAndPartition{ Topic: topic, Partition: partition, }] = consumerThreadId
+					ownershipDecision[TopicAndPartition{ Topic: topic, Partition: partition, }] = consumerThreadId
 				}
 			}
 		}

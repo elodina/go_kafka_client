@@ -286,6 +286,35 @@ func GetOffsetForTopicPartition(zkConnection *zk.Conn, group string, topicPartit
 	return int64(offsetNum), err
 }
 
+func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int, consumerThreadId *ConsumerThreadId) (bool, error) {
+	pathToOwn := fmt.Sprintf("%s/%d", NewZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
+	_, err := zkConnection.Create(pathToOwn, []byte(consumerThreadId.String()), 0, zk.WorldACL(zk.PermAll))
+	if (err != nil) {
+		if (err == zk.ErrNodeExists) {
+			Logger.Printf("waiting for the partition ownership to be deleted: %d\n", partition)
+			return false, nil
+		} else {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func DeletePartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int) error {
+	pathToDelete := fmt.Sprintf("%s/%d", NewZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
+	_, stat, err := zkConnection.Get(pathToDelete)
+	if (err != nil) {
+		return err
+	}
+	err = zkConnection.Delete(pathToDelete, stat.Version)
+	if (err != nil) {
+		return err
+	}
+
+	return nil
+}
+
 func UpdateRecord(zkConnection *zk.Conn, pathToCreate string, dataToWrite []byte) error {
 	Logger.Printf("Trying to updated entry at path %s", pathToCreate)
 	_, stat, _ := zkConnection.Get(pathToCreate)

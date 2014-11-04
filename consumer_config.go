@@ -59,7 +59,7 @@ type ConsumerConfig struct {
 	FetchWaitMaxMs int32
 
 	/** backoff time between retries during rebalance */
-	RebalanceBackoffMs int32
+	RebalanceBackoffMs time.Duration
 
 	/** backoff time to refresh the leader of a partition after it loses the current leader */
 	RefreshLeaderBackoff time.Duration
