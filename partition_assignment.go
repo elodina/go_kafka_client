@@ -151,7 +151,7 @@ type AssignmentContext struct {
 func NewAssignmentContext(group string, consumerId string, excludeInternalTopics bool, zkConnection *zk.Conn) *AssignmentContext {
 	topicCount, _ := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
-	topics := make([]string, len(myTopicThreadIds))
+	topics := make([]string, 0)
 	for topic, _ := range myTopicThreadIds {
 		topics = append(topics, topic)
 	}
