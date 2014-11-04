@@ -220,24 +220,38 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 	})
 }
 
+func (m *consumerFetcherManager) addPartitionsWithError(partitions []*TopicAndPartition) {
+	Logger.Println("Adding partitions with error")
+	InLock(&m.lock, func() {
+		if m.partitionMap != nil {
+			for _, topicAndPartition := range partitions {
+				exists := false
+				for _, noLeaderPartition := range m.noLeaderPartitions {
+					if *topicAndPartition == *noLeaderPartition {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					m.noLeaderPartitions = append(m.noLeaderPartitions, topicAndPartition)
+				}
+			}
+			m.leaderCond.Broadcast()
+		}
+	})
+}
+
 func (m *consumerFetcherManager) getFetcherId(topic string, partitionId int) int {
 	return int(math.Abs(float64(31 * Hash(topic) + partitionId))) % int(m.config.NumConsumerFetchers)
 }
 
-//TODO keysToBeRemoved is not necessary
 func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 	InLock(&m.mapLock, func() {
-		keysToBeRemoved := make([]BrokerAndFetcherId, len(m.fetcherRoutineMap))
-		index := 0
 		for key, fetcher := range m.fetcherRoutineMap {
 			if fetcher.PartitionCount() <= 0 {
 				fetcher.Close()
-				keysToBeRemoved[index] = key
-				index++
+				delete(m.fetcherRoutineMap, key)
 			}
-		}
-		for i := 0; i < index; i++ {
-			delete(m.fetcherRoutineMap, keysToBeRemoved[i])
 		}
 	})
 }
@@ -390,7 +404,11 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 
 	if len(partitionsWithError) > 0 {
 		Logger.Println("Handling partitions with error")
-		//TODO handle partitions with errors
+		partitionsWithErrorSet := make([]*TopicAndPartition, 0, len(partitionsWithError))
+		for k := range partitionsWithError {
+			partitionsWithErrorSet = append(partitionsWithErrorSet, &k)
+		}
+		f.handlePartitionsWithErrors(partitionsWithErrorSet)
 	}
 }
 
@@ -414,6 +432,19 @@ func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, 
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition TopicAndPartition) int64 {
 	//TODO implement
 	return 0
+}
+
+func (f *consumerFetcherRoutine) handlePartitionsWithErrors(partitions []*TopicAndPartition) {
+	f.removePartitions(partitions)
+	f.manager.addPartitionsWithError(partitions)
+}
+
+func (f *consumerFetcherRoutine) removePartitions(partitions []*TopicAndPartition) {
+	InLock(&f.partitionMapLock, func() {
+		for _, topicAndPartition := range partitions {
+			delete(f.partitionMap, *topicAndPartition)
+		}
+	})
 }
 
 func (f *consumerFetcherRoutine) fetchLoop() {
