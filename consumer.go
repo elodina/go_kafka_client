@@ -197,7 +197,7 @@ func (c *Consumer) rebalance(_ zk.Event) {
 			topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.group, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
 			if (err != nil) {
 				Logger.Println(err)
-				time.Sleep(time.Millisecond * c.config.RebalanceBackoffMs)
+				time.Sleep(c.config.RebalanceBackoffMs)
 				continue
 			}
 			Logger.Printf("%v\n", topicPerThreadIdsMap)
@@ -205,7 +205,7 @@ func (c *Consumer) rebalance(_ zk.Event) {
 			brokers, err := GetAllBrokersInCluster(c.zkConn)
 			if (err != nil) {
 				Logger.Println(err)
-				time.Sleep(time.Millisecond * c.config.RebalanceBackoffMs)
+				time.Sleep(c.config.RebalanceBackoffMs)
 				continue
 			}
 			Logger.Printf("%v\n", brokers)
@@ -215,7 +215,7 @@ func (c *Consumer) rebalance(_ zk.Event) {
 
 			assignmentContext := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
 			partitionOwnershipDecision := partitionAssignor(assignmentContext)
-			topicPartitions := make([]*TopicAndPartition, len(partitionOwnershipDecision))
+			topicPartitions := make([]*TopicAndPartition, 0)
 			for topicPartition, _ := range partitionOwnershipDecision {
 				topicPartitions = append(topicPartitions, &topicPartition)
 			}
@@ -242,7 +242,7 @@ func (c *Consumer) rebalance(_ zk.Event) {
 				c.topicRegistry = currentTopicRegistry
 				//TODO: update fetcher
 			} else {
-				time.Sleep(time.Millisecond * c.config.RebalanceBackoffMs)
+				time.Sleep(c.config.RebalanceBackoffMs)
 				continue
 			}
 

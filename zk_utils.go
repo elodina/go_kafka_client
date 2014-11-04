@@ -129,8 +129,7 @@ func GetConsumersInGroupWatcher(zkConnection *zk.Conn, group string) (<- chan zk
 }
 
 func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTopics bool) (map[string][]*ConsumerThreadId, error) {
-	dirs := NewZKGroupDirs(group)
-	consumers, _, err := zkConnection.Children(dirs.ConsumerRegistryDir)
+	consumers, err := GetConsumersInGroup(zkConnection, group)
 	if (err != nil) {
 		return nil, err
 	}
@@ -140,10 +139,16 @@ func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTo
 		if (err != nil) {
 			return nil, err
 		}
-		consumersPerTopicMap = topicsToNumStreams.GetConsumerThreadIdsPerTopic()
-		for topic := range consumersPerTopicMap {
-			sort.Sort(ByName(consumersPerTopicMap[topic]))
+
+		for topic, threadIds := range topicsToNumStreams.GetConsumerThreadIdsPerTopic() {
+			for _, threadId := range threadIds {
+				consumersPerTopicMap[topic] = append(consumersPerTopicMap[topic], threadId)
+			}
 		}
+	}
+
+	for topic := range consumersPerTopicMap {
+		sort.Sort(ByName(consumersPerTopicMap[topic]))
 	}
 
 	return consumersPerTopicMap, nil
