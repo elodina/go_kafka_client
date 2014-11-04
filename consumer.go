@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"fmt"
 	"github.com/Shopify/sarama"
 )
 
@@ -39,6 +40,8 @@ type Consumer struct {
 	rebalanceLock sync.Mutex
 	isShuttingdown bool
 	topicThreadIdsAndChannels map[*TopicAndThreadId]chan *sarama.FetchResponseBlock
+	topicRegistry map[string]map[int]*PartitionTopicInfo
+	checkPointedZkOffsets map[*TopicAndPartition]int64
 }
 
 type Message struct {
@@ -183,7 +186,7 @@ func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
 func (c *Consumer) rebalance(_ zk.Event) {
 	partitionAssignor := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
-	if (c.isShuttingdown) {
+	if (!c.isShuttingdown) {
 		var success = false
 		var err error
 		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
@@ -206,7 +209,24 @@ func (c *Consumer) rebalance(_ zk.Event) {
 
 			assignmentContext := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
 			partitionOwnershipDecision := partitionAssignor(assignmentContext)
-			Logger.Printf("%v\n", partitionOwnershipDecision)
+			topicPartitions := make([]*TopicAndPartition, len(partitionOwnershipDecision))
+			for topicPartition, _ := range partitionOwnershipDecision {
+				topicPartitions = append(topicPartitions, topicPartition)
+			}
+
+			offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+
+			if (c.isShuttingdown || err != nil) {
+				return
+			} else {
+				for _, topicPartition := range topicPartitions {
+					offset := offsetsFetchResponse.Blocks[topicPartition.Topic][int32(topicPartition.Partition)].Offset
+					threadId := partitionOwnershipDecision[topicPartition]
+					c.addPartitionTopicInfo(c.topicRegistry, topicPartition, offset, threadId)
+				}
+			}
+
+
 
 			success = true
 		}
@@ -215,4 +235,58 @@ func (c *Consumer) rebalance(_ zk.Event) {
 			panic(err)
 		}
 	}
+}
+
+func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.OffsetFetchResponse, error) {
+	if (len(topicPartitions) == 0) {
+		return &sarama.OffsetFetchResponse{}, nil
+	} else {
+		blocks := make(map[string]map[int32]*sarama.OffsetFetchResponseBlock)
+		if (c.config.OffsetsStorage == "zookeeper") {
+			for _, topicPartition := range topicPartitions {
+				offset, err := GetOffsetForTopicPartition(c.zkConn, c.group, topicPartition)
+				_, exists := blocks[topicPartition.Topic]
+				if (!exists) {
+					blocks[topicPartition.Topic] = make(map[int32]*sarama.OffsetFetchResponseBlock)
+				}
+				if (err != nil) {
+					return nil, err
+				} else {
+					blocks[topicPartition.Topic][int32(topicPartition.Partition)] = &sarama.OffsetFetchResponseBlock {
+						Offset: offset,
+						Metadata: "",
+						Err: sarama.NoError,
+					}
+				}
+			}
+		} else {
+			panic(fmt.Sprintf("Offset storage '%s' is not supported", c.config.OffsetsStorage))
+		}
+
+		return &sarama.OffsetFetchResponse{ Blocks: blocks, }, nil
+	}
+}
+
+func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int]*PartitionTopicInfo,
+										 topicPartition *TopicAndPartition, offset int64,
+										 consumerThreadId *ConsumerThreadId) {
+	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
+	if (!exists) {
+		partTopicInfoMap = make(map[int]*PartitionTopicInfo)
+		currentTopicRegistry[topicPartition.Topic] = partTopicInfoMap
+	}
+
+	//TODO: queue for specific threadId should be retrieved here and passed to partTopicInfo
+
+	partTopicInfo := &PartitionTopicInfo{
+		Topic: topicPartition.Topic,
+		Partition: topicPartition.Partition,
+		ConsumedOffset: offset,
+		FetchedOffset: offset,
+		FetchSize: int(c.config.FetchMessageMaxBytes),
+		ClientId: c.config.ConsumerId,
+	}
+
+	partTopicInfoMap[topicPartition.Partition] = partTopicInfo
+	c.checkPointedZkOffsets[topicPartition] = offset
 }

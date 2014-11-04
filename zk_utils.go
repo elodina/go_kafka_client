@@ -271,6 +271,21 @@ func GetTopicsWatcher(zkConnection *zk.Conn) (watcher <- chan zk.Event, err erro
 	return
 }
 
+func GetOffsetForTopicPartition(zkConnection *zk.Conn, group string, topicPartition *TopicAndPartition) (int64, error) {
+	dirs := NewZKGroupTopicDirs(group, topicPartition.Topic)
+	offset, _, err := zkConnection.Get(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, topicPartition.Partition))
+	if (err != nil) {
+		return -1, err
+	}
+
+	offsetNum, err := strconv.Atoi(string(offset))
+	if (err != nil) {
+		return -1, err
+	}
+
+	return int64(offsetNum), err
+}
+
 func UpdateRecord(zkConnection *zk.Conn, pathToCreate string, dataToWrite []byte) error {
 	Logger.Printf("Trying to updated entry at path %s", pathToCreate)
 	_, stat, _ := zkConnection.Get(pathToCreate)
