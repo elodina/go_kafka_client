@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"github.com/Shopify/sarama"
 )
 
 type Consumer struct {
@@ -37,6 +38,7 @@ type Consumer struct {
 	zkConn          *zk.Conn
 	rebalanceLock sync.Mutex
 	isShuttingdown bool
+	topicThreadIdsAndChannels map[*TopicAndThreadId]chan *sarama.FetchResponseBlock
 }
 
 type Message struct {
@@ -56,6 +58,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		messages : make(chan *Message),
 		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
+		topicThreadIdsAndChannels : make(map[*TopicAndThreadId]chan *sarama.FetchResponseBlock),
 	}
 
 	c.addShutdownHook()

@@ -104,3 +104,8 @@ type BrokerAndFetcherId struct {
 	Broker *BrokerInfo
 	FetcherId int
 }
+
+type TopicAndThreadId struct {
+	Topic string
+	ThreadId *ConsumerThreadId
+}
