@@ -235,7 +235,7 @@ func CreateOrUpdatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate str
 		Warn("zk", err.Error())
 		if (zk.ErrNodeExists == err) {
 			if (len(data) > 0) {
-				Debugf("Trying to update existing node %s", pathToCreate)
+				Debugf("zk", "Trying to update existing node %s", pathToCreate)
 				return UpdateRecord(zkConnection, pathToCreate, data)
 			} else {
 				return nil
