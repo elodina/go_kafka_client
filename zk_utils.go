@@ -310,7 +310,7 @@ func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, 
 		}
 	}
 
-	Logger.Printf("Successfully claimed partitions for %s")
+	Logger.Printf("Successfully claimed partition %d in topic %s for %s", partition, topic, consumerThreadId)
 
 	return true, nil
 }

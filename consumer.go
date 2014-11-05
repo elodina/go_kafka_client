@@ -318,7 +318,7 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 
 func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]*ConsumerThreadId) bool {
 	Logger.Printf("Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
-	successfullyOwnedPartitions := make(map[string]int)
+	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, consumerThreadId := range partitionOwnershipDecision {
 		success, err := ClaimPartitionOwnership(c.zkConn, c.group, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
 		if (err != nil) {
@@ -326,7 +326,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 		}
 		if (success) {
 			Logger.Printf("Consumer %s, successfully claimed partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
-			successfullyOwnedPartitions[topicPartition.Topic] = topicPartition.Partition
+			successfullyOwnedPartitions = append(successfullyOwnedPartitions, &topicPartition)
 		} else {
 			Logger.Printf("Consumer %s failed to claim partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
 		}
@@ -334,8 +334,8 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 
 	if (len(partitionOwnershipDecision) > len(successfullyOwnedPartitions)) {
 		Logger.Printf("Consumer %s failed to reflect all partitions %d of %d", c.config.ConsumerId, len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
-		for topic, partition := range successfullyOwnedPartitions {
-			DeletePartitionOwnership(c.zkConn, c.group, topic, partition)
+		for _, topicPartition := range successfullyOwnedPartitions {
+			DeletePartitionOwnership(c.zkConn, c.group, topicPartition.Topic, topicPartition.Partition)
 		}
 		return false
 	}
