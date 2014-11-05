@@ -31,45 +31,45 @@ import (
 
 var Logger, _ = log.LoggerFromConfigAsFile("seelog.xml")
 
-func Trace(contextName string, message string) {
+func Trace(contextName string, message interface{}) {
 	Logger.Trace(fmt.Sprintf("[%s] %s", contextName, message))
 }
-func Tracef(contextName string, message string, params ...interface{}) {
+func Tracef(contextName string, message interface{}, params ...interface{}) {
 	Logger.Tracef(fmt.Sprintf("[%s] %s", contextName, message), params...)
 }
 
-func Debug(contextName string, message string) {
+func Debug(contextName string, message interface{}) {
 	Logger.Debug(fmt.Sprintf("[%s] %s", contextName, message))
 }
-func Debugf(contextName string, message string, params ...interface{}) {
+func Debugf(contextName string, message interface{}, params ...interface{}) {
 	Logger.Debugf(fmt.Sprintf("[%s] %s", contextName, message), params...)
 }
 
-func Info(contextName string, message string) {
+func Info(contextName string, message interface{}) {
 	Logger.Info(fmt.Sprintf("[%s] %s", contextName, message))
 }
-func Infof(contextName string, message string, params ...interface{}) {
+func Infof(contextName string, message interface{}, params ...interface{}) {
 	Logger.Infof(fmt.Sprintf("[%s] %s", contextName, message), params...)
 }
 
-func Warn(contextName string, message string) {
+func Warn(contextName string, message interface{}) {
 	Logger.Warn(fmt.Sprintf("[%s] %s", contextName, message))
 }
-func Warnf(contextName string, message string, params ...interface{}) {
+func Warnf(contextName string, message interface{}, params ...interface{}) {
 	Logger.Warnf(fmt.Sprintf("[%s] %s", contextName, message), params...)
 }
 
-func Error(contextName string, message string) {
+func Error(contextName string, message interface{}) {
 	Logger.Error(fmt.Sprintf("[%s] %s", contextName, message))
 }
-func Errorf(contextName string, message string, params ...interface{}) {
+func Errorf(contextName string, message interface{}, params ...interface{}) {
 	Logger.Errorf(fmt.Sprintf("[%s] %s", contextName, message), params...)
 }
 
-func Critical(contextName string, message string) {
+func Critical(contextName string, message interface{}) {
 	Logger.Critical(fmt.Sprintf("[%s] %s", contextName, message))
 }
-func Criticalf(contextName string, message string, params ...interface{}) {
+func Criticalf(contextName string, message interface{}, params ...interface{}) {
 	Logger.Criticalf(fmt.Sprintf("[%s] %s", contextName, message), params...)
 }
 
