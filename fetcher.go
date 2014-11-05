@@ -96,16 +96,16 @@ func (m *consumerFetcherManager) FindLeaders() {
 			_ = leaderForPartitions
 			InLock(&m.lock, func() {
 				for len(m.noLeaderPartitions) == 0 {
-					Logger.Println("No partition for leader election")
+					Info(m.config.ConsumerId, "No partition for leader election")
 					m.leaderCond.Wait()
 				}
 
-				Logger.Printf("Partitions without leader %v\n", m.noLeaderPartitions)
+				Infof(m.config.ConsumerId, "Partitions without leader %v\n", m.noLeaderPartitions)
 				brokers, err := GetAllBrokersInCluster(m.zkConn)
 				if err != nil {
 					panic(err)
 				}
-				topicsMetadata := fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
+				topicsMetadata := m.fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
 				for _, meta := range topicsMetadata {
 					topic := meta.Name
 					for _, partition := range meta.Partitions {
@@ -143,7 +143,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 	}
 }
 
-func fetchTopicMetadata(topics []string, brokers []*BrokerInfo, clientId string) *sarama.MetadataResponse {
+func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*BrokerInfo, clientId string) *sarama.MetadataResponse {
 	shuffledBrokers := make([]*BrokerInfo, len(brokers))
 	ShuffleArray(brokers, shuffledBrokers)
 	for i := 0; i < len(shuffledBrokers); i++ {
@@ -151,7 +151,7 @@ func fetchTopicMetadata(topics []string, brokers []*BrokerInfo, clientId string)
 		broker := sarama.NewBroker(brokerAddr)
 		err := broker.Open(nil)
 		if err != nil {
-			Logger.Printf("Could not fetch topic metadata from broker %s\n", brokerAddr)
+			Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
 			continue
 		}
 		defer broker.Close()
@@ -159,7 +159,7 @@ func fetchTopicMetadata(topics []string, brokers []*BrokerInfo, clientId string)
 		request := sarama.MetadataRequest{Topics: topics}
 		response, err := broker.GetMetadata(clientId, &request)
 		if err != nil {
-			Logger.Printf("Could not fetch topic metadata from broker %s\n", brokerAddr)
+			Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
 			continue
 		}
 		return response
@@ -221,7 +221,7 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 }
 
 func (m *consumerFetcherManager) addPartitionsWithError(partitions []*TopicAndPartition) {
-	Logger.Println("Adding partitions with error")
+	Info(m.config.ConsumerId, "Adding partitions with error")
 	InLock(&m.lock, func() {
 		if m.partitionMap != nil {
 			for _, topicAndPartition := range partitions {
@@ -269,7 +269,7 @@ func (m *consumerFetcherManager) CloseAllFetchers() {
 }
 
 func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
-	Logger.Printf("Stop all current fetchers and switch topic to %s\n", newTopic)
+	Infof(m.config.ConsumerId, "Stop all current fetchers and switch topic to %s\n", newTopic)
 }
 
 func (m *consumerFetcherManager) Close() <-chan bool {
@@ -366,7 +366,7 @@ func (f *consumerFetcherRoutine) PartitionCount() int {
 }
 
 func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchRequest) {
-	Logger.Printf("Started processing fetch request %+v\n", request)
+	Infof(f.manager.config.ConsumerId, "Started processing fetch request %+v\n", request)
 	partitionsWithError := make(map[TopicAndPartition]bool)
 
 	saramaBroker := sarama.NewBroker(f.brokerAddr)
@@ -400,10 +400,10 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 					case sarama.OffsetOutOfRange: {
 						newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
 						f.partitionMap[topicAndPartition] = newOffset
-						Logger.Printf("Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
+						Infof(f.manager.config.ConsumerId, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
 					}
 					default: {
-						Logger.Printf("Error for partition %s. Removing", topicAndPartition)
+						Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing", topicAndPartition)
 						partitionsWithError[topicAndPartition] = true
 					}
 					}
@@ -413,7 +413,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	})
 
 	if len(partitionsWithError) > 0 {
-		Logger.Println("Handling partitions with error")
+		Info(f.manager.config.ConsumerId, "Handling partitions with error")
 		partitionsWithErrorSet := make([]*TopicAndPartition, 0, len(partitionsWithError))
 		for k := range partitionsWithError {
 			partitionsWithErrorSet = append(partitionsWithErrorSet, &k)
@@ -431,7 +431,7 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 }
 
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {
-	Logger.Printf("Error in fetch %v. Possible cause: %s\n", request, err)
+	Infof(f.manager.config.ConsumerId, "Error in fetch %v. Possible cause: %s\n", request, err)
 	InLock(&f.partitionMapLock, func() {
 		for k, _ := range f.partitionMap {
 			partitionsWithError[k] = true
@@ -491,11 +491,11 @@ func (f *consumerFetcherRoutine) fetchLoop() {
 			}
 		}
 			//		case topic := <-f.topicSwitch: {
-			//			Logger.Printf("switch topic to %s\n", topic)
+			//			Infof("switch topic to %s\n", topic)
 			//			f.topic = topic
 			//		}
 		case <-f.close: {
-			Logger.Printf("Closing fetcher thread %s", f.id)
+			Infof("Closing fetcher thread %s", f.id)
 			close(messageChannel)
 			time.Sleep(3 * time.Second)
 			f.closeFinished <- true

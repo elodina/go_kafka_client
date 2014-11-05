@@ -40,7 +40,7 @@ var (
 )
 
 func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
-	Logger.Printf("Getting all brokers in cluster\n")
+	Debug("zk", "Getting all brokers in cluster")
 	brokerIds, _, err := zkConnection.Children(BrokerIdsPath)
 	if (err != nil) {
 		return nil, err
@@ -62,7 +62,7 @@ func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
 }
 
 func GetAllBrokersInClusterWatcher(zkConnection *zk.Conn) (<- chan zk.Event, error) {
-	Logger.Printf("Subscribing for events from broker registry\n")
+	Debug("zk", "Subscribing for events from broker registry")
 	_, _, watcher, err := zkConnection.ChildrenW(BrokerIdsPath)
 	if (err != nil) {
 		return nil, err
@@ -72,7 +72,7 @@ func GetAllBrokersInClusterWatcher(zkConnection *zk.Conn) (<- chan zk.Event, err
 }
 
 func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
-	Logger.Printf("Getting info for broker %d\n", brokerId)
+	Debugf("zk", "Getting info for broker %d", brokerId)
 	pathToBroker := fmt.Sprintf("%s/%d", BrokerIdsPath, brokerId)
 	data, _, zkError := zkConnection.Get(pathToBroker)
 	if (zkError != nil) {
@@ -86,20 +86,20 @@ func GetBrokerInfo(zkConnection *zk.Conn, brokerId int32) (*BrokerInfo, error) {
 }
 
 func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, consumerInfo *ConsumerInfo) error {
-	Logger.Printf("Trying to register consumer %s at group %s in Zookeeper\n", consumerId, group)
+	Debugf("zk", "Trying to register consumer %s at group %s in Zookeeper", consumerId, group)
 	pathToConsumer := fmt.Sprintf("%s/%s", NewZKGroupDirs(group).ConsumerRegistryDir, consumerId)
 	data, mappingError := json.Marshal(consumerInfo)
 	if mappingError != nil {
 		return mappingError
 	}
 
-	Logger.Printf("Path: %s\n", pathToConsumer)
+	Debugf("zk", "Path: %s", pathToConsumer)
 
 	return CreateOrUpdatePathParentMayNotExist(zkConnection, pathToConsumer, data)
 }
 
 func DeregisterConsumer(zkConnection *zk.Conn, group string, consumerId string) error {
-	Logger.Printf("Trying to deregister consumer %s from group %s", consumerId, group)
+	Debugf("zk", "Trying to deregister consumer %s from group %s", consumerId, group)
 	pathToConsumer := fmt.Sprintf("%s/%s", NewZKGroupDirs(group).ConsumerRegistryDir, consumerId)
 	_, stat, err := zkConnection.Get(pathToConsumer)
 	if (err != nil) {
@@ -109,7 +109,7 @@ func DeregisterConsumer(zkConnection *zk.Conn, group string, consumerId string) 
 }
 
 func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) {
-	Logger.Printf("Getting consumers in group %s\n", group)
+	Debugf("zk", "Getting consumers in group %s", group)
 	consumers, _, err := zkConnection.Children(NewZKGroupDirs(group).ConsumerRegistryDir)
 	if (err != nil) {
 		return nil, err
@@ -119,7 +119,7 @@ func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) 
 }
 
 func GetConsumersInGroupWatcher(zkConnection *zk.Conn, group string) (<- chan zk.Event, error) {
-	Logger.Printf("Getting consumers in group %s\n", group)
+	Debugf("zk", "Getting consumers in group %s", group)
 	_, _, watcher, err := zkConnection.ChildrenW(NewZKGroupDirs(group).ConsumerRegistryDir)
 	if (err != nil) {
 		return nil, err
@@ -170,7 +170,7 @@ func GetPartitionsForTopics(zkConnection *zk.Conn, topics []string) (map[string]
 }
 
 func GetReplicaAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[TopicAndPartition][]int, error) {
-	Logger.Printf("Trying to get replica assignments for topics %v\n", topics)
+	Debugf("zk", "Trying to get replica assignments for topics %v", topics)
 	result := make(map[TopicAndPartition][]int)
 	for _, topic := range topics {
 		topicInfo, err := GetTopicInfo(zkConnection, topic)
@@ -194,7 +194,7 @@ func GetReplicaAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map
 }
 
 func GetPartitionAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[string]map[int][]int, error) {
-	Logger.Printf("Trying to get partition assignments for topics %v\n", topics)
+	Debugf("zk", "Trying to get partition assignments for topics %v", topics)
 	result := make(map[string]map[int][]int)
 	for _, topic := range topics {
 		topicInfo, err := GetTopicInfo(zkConnection, topic)
@@ -229,12 +229,13 @@ func GetTopicInfo(zkConnection *zk.Conn, topic string) (*TopicInfo, error) {
 }
 
 func CreateOrUpdatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate string, data []byte) error {
-	Logger.Printf("Trying to create path %s in Zookeeper", pathToCreate)
+	Debugf("zk", "Trying to create path %s in Zookeeper", pathToCreate)
 	_, err := zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 	if (err != nil) {
-		Logger.Println(err)
+		Warn("zk", err.Error())
 		if (zk.ErrNodeExists == err) {
 			if (len(data) > 0) {
+				Debugf("Trying to update existing node %s", pathToCreate)
 				return UpdateRecord(zkConnection, pathToCreate, data)
 			} else {
 				return nil
@@ -243,12 +244,13 @@ func CreateOrUpdatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate str
 			parent, _ := path.Split(pathToCreate)
 			err = CreateOrUpdatePathParentMayNotExist(zkConnection, parent[:len(parent)-1], make([]byte, 0))
 			if (err != nil) {
+				Error("zk", err.Error())
 				return err
 			} else {
-				Logger.Printf("Successfully created path %s", parent[:len(parent)-1])
+				Debugf("zk", "Successfully created path %s", parent[:len(parent)-1])
 			}
 
-			Logger.Printf("Trying again to create path %s in Zookeeper", pathToCreate)
+			Debugf("zk", "Trying again to create path %s in Zookeeper", pathToCreate)
 			_, err = zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 		}
 	}
@@ -302,15 +304,15 @@ func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, 
 	err := CreateOrUpdatePathParentMayNotExist(zkConnection, pathToOwn, []byte(consumerThreadId.String()))
 	if (err != nil) {
 		if (err == zk.ErrNodeExists) {
-			Logger.Printf("waiting for the partition ownership to be deleted: %d\n", partition)
+			Debugf("zk", "waiting for the partition ownership to be deleted: %d", partition)
 			return false, nil
 		} else {
-			Logger.Println(err)
+			Error("zk", err.Error())
 			return false, err
 		}
 	}
 
-	Logger.Printf("Successfully claimed partition %d in topic %s for %s", partition, topic, consumerThreadId)
+	Debugf("zk", "Successfully claimed partition %d in topic %s for %s", partition, topic, consumerThreadId)
 
 	return true, nil
 }
@@ -330,7 +332,7 @@ func DeletePartitionOwnership(zkConnection *zk.Conn, group string, topic string,
 }
 
 func UpdateRecord(zkConnection *zk.Conn, pathToCreate string, dataToWrite []byte) error {
-	Logger.Printf("Trying to updated entry at path %s", pathToCreate)
+	Debugf("zk", "Trying to update path %s", pathToCreate)
 	_, stat, _ := zkConnection.Get(pathToCreate)
 	_, err := zkConnection.Set(pathToCreate, dataToWrite, stat.Version)
 

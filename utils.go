@@ -19,17 +19,59 @@ package go_kafka_client
 
 import (
 	"github.com/jimlawless/cfg"
-	"os"
-	"log"
 	"testing"
 	"reflect"
 	"math/rand"
 	"sync"
 	"container/ring"
 	"hash/fnv"
+	log "github.com/cihub/seelog"
+	"fmt"
 )
 
-var Logger = log.New(os.Stdout, "[stealthly] ", log.LstdFlags)
+var Logger, _ = log.LoggerFromConfigAsFile("seelog.xml")
+
+func Trace(contextName string, message string) {
+	Logger.Trace(fmt.Sprintf("[%s] %s", contextName, message))
+}
+func Tracef(contextName string, message string, params ...interface{}) {
+	Logger.Tracef(fmt.Sprintf("[%s] %s", contextName, message), params...)
+}
+
+func Debug(contextName string, message string) {
+	Logger.Debug(fmt.Sprintf("[%s] %s", contextName, message))
+}
+func Debugf(contextName string, message string, params ...interface{}) {
+	Logger.Debugf(fmt.Sprintf("[%s] %s", contextName, message), params...)
+}
+
+func Info(contextName string, message string) {
+	Logger.Info(fmt.Sprintf("[%s] %s", contextName, message))
+}
+func Infof(contextName string, message string, params ...interface{}) {
+	Logger.Infof(fmt.Sprintf("[%s] %s", contextName, message), params...)
+}
+
+func Warn(contextName string, message string) {
+	Logger.Warn(fmt.Sprintf("[%s] %s", contextName, message))
+}
+func Warnf(contextName string, message string, params ...interface{}) {
+	Logger.Warnf(fmt.Sprintf("[%s] %s", contextName, message), params...)
+}
+
+func Error(contextName string, message string) {
+	Logger.Error(fmt.Sprintf("[%s] %s", contextName, message))
+}
+func Errorf(contextName string, message string, params ...interface{}) {
+	Logger.Errorf(fmt.Sprintf("[%s] %s", contextName, message), params...)
+}
+
+func Critical(contextName string, message string) {
+	Logger.Critical(fmt.Sprintf("[%s] %s", contextName, message))
+}
+func Criticalf(contextName string, message string, params ...interface{}) {
+	Logger.Criticalf(fmt.Sprintf("[%s] %s", contextName, message), params...)
+}
 
 func LoadConfiguration(path string) (map[string]string, error) {
 	cfgMap := make(map[string]string)
