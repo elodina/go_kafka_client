@@ -151,24 +151,22 @@ func (c *TestKafkaCluster) stopTestServerWindows() {
 func createServerConfig(id int, port int, zookeeperPort int, serverPath string) string {
 	fileName := "server.properties"
 
-	contents := fmt.Sprintf(`
-	broker.id=%d
-	port=%d
-	num.network.threads=2
-	num.io.threads=2
-	socket.send.buffer.bytes=1048576
-	socket.receive.buffer.bytes=1048576
-	socket.request.max.bytes=104857600
-	log.dirs=/tmp/kafka-logs
-	num.partitions=2
-	log.flush.interval.messages=10000
-	log.flush.interval.ms=1000
-	log.retention.hours=168
-	log.segment.bytes=536870912
-	log.cleanup.interval.mins=1
-	zookeeper.connect=localhost:%d
-	zookeeper.connection.timeout.ms=1000000
-	`, id, port, zookeeperPort)
+	contents := fmt.Sprintf(`broker.id=%d
+port=%d
+num.network.threads=2
+num.io.threads=2
+socket.send.buffer.bytes=1048576
+socket.receive.buffer.bytes=1048576
+socket.request.max.bytes=104857600
+log.dirs=/tmp/kafka-logs
+num.partitions=2
+log.flush.interval.messages=10000
+log.flush.interval.ms=1000
+log.retention.hours=168
+log.segment.bytes=536870912
+log.cleanup.interval.mins=1
+zookeeper.connect=localhost:%d
+zookeeper.connection.timeout.ms=1000000`, id, port, zookeeperPort)
 
 	configPath := fmt.Sprintf("%s/%s", serverPath, fileName)
 	err := ioutil.WriteFile(configPath, []byte(contents), 0700)

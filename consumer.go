@@ -116,7 +116,7 @@ func (c *Consumer) addShutdownHook() {
 }
 
 func (c *Consumer) connectToZookeeper() {
-	Logger.Println("Connecting to zk")
+	Logger.Printf("Connecting to ZK at %s\n", c.config.ZookeeperConnect)
 	if conn, _, err := zk.Connect(c.config.ZookeeperConnect, c.config.ZookeeperTimeout); err != nil {
 		panic(err)
 	} else {

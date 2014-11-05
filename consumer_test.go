@@ -21,11 +21,14 @@ import (
 	"testing"
 	"github.com/samuel/go-zookeeper/zk"
 	"github.com/stealthly/go-kafka/producer"
+	"fmt"
 )
 
 func TestConsumer(t *testing.T) {
 	WithKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-		consumer := NewConsumer(DefaultConsumerConfig())
+		config := DefaultConsumerConfig()
+		config.ZookeeperConnect = []string{fmt.Sprintf("localhost:%d", zkServer.Port)}
+		consumer := NewConsumer(config)
 		AssertNot(t, consumer.zkConn, nil)
 
 		kafkaProducer := producer.NewKafkaProducer("test", []string{kafkaServer.Addr()}, nil)
