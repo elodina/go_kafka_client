@@ -33,7 +33,7 @@ var SmallestOffset = "smallest"
 
 type Consumer struct {
 	config        *ConsumerConfig
-	topic          string
+//	topic          string
 //	group          string
 	zookeeper      []string
 	fetcher         *consumerFetcherManager
@@ -104,9 +104,7 @@ func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string
 			Timestamp : time.Now().Unix(),
 		})
 
-	fmt.Println("Reinitializing consumer")
 	c.ReinitializeConsumer(staticTopicCount, channelsAndStreams)
-	fmt.Println("Reinitialized")
 
 	return c.topicChannels
 }
@@ -143,12 +141,10 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsA
 		}
 		topicToStreams[topic] = append(topicToStreams[topic], channelStream.Messages)
 	}
+	c.topicChannels = topicToStreams
 
 	c.subscribeForChanges(c.config.Groupid)
 	//TODO more subscriptions
-
-	//	cc, e := GetConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
-	//	Logger.Println(cc, e)
 
 	c.rebalance()
 }
@@ -175,6 +171,17 @@ func (c *Consumer) Close() <-chan bool {
 	return c.closeFinished
 }
 
+func (c *Consumer) updateFetcher() {
+	allPartitionInfos := make([]*PartitionTopicInfo, 0)
+	for _, partitionAndInfo := range c.topicRegistry {
+		for _, partitionInfo := range partitionAndInfo {
+			allPartitionInfos = append(allPartitionInfos, partitionInfo)
+		}
+	}
+
+	c.fetcher.startConnections(allPartitionInfos)
+}
+
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
 	Infof(c.config.ConsumerId, "Acking offset %d for topic %s and partition %d", offset, topic, partition)
 	return nil
@@ -196,25 +203,6 @@ func (c *Consumer) connectToZookeeper() {
 	} else {
 		c.zkConn = conn
 	}
-}
-
-func (c *Consumer) registerInZookeeper() {
-	Info(c.config.ConsumerId, "Registering in zk")
-	subscription := make(map[string]int)
-	subscription[c.topic] = int(c.config.NumConsumerFetchers)
-
-	consumerInfo := &ConsumerInfo{
-		Version : int16(1),
-		Subscription : subscription,
-		Pattern : WhiteListPattern,
-		Timestamp : time.Now().Unix(),
-	}
-
-	if err := RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, consumerInfo); err != nil {
-		panic(err)
-	}
-
-	c.subscribeForChanges(c.config.Groupid)
 }
 
 func (c *Consumer) subscribeForChanges(group string) {
@@ -317,7 +305,7 @@ func (c *Consumer) rebalance() {
 
 			if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
 				c.topicRegistry = currentTopicRegistry
-				//TODO: update fetcher
+				c.updateFetcher()
 			} else {
 				Warnf(c.config.ConsumerId, "Failed to reflect partition ownership for consumer %s", c.config.ConsumerId)
 				time.Sleep(c.config.RebalanceBackoffMs)

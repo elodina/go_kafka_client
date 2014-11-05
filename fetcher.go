@@ -42,6 +42,10 @@ type consumerFetcherManager struct {
 	leaderCond            *sync.Cond
 }
 
+func (m *consumerFetcherManager) String() string {
+	return fmt.Sprintf("%s-manager", m.config.ConsumerId)
+}
+
 func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, fetchInto chan *Message) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config : config,
@@ -51,6 +55,7 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, fetchInt
 		closeFinished : make(chan bool),
 		partitionMap : make(map[TopicAndPartition]*PartitionTopicInfo),
 		fetcherRoutineMap : make(map[BrokerAndFetcherId]*consumerFetcherRoutine),
+		noLeaderPartitions : make([]*TopicAndPartition, 0),
 		leaderFinderStopper : make(chan bool),
 	}
 	manager.leaderCond = sync.NewCond(&manager.lock)
@@ -59,12 +64,11 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, fetchInt
 }
 
 func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo) {
+	Info(m, "Fetcher Manager started")
 	go m.FindLeaders()
 
 	InLock(&m.lock, func() {
 		newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
-		noLeaderPartitions := make([]*TopicAndPartition, len(topicInfos))
-		index := 0
 		for _, info := range topicInfos {
 			topicAndPartition := TopicAndPartition{info.Topic, info.Partition}
 			newPartitionMap[topicAndPartition] = info
@@ -77,12 +81,12 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 				}
 			}
 			if !exists {
-				noLeaderPartitions[index] = &topicAndPartition
-				index++
+				Warnf("FETCHER", "NO LEADER %v", m.noLeaderPartitions)
+				Warnf("FETCHER", "ADDING %v", &topicAndPartition)
+				m.noLeaderPartitions = append(m.noLeaderPartitions, &topicAndPartition)
 			}
 		}
 		m.partitionMap = newPartitionMap
-		m.noLeaderPartitions = append(m.noLeaderPartitions, noLeaderPartitions[:index]...)
 		m.leaderCond.Broadcast()
 	})
 }
@@ -120,6 +124,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 						}
 
 						for i, tp := range m.noLeaderPartitions {
+							//TODO here!
 							if *tp == topicAndPartition && leaderBroker != nil {
 								leaderForPartitions[topicAndPartition] = leaderBroker
 								m.noLeaderPartitions[i] = nil
@@ -145,7 +150,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 
 func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*BrokerInfo, clientId string) *sarama.MetadataResponse {
 	shuffledBrokers := make([]*BrokerInfo, len(brokers))
-	ShuffleArray(brokers, shuffledBrokers)
+	ShuffleArray(&brokers, &shuffledBrokers)
 	for i := 0; i < len(shuffledBrokers); i++ {
 		brokerAddr := fmt.Sprintf("%s:%d", shuffledBrokers[i].Host, shuffledBrokers[i].Port)
 		broker := sarama.NewBroker(brokerAddr)
@@ -301,6 +306,10 @@ type consumerFetcherRoutine struct {
 	fetchStopper     chan bool
 }
 
+func (f *consumerFetcherRoutine) String() string {
+	return f.name
+}
+
 func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerInfo, allPartitionMap map[TopicAndPartition]*PartitionTopicInfo) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
 		manager : m,
@@ -423,6 +432,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 }
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, fetchOffset int64, partitionData *sarama.FetchResponseBlock) {
+	Warn(f, "Processing partition data")
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
 	if partitionTopicInfo.FetchedOffset != fetchOffset {
 		panic(fmt.Sprintf("Offset does not match for partition %s. PartitionTopicInfo offset: %d, fetch offset: %d\n", topicAndPartition, partitionTopicInfo.FetchedOffset, fetchOffset))

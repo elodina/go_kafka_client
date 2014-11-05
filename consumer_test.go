@@ -40,10 +40,9 @@ func TestConsumer(t *testing.T) {
 
 //		topics := map[string]int {"test": 1}
 //		streams := consumer.CreateMessageStreams(topics)
-//		fmt.Println(streams)
 //		select {
 //			case event := <-streams["test"][0]: {
-//				Logger.Printf("Got a message: %s\n", event)
+//				Debugf(consumer.config.ConsumerId, "Got a message: %s\n", event)
 //			}
 //			case <-time.After(5 * time.Second): {
 //				t.Error("Failed to receive a message within 5 seconds")
