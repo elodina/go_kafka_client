@@ -1,3 +1,4 @@
 github.com/samuel/go-zookeeper/zk 	9a466eec51e72221d972768a15f025bf096fc3e0
 github.com/Shopify/sarama   ab8518c05fd3775bdbf06c97d97389fe8af2dfef
 github.com/jimlawless/cfg 4b1e3c1869d4e608fcbda6994e5f08dd9c6beaa1
+github.com/stealthly/go-kafka 4226ee96ec90bf54f7441132213cfbefbd47aaca
