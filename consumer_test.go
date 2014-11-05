@@ -22,6 +22,7 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 	"github.com/stealthly/go-kafka/producer"
 	"fmt"
+//	"time"
 )
 
 func TestConsumer(t *testing.T) {
@@ -36,6 +37,18 @@ func TestConsumer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
+//		topics := map[string]int {"test": 1}
+//		streams := consumer.CreateMessageStreams(topics)
+//		fmt.Println(streams)
+//		select {
+//			case event := <-streams["test"][0]: {
+//				Logger.Printf("Got a message: %s\n", event)
+//			}
+//			case <-time.After(5 * time.Second): {
+//				t.Error("Failed to receive a message within 5 seconds")
+//			}
+//		}
 
 		//TODO other
 	})

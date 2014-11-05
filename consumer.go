@@ -33,16 +33,17 @@ var SmallestOffset = "smallest"
 
 type Consumer struct {
 	config        *ConsumerConfig
-	topic         string
-	group         string
-	zookeeper     []string
+//	topic          string
+//	group          string
+	zookeeper      []string
 	fetcher         *consumerFetcherManager
-	messages      chan *Message
-	unsubscribe   chan bool
-	closeFinished chan bool
+	messages       chan *Message
+	unsubscribe    chan bool
+	closeFinished  chan bool
 	zkConn          *zk.Conn
-	rebalanceLock sync.Mutex
+	rebalanceLock  sync.Mutex
 	isShuttingdown bool
+	topicChannels map[string][]<-chan []*Message
 	topicThreadIdsAndChannels map[*TopicAndThreadId]chan *sarama.FetchResponseBlock
 	topicRegistry map[string]map[int]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
@@ -65,6 +66,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		messages : make(chan *Message),
 		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
+		topicChannels : make(map[string][]<-chan []*Message),
 		topicThreadIdsAndChannels : make(map[*TopicAndThreadId]chan *sarama.FetchResponseBlock),
 		topicRegistry: make(map[string]map[int]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
@@ -73,10 +75,82 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	c.addShutdownHook()
 
 	c.connectToZookeeper()
-	//	c.registerInZookeeper()
 	c.fetcher = newConsumerFetcherManager(config, c.zkConn, c.messages)
 
 	return c
+}
+
+func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string][]<-chan []*Message {
+	staticTopicCount := &StaticTopicsToNumStreams {
+		ConsumerId : c.config.ConsumerId,
+		TopicsToNumStreamsMap : topicCountMap,
+	}
+
+	var channelsAndStreams []*ChannelAndStream = nil
+	for _, threadIdSet := range staticTopicCount.GetConsumerThreadIdsPerTopic() {
+		channelsAndStreamsForThread := make([]*ChannelAndStream, len(threadIdSet))
+		for i := 0; i < len(channelsAndStreamsForThread); i++ {
+			blocks := make(chan *sarama.FetchResponseBlock)
+			messages := make(chan []*Message)
+			channelsAndStreamsForThread[i] = &ChannelAndStream{ blocks, messages }
+		}
+		channelsAndStreams = append(channelsAndStreams, channelsAndStreamsForThread...)
+	}
+
+	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
+			Version : int16(1),
+			Subscription : staticTopicCount.GetTopicsToNumStreamsMap(),
+			Pattern : staticTopicCount.Pattern(),
+			Timestamp : time.Now().Unix(),
+		})
+
+	fmt.Println("Reinitializing consumer")
+	c.ReinitializeConsumer(staticTopicCount, channelsAndStreams)
+	fmt.Println("Reinitialized")
+
+	return c.topicChannels
+}
+
+func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsAndStreams []*ChannelAndStream) {
+	consumerThreadIdsPerTopic := topicCount.GetConsumerThreadIdsPerTopic()
+
+	//TODO wildcard handling
+	allChannelsAndStreams := channelsAndStreams
+	topicThreadIds := make([]*TopicAndThreadId, 0)
+	for topic, threadIds := range consumerThreadIdsPerTopic {
+		for _, threadId := range threadIds {
+			topicThreadIds = append(topicThreadIds, &TopicAndThreadId{topic, threadId})
+		}
+	}
+
+	if len(topicThreadIds) != len(allChannelsAndStreams) {
+		panic("Mismatch between thread ID count and channel count")
+	}
+	threadStreamPairs := make(map[*TopicAndThreadId]*ChannelAndStream)
+	for i := 0; i < len(topicThreadIds); i++ {
+		threadStreamPairs[topicThreadIds[i]] = allChannelsAndStreams[i]
+	}
+
+	for topicThread, channelStream := range threadStreamPairs {
+		c.topicThreadIdsAndChannels[topicThread] = channelStream.Blocks
+	}
+
+	topicToStreams := make(map[string][]<-chan []*Message)
+	for topicThread, channelStream := range threadStreamPairs {
+		topic := topicThread.Topic
+		if topicToStreams[topic] == nil {
+			topicToStreams[topic] = make([]<-chan []*Message, 0)
+		}
+		topicToStreams[topic] = append(topicToStreams[topic], channelStream.Messages)
+	}
+
+	c.subscribeForChanges(c.config.Groupid)
+	//TODO more subscriptions
+
+	//	cc, e := GetConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
+	//	Logger.Println(cc, e)
+
+	c.rebalance()
 }
 
 func (c *Consumer) Messages() <-chan *Message {
@@ -92,7 +166,7 @@ func (c *Consumer) Close() <-chan bool {
 	go func() {
 		<-c.fetcher.Close()
 		c.unsubscribe <- true
-		err := DeregisterConsumer(c.zkConn, c.group, c.config.ConsumerId)
+		err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
 		if err != nil {
 			panic(err)
 		}
@@ -122,25 +196,6 @@ func (c *Consumer) connectToZookeeper() {
 	} else {
 		c.zkConn = conn
 	}
-}
-
-func (c *Consumer) registerInZookeeper() {
-	Logger.Println("Registering in zk")
-	subscription := make(map[string]int)
-	subscription[c.topic] = 1
-
-	consumerInfo := &ConsumerInfo{
-		Version : int16(1),
-		Subscription : subscription,
-		Pattern : WhiteListPattern,
-		Timestamp : time.Now().Unix(),
-	}
-
-	if err := RegisterConsumer(c.zkConn, c.group, c.config.ConsumerId, consumerInfo); err != nil {
-		panic(err)
-	}
-
-	c.subscribeForChanges(c.group)
 }
 
 func (c *Consumer) subscribeForChanges(group string) {
@@ -183,20 +238,20 @@ func (c *Consumer) subscribeForChanges(group string) {
 func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
 	emptyEvent := zk.Event{}
 	if e != emptyEvent {
-		c.rebalance(e)
+		c.rebalance()
 	} else {
 		time.Sleep(2 * time.Second)
 	}
 }
 
-func (c *Consumer) rebalance(_ zk.Event) {
+func (c *Consumer) rebalance() {
 	partitionAssignor := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	if (!c.isShuttingdown) {
 		Logger.Printf("rebalance triggered for %s\n", c.config.ConsumerId)
 		var success = false
 		var err error
 		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
-			topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.group, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
+			topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
 			if (err != nil) {
 				Logger.Println(err)
 				time.Sleep(c.config.RebalanceBackoffMs)
@@ -268,7 +323,7 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 		blocks := make(map[string]map[int32]*sarama.OffsetFetchResponseBlock)
 		if (c.config.OffsetsStorage == "zookeeper") {
 			for _, topicPartition := range topicPartitions {
-				offset, err := GetOffsetForTopicPartition(c.zkConn, c.group, topicPartition)
+				offset, err := GetOffsetForTopicPartition(c.zkConn, c.config.Groupid, topicPartition)
 				_, exists := blocks[topicPartition.Topic]
 				if (!exists) {
 					blocks[topicPartition.Topic] = make(map[int32]*sarama.OffsetFetchResponseBlock)
@@ -292,8 +347,8 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 }
 
 func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int]*PartitionTopicInfo,
-										 topicPartition *TopicAndPartition, offset int64,
-										 consumerThreadId *ConsumerThreadId) {
+	topicPartition *TopicAndPartition, offset int64,
+	consumerThreadId *ConsumerThreadId) {
 	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
 	if (!exists) {
 		partTopicInfoMap = make(map[int]*PartitionTopicInfo)
@@ -320,7 +375,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	Logger.Printf("Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, consumerThreadId := range partitionOwnershipDecision {
-		success, err := ClaimPartitionOwnership(c.zkConn, c.group, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
+		success, err := ClaimPartitionOwnership(c.zkConn, c.config.Groupid, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
 		if (err != nil) {
 			panic(err)
 		}
@@ -335,7 +390,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	if (len(partitionOwnershipDecision) > len(successfullyOwnedPartitions)) {
 		Logger.Printf("Consumer %s failed to reflect all partitions %d of %d", c.config.ConsumerId, len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
 		for _, topicPartition := range successfullyOwnedPartitions {
-			DeletePartitionOwnership(c.zkConn, c.group, topicPartition.Topic, topicPartition.Partition)
+			DeletePartitionOwnership(c.zkConn, c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
 		}
 		return false
 	}
@@ -347,7 +402,7 @@ func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[i
 	Logger.Println("Releasing partition ownership")
 	for topic, partitionInfos := range localTopicRegistry {
 		for partition, _ := range partitionInfos {
-			err := DeletePartitionOwnership(c.zkConn, c.group, topic, partition)
+			err := DeletePartitionOwnership(c.zkConn, c.config.Groupid, topic, partition)
 			if (err != nil) {
 				panic(err)
 			}

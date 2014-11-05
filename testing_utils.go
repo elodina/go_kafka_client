@@ -23,12 +23,6 @@ import (
 )
 
 func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatal(r)
-		}
-	}()
-
 	testCluster, err := zk.StartTestCluster(1)
 	if err != nil {
 		t.Fatal(err)
@@ -41,12 +35,6 @@ func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
 
 func WithKafka(t *testing.T, kafkaWork func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer)) {
 	WithZookeeper(t, func(zkServer *zk.TestServer) {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Fatal(r)
-			}
-		}()
-
 		cluster, err := StartTestKafkaCluster(1, zkServer.Port)
 		if err != nil {
 			panic(err)

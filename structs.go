@@ -115,3 +115,8 @@ type PartitionFetchInfo struct {
 	Offset int64
 	FetchSize int32
 }
+
+type ChannelAndStream struct {
+	Blocks chan *sarama.FetchResponseBlock
+	Messages chan []*Message
+}
