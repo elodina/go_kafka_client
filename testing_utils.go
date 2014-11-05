@@ -20,6 +20,7 @@ package go_kafka_client
 import (
 	"testing"
 	"github.com/samuel/go-zookeeper/zk"
+	"reflect"
 )
 
 func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
@@ -43,4 +44,16 @@ func WithKafka(t *testing.T, kafkaWork func(zkServer *zk.TestServer, kafkaServer
 
 		kafkaWork(zkServer, cluster.Servers[0])
 	})
+}
+
+func Assert(t *testing.T, actual interface{}, expected interface{}) {
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, actual %v", expected, actual)
+	}
+}
+
+func AssertNot(t *testing.T, actual interface{}, expected interface{}) {
+	if reflect.DeepEqual(actual, expected) {
+		t.Errorf("%v should not be %v", actual, expected)
+	}
 }
