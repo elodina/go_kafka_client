@@ -224,6 +224,7 @@ func (c *Consumer) rebalance(_ zk.Event) {
 
 			offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
 			if (err != nil) {
+				Logger.Fatal(err)
 				break
 			}
 
@@ -244,6 +245,7 @@ func (c *Consumer) rebalance(_ zk.Event) {
 				c.topicRegistry = currentTopicRegistry
 				//TODO: update fetcher
 			} else {
+				Logger.Println("Failed to reflect partition ownership")
 				time.Sleep(c.config.RebalanceBackoffMs)
 				continue
 			}
@@ -315,6 +317,7 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 }
 
 func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]*ConsumerThreadId) bool {
+	Logger.Printf("Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
 	successfullyOwnedPartitions := make(map[string]int)
 	for topicPartition, consumerThreadId := range partitionOwnershipDecision {
 		success, err := ClaimPartitionOwnership(c.zkConn, c.group, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
@@ -322,11 +325,15 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 			panic(err)
 		}
 		if (success) {
+			Logger.Printf("Consumer %s, successfully claimed partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
 			successfullyOwnedPartitions[topicPartition.Topic] = topicPartition.Partition
+		} else {
+			Logger.Printf("Consumer %s failed to claim partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
 		}
 	}
 
 	if (len(partitionOwnershipDecision) > len(successfullyOwnedPartitions)) {
+		Logger.Printf("Consumer %s failed to reflect all partitions %d of %d", c.config.ConsumerId, len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
 		for topic, partition := range successfullyOwnedPartitions {
 			DeletePartitionOwnership(c.zkConn, c.group, topic, partition)
 		}
