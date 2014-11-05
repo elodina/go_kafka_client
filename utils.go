@@ -19,7 +19,6 @@ package go_kafka_client
 
 import (
 	"github.com/jimlawless/cfg"
-	"testing"
 	"reflect"
 	"math/rand"
 	"sync"
@@ -78,18 +77,6 @@ func LoadConfiguration(path string) (map[string]string, error) {
 	err := cfg.Load(path, cfgMap)
 
 	return cfgMap, err
-}
-
-func Assert(t *testing.T, actual interface{}, expected interface{}) {
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Expected %v, actual %v", expected, actual)
-	}
-}
-
-func AssertNot(t *testing.T, actual interface{}, expected interface{}) {
-	if reflect.DeepEqual(actual, expected) {
-		t.Errorf("%v should not be %v", actual, expected)
-	}
 }
 
 func InLock(lock *sync.Mutex, fun func()) {
