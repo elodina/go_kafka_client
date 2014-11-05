@@ -1,9 +1,9 @@
-<seelog>
+<seelog minlevel="debug">
     <outputs formatid="main">
         <console />
     </outputs>
 
     <formats>
-        <format id="main" format="%Date/%Time [%LEVEL] [%File:%Line] %Msg%n"/>
+        <format id="main" format="%Date/%Time [%LEVEL] %Msg%n"/>
     </formats>
 </seelog>
