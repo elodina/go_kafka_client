@@ -38,7 +38,11 @@ var (
 )
 
 func TestZkAPI(t *testing.T) {
-	WithZookeeper(t, func(conn *zk.Conn) {
+	WithZookeeper(t, func(zkServer *zk.TestServer) {
+		conn, _, err := zk.Connect([]string{fmt.Sprintf("127.0.0.1:%d", zkServer.Port)}, time.Second*30000)
+		if (err != nil) {
+			t.Fatal(err)
+		}
 		zkConnection = conn
 		testCreatePathParentMayNotExist(t, BrokerIdsPath)
 		testCreatePathParentMayNotExist(t, BrokerTopicsPath)

@@ -20,20 +20,39 @@ package go_kafka_client
 import (
 	"testing"
 	"github.com/samuel/go-zookeeper/zk"
-	"github.com/stealthly/go-kafka/producer"
 )
 
-func TestConsumer(t *testing.T) {
-	WithKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-		consumer := NewConsumer(DefaultConsumerConfig())
-		AssertNot(t, consumer.zkConn, nil)
-
-		kafkaProducer := producer.NewKafkaProducer("test", []string{kafkaServer.Addr()}, nil)
-		err := kafkaProducer.Send("test")
-		if err != nil {
-			t.Fatal(err)
+func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal(r)
 		}
+	}()
 
-		//TODO other
+	testCluster, err := zk.StartTestCluster(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer testCluster.Stop()
+
+	zookeeperWork(&testCluster.Servers[0])
+}
+
+func WithKafka(t *testing.T, kafkaWork func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer)) {
+	WithZookeeper(t, func(zkServer *zk.TestServer) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatal(r)
+			}
+		}()
+
+		cluster, err := StartTestKafkaCluster(1, zkServer.Port)
+		if err != nil {
+			panic(err)
+		}
+		defer cluster.Stop()
+
+		kafkaWork(zkServer, cluster.Servers[0])
 	})
 }
