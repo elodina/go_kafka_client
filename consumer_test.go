@@ -63,6 +63,8 @@ func TestConsumer(t *testing.T) {
 			t.Error("Failed to close a consumer within 5 seconds")
 		}
 		}
+
+		time.Sleep(5 * time.Second)
 		//TODO other
 	})
 }

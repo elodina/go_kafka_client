@@ -358,8 +358,8 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 }
 
 func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int]*PartitionTopicInfo,
-										 topicPartition *TopicAndPartition, offset int64,
-										 consumerThreadId *ConsumerThreadId) {
+	topicPartition *TopicAndPartition, offset int64,
+	consumerThreadId *ConsumerThreadId) {
 	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
 	if (!exists) {
 		partTopicInfoMap = make(map[int]*PartitionTopicInfo)
@@ -448,6 +448,9 @@ func (cs *ChannelAndStream) processIncomingBlocks() {
 		b := <-cs.Blocks
 		Info("cs", "Processing message from block")
 
+		if b == nil {
+			return
+		}
 		messages := make([]*Message, 0)
 		for _, message := range b.MsgSet.Messages {
 			msg := &Message {
