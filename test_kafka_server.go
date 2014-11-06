@@ -85,6 +85,7 @@ func StartTestKafkaCluster(size int, zookeeperPort int) (*TestKafkaCluster, erro
 }
 
 func (c *TestKafkaCluster) Stop() {
+	Info("KAFKA", "Stopping Kafka cluster")
 	if runtime.GOOS == "windows" {
 		c.stopTestServerWindows()
 	} else {

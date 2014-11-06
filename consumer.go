@@ -25,6 +25,7 @@ import (
 	"sync"
 	"fmt"
 	"github.com/Shopify/sarama"
+	"reflect"
 )
 
 var InvalidOffset int64 = -1
@@ -33,8 +34,6 @@ var SmallestOffset = "smallest"
 
 type Consumer struct {
 	config        *ConsumerConfig
-//	topic          string
-//	group          string
 	zookeeper      []string
 	fetcher         *consumerFetcherManager
 	messages       chan *Message
@@ -61,11 +60,8 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	Infof(config.ConsumerId, "Starting new consumer with configuration: %s", config)
 	c := &Consumer{
 		config : config,
-		//		topic : topic,
-		//		group : group,
-		//		zookeeper : zookeeper,
 		messages : make(chan *Message),
-		unsubscribe : make(chan bool),
+		unsubscribe : make(chan bool, 1),
 		closeFinished : make(chan bool),
 		topicChannels : make(map[string][]<-chan []*Message),
 		topicThreadIdsAndChannels : make(map[TopicAndThreadId]chan *sarama.FetchResponseBlock),
@@ -95,9 +91,7 @@ func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string
 	for _, threadIdSet := range staticTopicCount.GetConsumerThreadIdsPerTopic() {
 		channelsAndStreamsForThread := make([]*ChannelAndStream, len(threadIdSet))
 		for i := 0; i < len(channelsAndStreamsForThread); i++ {
-			blocks := make(chan *sarama.FetchResponseBlock)
-			messages := make(chan []*Message)
-			channelsAndStreamsForThread[i] = &ChannelAndStream{ blocks, messages }
+			channelsAndStreamsForThread[i] = NewChannelAndStream(c.config)
 		}
 		channelsAndStreams = append(channelsAndStreams, channelsAndStreamsForThread...)
 	}
@@ -166,12 +160,11 @@ func (c *Consumer) Close() <-chan bool {
 	Info(c.config.ConsumerId, "Closing consumer")
 	c.isShuttingdown = true
 	go func() {
+		Info(c, "Closing fetcher")
 		<-c.fetcher.Close()
+		Info(c, "Unsubscribing")
 		c.unsubscribe <- true
-		err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
-		if err != nil {
-			panic(err)
-		}
+		Info(c, "Finished")
 		c.closeFinished <- true
 	}()
 	return c.closeFinished
@@ -241,6 +234,10 @@ func (c *Consumer) subscribeForChanges(group string) {
 			}
 			case <-c.unsubscribe: {
 				Info(c.config.ConsumerId, "Unsubscribing from changes")
+				err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
+				if err != nil {
+					panic(err)
+				}
 				break
 			}
 			}
@@ -361,20 +358,26 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 }
 
 func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int]*PartitionTopicInfo,
-										 topicPartition *TopicAndPartition, offset int64,
-										 consumerThreadId *ConsumerThreadId) {
+	topicPartition *TopicAndPartition, offset int64,
+	consumerThreadId *ConsumerThreadId) {
 	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
 	if (!exists) {
 		partTopicInfoMap = make(map[int]*PartitionTopicInfo)
 		currentTopicRegistry[topicPartition.Topic] = partTopicInfoMap
 	}
 
-	//TODO: queue for specific threadId should be retrieved here and passed to partTopicInfo
+	topicAndThreadId := TopicAndThreadId{topicPartition.Topic, consumerThreadId}
+	var blocks chan *sarama.FetchResponseBlock = nil
+	for topicThread, blocksChannel := range c.topicThreadIdsAndChannels {
+		if reflect.DeepEqual(topicAndThreadId, topicThread) {
+			blocks = blocksChannel
+		}
+	}
 
 	partTopicInfo := &PartitionTopicInfo{
 		Topic: topicPartition.Topic,
 		Partition: topicPartition.Partition,
-		BlockChannel: make(chan *sarama.FetchResponseBlock),
+		BlockChannel: blocks,
 		ConsumedOffset: offset,
 		FetchedOffset: offset,
 		FetchSize: int(c.config.FetchMessageMaxBytes),
@@ -427,4 +430,35 @@ func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[i
 
 func IsOffsetInvalid(offset int64) bool {
 	return offset <= InvalidOffset
+}
+
+func NewChannelAndStream(config *ConsumerConfig) *ChannelAndStream {
+	cs := &ChannelAndStream {
+		Blocks : make(chan *sarama.FetchResponseBlock, config.QueuedMaxMessages),
+		Messages : make(chan []*Message),
+	}
+
+	go cs.processIncomingBlocks()
+	return cs
+}
+
+func (cs *ChannelAndStream) processIncomingBlocks() {
+	Debug("cs", "Started processing blocks")
+	for {
+		b := <-cs.Blocks
+		Info("cs", "Processing message from block")
+
+		messages := make([]*Message, 0)
+		for _, message := range b.MsgSet.Messages {
+			msg := &Message {
+				Key : message.Msg.Key,
+				Value : message.Msg.Value,
+				Offset : message.Offset,
+			}
+			messages = append(messages, msg)
+		}
+		if len(messages) > 0 {
+			cs.Messages <- messages
+		}
+	}
 }

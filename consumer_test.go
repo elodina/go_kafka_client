@@ -22,41 +22,47 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 	"github.com/stealthly/go-kafka/producer"
 	"fmt"
-//	"time"
+	"time"
 )
 
 func TestConsumer(t *testing.T) {
 	WithKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
 		config := DefaultConsumerConfig()
 		config.ZookeeperConnect = []string{fmt.Sprintf("localhost:%d", zkServer.Port)}
+		config.AutoOffsetReset = SmallestOffset
 		consumer := NewConsumer(config)
 		AssertNot(t, consumer.zkConn, nil)
 
-		kafkaProducer := producer.NewKafkaProducer("test", []string{kafkaServer.Addr()}, nil)
-		err := kafkaProducer.Send("test")
+		topic := fmt.Sprintf("test_topic-%d", time.Now().Unix())
+		testMessage := fmt.Sprintf("test-message-%d", time.Now().Unix())
+
+		kafkaProducer := producer.NewKafkaProducer(topic, []string{kafkaServer.Addr()}, nil)
+		err := kafkaProducer.Send(testMessage)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-//		topics := map[string]int {"test": 1}
-//		streams := consumer.CreateMessageStreams(topics)
-//		select {
-//		case event := <-streams["test"][0]: {
-//			Infof(consumer, "Got a message: %s\n", event)
-//		}
-//		case <-time.After(5 * time.Second): {
-//			t.Error("Failed to receive a message within 5 seconds")
-//		}
-//		}
-//
-//		select {
-//		case <-consumer.Close(): {
-//			Info(consumer, "Successfully closed consumer")
-//		}
-//		case <-time.After(5 * time.Second): {
-//			t.Error("Failed to close a consumer within 5 seconds")
-//		}
-//		}
+		topics := map[string]int {topic: 1}
+		streams := consumer.CreateMessageStreams(topics)
+		select {
+		case event := <-streams[topic][0]: {
+			for _, message := range event {
+				Assert(t, string(message.Value), testMessage)
+			}
+		}
+		case <-time.After(5 * time.Second): {
+			t.Error("Failed to receive a message within 5 seconds")
+		}
+		}
+
+		select {
+		case <-consumer.Close(): {
+			Info(consumer, "Successfully closed consumer")
+		}
+		case <-time.After(5 * time.Second): {
+			t.Error("Failed to close a consumer within 5 seconds")
+		}
+		}
 		//TODO other
 	})
 }

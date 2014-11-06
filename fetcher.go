@@ -264,16 +264,17 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 
 func (m *consumerFetcherManager) CloseAllFetchers() {
 	Info(m, "Closing fetchers")
-	InLock(&m.mapLock, func() {
-		for _, fetcher := range m.fetcherRoutineMap {
-			Debugf(m, "Closing %s", fetcher)
-			<-fetcher.Close()
-		}
+	//	InLock(&m.mapLock, func() {
+	Info("ROUTINE MAP", len(m.fetcherRoutineMap))
+	for _, fetcher := range m.fetcherRoutineMap {
+		Debugf(m, "Closing %s", fetcher)
+		<-fetcher.Close()
+	}
 
-		for key := range m.fetcherRoutineMap {
-			delete(m.fetcherRoutineMap, key)
-		}
-	})
+	for key := range m.fetcherRoutineMap {
+		delete(m.fetcherRoutineMap, key)
+	}
+	//	})
 }
 
 func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
@@ -324,7 +325,7 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 		brokerAddr : fmt.Sprintf("%s:%d", broker.Host, broker.Port),
 		allPartitionMap : allPartitionMap,
 		partitionMap : make(map[TopicAndPartition]int64),
-		close : make(chan bool),
+		close : make(chan bool, 1),
 		closeFinished : make(chan bool),
 		fetchRequestBlockMap : make(map[TopicAndPartition]*PartitionFetchInfo),
 		fetchStopper : make(chan bool),
@@ -402,36 +403,38 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	}
 	defer saramaBroker.Close()
 
-	InLock(&f.partitionMapLock, func() {
-		for topic, partitionAndData := range response.Blocks {
-			for partition, data := range partitionAndData {
-				topicAndPartition := TopicAndPartition{topic, int(partition)}
-				currentOffset, exists := f.partitionMap[topicAndPartition]
-				if exists && f.fetchRequestBlockMap[topicAndPartition].Offset == currentOffset {
-					switch data.Err {
-					case sarama.NoError: {
-						messages := data.MsgSet.Messages
-						newOffset := currentOffset
-						if len(messages) > 0 {
-							newOffset = messages[len(messages)-1].Offset
+	if response != nil {
+		InLock(&f.partitionMapLock, func() {
+			for topic, partitionAndData := range response.Blocks {
+				for partition, data := range partitionAndData {
+					topicAndPartition := TopicAndPartition{topic, int(partition)}
+					currentOffset, exists := f.partitionMap[topicAndPartition]
+					if exists && f.fetchRequestBlockMap[topicAndPartition].Offset == currentOffset {
+						switch data.Err {
+						case sarama.NoError: {
+							messages := data.MsgSet.Messages
+							newOffset := currentOffset
+							if len(messages) > 0 {
+								newOffset = messages[len(messages)-1].Offset
+							}
+							f.partitionMap[topicAndPartition] = newOffset
+							f.processPartitionData(topicAndPartition, currentOffset, data)
 						}
-						f.partitionMap[topicAndPartition] = newOffset
-						f.processPartitionData(topicAndPartition, currentOffset, data)
-					}
-					case sarama.OffsetOutOfRange: {
-						newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
-						f.partitionMap[topicAndPartition] = newOffset
-						Infof(f.manager.config.ConsumerId, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
-					}
-					default: {
-						Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing", topicAndPartition)
-						partitionsWithError[topicAndPartition] = true
-					}
+						case sarama.OffsetOutOfRange: {
+							newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
+							f.partitionMap[topicAndPartition] = newOffset
+							Infof(f.manager.config.ConsumerId, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
+						}
+						default: {
+							Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing", topicAndPartition)
+							partitionsWithError[topicAndPartition] = true
+						}
+						}
 					}
 				}
 			}
-		}
-	})
+		})
+	}
 
 	if len(partitionsWithError) > 0 {
 		Info(f.manager.config.ConsumerId, "Handling partitions with error")
@@ -444,11 +447,9 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 }
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, fetchOffset int64, partitionData *sarama.FetchResponseBlock) {
-	Warn(f, "Processing partition data")
+	Info(f, "Processing partition data")
+
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
-	if partitionTopicInfo.FetchedOffset != fetchOffset {
-		panic(fmt.Sprintf("Offset does not match for partition %s. PartitionTopicInfo offset: %d, fetch offset: %d\n", topicAndPartition, partitionTopicInfo.FetchedOffset, fetchOffset))
-	}
 	partitionTopicInfo.BlockChannel <- partitionData
 }
 
@@ -505,11 +506,12 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []*TopicAndPartitio
 
 func (f *consumerFetcherRoutine) Close() <-chan bool {
 	Info(f, "Closing fetcher")
-	//TODO fix this
 	go func() {
 		f.close <- true
-		Info(f, "Stopping fetcher")
 		f.fetchStopper <- true
+		for _, pti := range f.allPartitionMap {
+			close(pti.BlockChannel)
+		}
 		f.closeFinished <- true
 	}()
 	return f.closeFinished
