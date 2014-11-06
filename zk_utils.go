@@ -24,7 +24,6 @@ import (
 	"path"
 	"github.com/samuel/go-zookeeper/zk"
 	"sort"
-	"strings"
 )
 
 var (
@@ -53,8 +52,8 @@ func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
 			return nil, err
 		}
 
-		brokers[i].Id = brokerIdNum
 		brokers[i], err = GetBrokerInfo(zkConnection, int32(brokerIdNum))
+		brokers[i].Id = int32(brokerIdNum)
 		if (err != nil) {
 			return nil, err
 		}
