@@ -41,14 +41,22 @@ func TestConsumer(t *testing.T) {
 //		topics := map[string]int {"test": 1}
 //		streams := consumer.CreateMessageStreams(topics)
 //		select {
-//			case event := <-streams["test"][0]: {
-//				Debugf(consumer.config.ConsumerId, "Got a message: %s\n", event)
-//			}
-//			case <-time.After(5 * time.Second): {
-//				t.Error("Failed to receive a message within 5 seconds")
-//			}
+//		case event := <-streams["test"][0]: {
+//			Infof(consumer, "Got a message: %s\n", event)
 //		}
-
+//		case <-time.After(5 * time.Second): {
+//			t.Error("Failed to receive a message within 5 seconds")
+//		}
+//		}
+//
+//		select {
+//		case <-consumer.Close(): {
+//			Info(consumer, "Successfully closed consumer")
+//		}
+//		case <-time.After(5 * time.Second): {
+//			t.Error("Failed to close a consumer within 5 seconds")
+//		}
+//		}
 		//TODO other
 	})
 }

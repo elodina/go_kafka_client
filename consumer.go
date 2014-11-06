@@ -44,7 +44,7 @@ type Consumer struct {
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
 	topicChannels map[string][]<-chan []*Message
-	topicThreadIdsAndChannels map[*TopicAndThreadId]chan *sarama.FetchResponseBlock
+	topicThreadIdsAndChannels map[TopicAndThreadId]chan *sarama.FetchResponseBlock
 	topicRegistry map[string]map[int]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
 }
@@ -67,7 +67,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
 		topicChannels : make(map[string][]<-chan []*Message),
-		topicThreadIdsAndChannels : make(map[*TopicAndThreadId]chan *sarama.FetchResponseBlock),
+		topicThreadIdsAndChannels : make(map[TopicAndThreadId]chan *sarama.FetchResponseBlock),
 		topicRegistry: make(map[string]map[int]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
 	}
@@ -78,6 +78,10 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	c.fetcher = newConsumerFetcherManager(config, c.zkConn, c.messages)
 
 	return c
+}
+
+func (c *Consumer) String() string {
+	return c.config.ConsumerId
 }
 
 func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string][]<-chan []*Message {
@@ -114,17 +118,17 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsA
 
 	//TODO wildcard handling
 	allChannelsAndStreams := channelsAndStreams
-	topicThreadIds := make([]*TopicAndThreadId, 0)
+	topicThreadIds := make([]TopicAndThreadId, 0)
 	for topic, threadIds := range consumerThreadIdsPerTopic {
 		for _, threadId := range threadIds {
-			topicThreadIds = append(topicThreadIds, &TopicAndThreadId{topic, threadId})
+			topicThreadIds = append(topicThreadIds, TopicAndThreadId{topic, threadId})
 		}
 	}
 
 	if len(topicThreadIds) != len(allChannelsAndStreams) {
 		panic("Mismatch between thread ID count and channel count")
 	}
-	threadStreamPairs := make(map[*TopicAndThreadId]*ChannelAndStream)
+	threadStreamPairs := make(map[TopicAndThreadId]*ChannelAndStream)
 	for i := 0; i < len(topicThreadIds); i++ {
 		threadStreamPairs[topicThreadIds[i]] = allChannelsAndStreams[i]
 	}
@@ -159,6 +163,7 @@ func (c *Consumer) SwitchTopic(newTopic string) {
 
 func (c *Consumer) Close() <-chan bool {
 	Info(c.config.ConsumerId, "Closing consumer")
+	c.isShuttingdown = true
 	go func() {
 		<-c.fetcher.Close()
 		c.unsubscribe <- true
@@ -313,9 +318,10 @@ func (c *Consumer) rebalance() {
 			}
 
 			success = true
+			break
 		}
 
-		if (!success) {
+		if (!success && !c.isShuttingdown) {
 			panic(err)
 		}
 	} else {
