@@ -37,6 +37,11 @@ type BrokerInfo struct {
 	Port    uint32
 }
 
+func (b *BrokerInfo) String() string {
+	return fmt.Sprintf("{Version: %d, Id: %d, Host: %s, Port: %d}",
+						b.Version, b.Id, b.Host, b.Port)
+}
+
 type ConsumerInfo struct {
 	Version   int16
 	Subscription map[string]int
@@ -44,9 +49,19 @@ type ConsumerInfo struct {
 	Timestamp int64
 }
 
+func (c *ConsumerInfo) String() string {
+	return fmt.Sprintf("{Version: %d, Subscription: %v, Pattern: %s, Timestamp: %d}",
+						c.Version, c.Subscription, c.Pattern, c.Timestamp)
+}
+
 type TopicInfo struct {
 	Version int16
 	Partitions map[string][]int
+}
+
+func (t *TopicInfo) String() string {
+	return fmt.Sprintf("{Version: %d, Partitions: %v}",
+						t.Version, t.Partitions)
 }
 
 type TopicsToNumStreams interface {
@@ -83,7 +98,7 @@ type TopicAndPartition struct {
 }
 
 func (tp *TopicAndPartition) String() string {
-	return fmt.Sprintf("[%s, %d]", tp.Topic, tp.Partition)
+	return fmt.Sprintf("{%s, %d}", tp.Topic, tp.Partition)
 }
 
 type PartitionTopicInfo struct {
@@ -96,9 +111,18 @@ type PartitionTopicInfo struct {
 	ClientId string
 }
 
+func (p *PartitionTopicInfo) String() string {
+	return fmt.Sprintf("{Topic: %s, Partition: %d, ConsumedOffset: %d, FetchedOffset: %d, FetchSize: %d, ClientId: %s}",
+						p.Topic, p.Partition, p.ConsumedOffset, p.FetchedOffset, p.FetchSize, p.ClientId)
+}
+
 type BrokerAndInitialOffset struct {
 	Broker *BrokerInfo
 	InitOffset int64
+}
+
+func (b *BrokerAndInitialOffset) String() string {
+	return fmt.Sprintf("{Broker: %s, InitialOffset: %d}", b.Broker, b.InitOffset)
 }
 
 type BrokerAndFetcherId struct {
@@ -106,14 +130,26 @@ type BrokerAndFetcherId struct {
 	FetcherId int
 }
 
+func (b *BrokerAndFetcherId) String() string {
+	return fmt.Sprintf("{Broker: %s, FetcherId: %d}", b.Broker, b.FetcherId)
+}
+
 type TopicAndThreadId struct {
 	Topic string
 	ThreadId *ConsumerThreadId
 }
 
+func (tt *TopicAndThreadId) String() string {
+	return fmt.Sprintf("{Topic: %s, ThreadId: %s}", tt.Topic, tt.ThreadId)
+}
+
 type PartitionFetchInfo struct {
 	Offset int64
 	FetchSize int32
+}
+
+func (p *PartitionFetchInfo) String() string {
+	return fmt.Sprintf("{Offset: %d, FetchSize: %d}", p.Offset, p.FetchSize)
 }
 
 type ChannelAndStream struct {

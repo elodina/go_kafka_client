@@ -58,6 +58,7 @@ type Message struct {
 }
 
 func NewConsumer(config *ConsumerConfig) *Consumer {
+	Infof(config.ConsumerId, "Starting new consumer with configuration: %s", config)
 	c := &Consumer{
 		config : config,
 		//		topic : topic,

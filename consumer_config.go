@@ -17,7 +17,10 @@
 
 package go_kafka_client
 
-import "time"
+import (
+	"time"
+	"fmt"
+)
 
 type ConsumerConfig struct {
 	/** a string that uniquely identifies a set of consumers within the same consumer group */
@@ -142,4 +145,42 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.ZookeeperTimeout = 1 * time.Second
 
 	return config
+}
+
+func (c *ConsumerConfig) String() string {
+	return fmt.Sprintf(`
+GroupId: %s
+SocketTimeoutMs: %d
+SocketReceiveBufferBytes: %d
+FetchMessageMaxBytes: %d
+NumConsumerFetchers: %d
+AutoCommitEnable: %v
+AutoCommitIntervalMs: %d
+QueuedMaxMessages: %d
+RebalanceMaxRetries: %d
+ConsumerTimeoutMs: %d
+FetchMinBytes: %d
+FetchWaitMaxMs: %d
+RebalanceBackoffMs: %d
+RefreshLeaderBackoff: %d
+OffsetsChannelBackoffMs: %d
+OffsetsChannelSocketTimeoutMs: %d
+OffsetsCommitMaxRetries: %d
+OffsetsStorage: %s
+AutoOffsetReset: %s
+ClientId: %s
+ConsumerId: %s
+ExcludeInternalTopics: %v
+PartitionAssignmentStrategy: %s
+ZookeeperConnect: %s
+ZookeeperTimeout: %d
+`, c.Groupid, c.SocketTimeoutMs, c.SocketReceiveBufferBytes,
+   c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.AutoCommitEnable,
+   c.AutoCommitIntervalMs, c.QueuedMaxMessages, c.RebalanceMaxRetries,
+   c.ConsumerTimeoutMs, c.FetchMinBytes, c.FetchWaitMaxMs,
+   c.RebalanceBackoffMs, c.RefreshLeaderBackoff, c.OffsetsChannelBackoffMs,
+   c.OffsetsChannelSocketTimeoutMs, c.OffsetsCommitMaxRetries, c.OffsetsStorage,
+   c.AutoOffsetReset, c.ClientId, c.ConsumerId,
+   c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.ZookeeperConnect,
+   c.ZookeeperTimeout)
 }
