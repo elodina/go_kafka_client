@@ -21,6 +21,9 @@ import (
 	"testing"
 	"github.com/samuel/go-zookeeper/zk"
 	"reflect"
+	"time"
+	"github.com/stealthly/go-kafka/producer"
+	"fmt"
 )
 
 func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
@@ -55,5 +58,41 @@ func Assert(t *testing.T, actual interface{}, expected interface{}) {
 func AssertNot(t *testing.T, actual interface{}, expected interface{}) {
 	if reflect.DeepEqual(actual, expected) {
 		t.Errorf("%v should not be %v", actual, expected)
+	}
+}
+
+func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message) {
+	numMessages := 0
+	for {
+		select {
+		case batch := <-from: {
+			numMessages += len(batch)
+			if numMessages >= n {
+				Debugf("consumer", "Successfully consumed %d message[s]", n)
+				return
+			}
+		}
+		case <-time.After(timeout): t.Errorf("Failed to receive a message within %d seconds", timeout.Seconds())
+		}
+	}
+}
+
+func ProduceN(t *testing.T, n int, p *producer.KafkaProducer) {
+	for i := 0; i < n; i++ {
+		message := fmt.Sprintf("test-kafka-message-%d", n)
+		if err := p.Send(message); err != nil {
+			t.Fatalf("Failed to produce message %s", message)
+		}
+	}
+}
+
+func CloseWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
+	select {
+	case <-consumer.Close(): {
+		Info(consumer, "Successfully closed consumer")
+	}
+	case <-time.After(timeout): {
+		t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
+	}
 	}
 }

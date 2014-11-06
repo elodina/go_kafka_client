@@ -19,52 +19,50 @@ package go_kafka_client
 
 import (
 	"testing"
-	"github.com/samuel/go-zookeeper/zk"
 	"github.com/stealthly/go-kafka/producer"
 	"fmt"
 	"time"
 )
 
-func TestConsumer(t *testing.T) {
-	WithKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-		config := DefaultConsumerConfig()
-		config.ZookeeperConnect = []string{fmt.Sprintf("localhost:%d", zkServer.Port)}
-		config.AutoOffsetReset = SmallestOffset
-		consumer := NewConsumer(config)
-		AssertNot(t, consumer.zkConn, nil)
+var TEST_KAFKA_HOST = "192.168.86.10:9092"
+var TEST_ZOOKEEPER_HOST = "192.168.86.5:2181"
 
-		topic := fmt.Sprintf("test_topic-%d", time.Now().Unix())
-		testMessage := fmt.Sprintf("test-message-%d", time.Now().Unix())
+func TestConsumerSingleMessage(t *testing.T) {
+	consumer := testConsumer(t)
 
-		kafkaProducer := producer.NewKafkaProducer(topic, []string{kafkaServer.Addr()}, nil)
-		err := kafkaProducer.Send(testMessage)
-		if err != nil {
-			t.Fatal(err)
-		}
+	topic := fmt.Sprintf("test-topic-single-%d", time.Now().Unix())
 
-		topics := map[string]int {topic: 1}
-		streams := consumer.CreateMessageStreams(topics)
-		select {
-		case event := <-streams[topic][0]: {
-			for _, message := range event {
-				Assert(t, string(message.Value), testMessage)
-			}
-		}
-		case <-time.After(5 * time.Second): {
-			t.Error("Failed to receive a message within 5 seconds")
-		}
-		}
+	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, 1, kafkaProducer)
 
-		select {
-		case <-consumer.Close(): {
-			Info(consumer, "Successfully closed consumer")
-		}
-		case <-time.After(5 * time.Second): {
-			t.Error("Failed to close a consumer within 5 seconds")
-		}
-		}
+	topics := map[string]int {topic: 1}
+	streams := consumer.CreateMessageStreams(topics)
+	ReceiveN(t, 1, 5 * time.Second, streams[topic][0])
 
-		time.Sleep(5 * time.Second)
-		//TODO other
-	})
+	CloseWithin(t, 5 * time.Second, consumer)
+}
+
+func TestConsumerMultipleMessages(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numMessages := 100
+	topic := fmt.Sprintf("test-topic-multiple-%d", time.Now().Unix())
+
+	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer)
+
+	topics := map[string]int {topic: 1}
+	streams := consumer.CreateMessageStreams(topics)
+	ReceiveN(t, numMessages, 5 * time.Second, streams[topic][0])
+
+	CloseWithin(t, 5 * time.Second, consumer)
+}
+
+func testConsumer(t *testing.T) *Consumer {
+	config := DefaultConsumerConfig()
+	config.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}
+	config.AutoOffsetReset = SmallestOffset
+	consumer := NewConsumer(config)
+	AssertNot(t, consumer.zkConn, nil)
+	return consumer
 }

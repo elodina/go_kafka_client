@@ -460,7 +460,6 @@ func (cs *ChannelAndStream) processIncomingBlocks() {
 				return
 			}
 			case b := <-cs.Blocks: {
-				Debugf("cs", "Got block: %v", b)
 				if b != nil {
 					messages := make([]*Message, 0)
 					for _, message := range b.MsgSet.Messages {
