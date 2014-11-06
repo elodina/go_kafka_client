@@ -98,7 +98,7 @@ type TopicAndPartition struct {
 }
 
 func (tp *TopicAndPartition) String() string {
-	return fmt.Sprintf("{%s, %d}", tp.Topic, tp.Partition)
+	return fmt.Sprintf("{Topic: %s, Partition: %d}", tp.Topic, tp.Partition)
 }
 
 type PartitionTopicInfo struct {
