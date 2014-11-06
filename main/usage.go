@@ -21,9 +21,8 @@ import (
 	"github.com/stealthly/go_kafka_client"
 	"time"
 	"math/rand"
-//	"fmt"
-//	"github.com/Shopify/sarama"
-//	"fmt"
+	"fmt"
+	"github.com/stealthly/go-kafka/producer"
 )
 
 type Worker struct {}
@@ -34,25 +33,39 @@ func (w *Worker) doWork(msg *go_kafka_client.Message, consumer *go_kafka_client.
 }
 
 func main() {
+	topic := fmt.Sprintf("test_topic-%d", time.Now().Unix())
+	testMessage := fmt.Sprintf("test-message-%d", time.Now().Unix())
+
+	kafkaProducer := producer.NewKafkaProducer(topic, []string{"192.168.86.10:9092"}, nil)
+	err := kafkaProducer.Send(testMessage)
+	if err != nil {
+		panic(err)
+	}
+
 	config := go_kafka_client.DefaultConsumerConfig()
-	config.ZookeeperConnect = []string{"192.168.86.5"}
-	consumer := go_kafka_client.NewConsumer(go_kafka_client.DefaultConsumerConfig())
+	config.ZookeeperConnect = []string{"192.168.86.5:2181"}
+	config.AutoOffsetReset = go_kafka_client.SmallestOffset
+	consumer := go_kafka_client.NewConsumer(config)
 
-	go func() {
-		for message := range consumer.Messages() {
-			go_kafka_client.Logger.Printf("Consumed message '%v' from topic %s\n", string(message.Value), message.Topic)
-			worker := &Worker{}
-			go worker.doWork(message, consumer)
+	topics := map[string]int {topic: 1}
+	streams := consumer.CreateMessageStreams(topics)
+	select {
+	case event := <-streams[topic][0]: {
+		for _, message := range event {
+			fmt.Println(string(message.Value))
 		}
-	}()
+	}
+	case <-time.After(5 * time.Second): {
+		panic("Failed to receive a message within 5 seconds")
+	}
+	}
 
-	time.Sleep(10 * time.Second)
-	go func() {
-		consumer.SwitchTopic("another_topic")
-	}()
-
-	time.Sleep(10 * time.Second)
-	futureClose := consumer.Close()
-	<-futureClose
-	go_kafka_client.Logger.Println("Gracefully shutdown")
+	select {
+	case <-consumer.Close(): {
+		fmt.Println("Successfully closed consumer")
+	}
+	case <-time.After(5 * time.Second): {
+		panic("Failed to close a consumer within 5 seconds")
+	}
+	}
 }

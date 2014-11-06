@@ -46,6 +46,7 @@ type Consumer struct {
 	topicThreadIdsAndChannels map[TopicAndThreadId]chan *sarama.FetchResponseBlock
 	topicRegistry map[string]map[int]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
+	closeChannels []chan bool
 }
 
 type Message struct {
@@ -67,6 +68,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		topicThreadIdsAndChannels : make(map[TopicAndThreadId]chan *sarama.FetchResponseBlock),
 		topicRegistry: make(map[string]map[int]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
+		closeChannels: make([]chan bool, 0),
 	}
 
 	c.addShutdownHook()
@@ -91,7 +93,9 @@ func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string
 	for _, threadIdSet := range staticTopicCount.GetConsumerThreadIdsPerTopic() {
 		channelsAndStreamsForThread := make([]*ChannelAndStream, len(threadIdSet))
 		for i := 0; i < len(channelsAndStreamsForThread); i++ {
-			channelsAndStreamsForThread[i] = NewChannelAndStream(c.config)
+			closeChannel := make(chan bool, 1)
+			c.closeChannels = append(c.closeChannels, closeChannel)
+			channelsAndStreamsForThread[i] = NewChannelAndStream(c.config, closeChannel)
 		}
 		channelsAndStreams = append(channelsAndStreams, channelsAndStreamsForThread...)
 	}
@@ -160,6 +164,10 @@ func (c *Consumer) Close() <-chan bool {
 	Info(c, "Closing consumer")
 	c.isShuttingdown = true
 	go func() {
+		Info(c, "Closing channels")
+		for _, ch := range c.closeChannels {
+			ch <- true
+		}
 		Info(c, "Closing fetcher")
 		<-c.fetcher.Close()
 		Info(c, "Unsubscribing")
@@ -234,6 +242,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 			}
 			case <-c.unsubscribe: {
 				Info(c, "Unsubscribing from changes")
+				c.releasePartitionOwnership(c.topicRegistry)
 				err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
 				if err != nil {
 					panic(err)
@@ -432,10 +441,11 @@ func IsOffsetInvalid(offset int64) bool {
 	return offset <= InvalidOffset
 }
 
-func NewChannelAndStream(config *ConsumerConfig) *ChannelAndStream {
+func NewChannelAndStream(config *ConsumerConfig, closeChannel chan bool) *ChannelAndStream {
 	cs := &ChannelAndStream {
 		Blocks : make(chan *sarama.FetchResponseBlock, config.QueuedMaxMessages),
 		Messages : make(chan []*Message),
+		closeChannel : closeChannel,
 	}
 
 	go cs.processIncomingBlocks()
@@ -445,23 +455,27 @@ func NewChannelAndStream(config *ConsumerConfig) *ChannelAndStream {
 func (cs *ChannelAndStream) processIncomingBlocks() {
 	Debug("cs", "Started processing blocks")
 	for {
-		b := <-cs.Blocks
-		Info("cs", "Processing message from block")
-
-		if b == nil {
-			return
-		}
-		messages := make([]*Message, 0)
-		for _, message := range b.MsgSet.Messages {
-			msg := &Message {
-				Key : message.Msg.Key,
-				Value : message.Msg.Value,
-				Offset : message.Offset,
+		select {
+			case <-cs.closeChannel: {
+				return
 			}
-			messages = append(messages, msg)
-		}
-		if len(messages) > 0 {
-			cs.Messages <- messages
+			case b := <-cs.Blocks: {
+				Debugf("cs", "Got block: %v", b)
+				if b != nil {
+					messages := make([]*Message, 0)
+					for _, message := range b.MsgSet.Messages {
+						msg := &Message {
+							Key : message.Msg.Key,
+							Value : message.Msg.Value,
+							Offset : message.Offset,
+						}
+						messages = append(messages, msg)
+					}
+					if len(messages) > 0 {
+						cs.Messages <- messages
+					}
+				}
+			}
 		}
 	}
 }

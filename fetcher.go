@@ -265,7 +265,6 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 func (m *consumerFetcherManager) CloseAllFetchers() {
 	Info(m, "Closing fetchers")
 	//	InLock(&m.mapLock, func() {
-	Info("ROUTINE MAP", len(m.fetcherRoutineMap))
 	for _, fetcher := range m.fetcherRoutineMap {
 		Debugf(m, "Closing %s", fetcher)
 		<-fetcher.Close()
@@ -352,6 +351,7 @@ func (f *consumerFetcherRoutine) Start() {
 			fetchRequest.MinBytes = config.FetchMinBytes
 			fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
 			for topicAndPartition, partitionFetchInfo := range f.fetchRequestBlockMap {
+				Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", topicAndPartition.Topic, int32(topicAndPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 				fetchRequest.AddBlock(topicAndPartition.Topic, int32(topicAndPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 			}
 
@@ -388,7 +388,7 @@ func (f *consumerFetcherRoutine) PartitionCount() int {
 }
 
 func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchRequest) {
-	Infof(f.manager.config.ConsumerId, "Started processing fetch request %+v\n", request)
+	Info(f, "Started processing fetch request")
 	partitionsWithError := make(map[TopicAndPartition]bool)
 
 	saramaBroker := sarama.NewBroker(f.brokerAddr)

@@ -155,4 +155,5 @@ func (p *PartitionFetchInfo) String() string {
 type ChannelAndStream struct {
 	Blocks chan *sarama.FetchResponseBlock
 	Messages chan []*Message
+	closeChannel chan bool
 }
