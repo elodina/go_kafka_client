@@ -157,7 +157,7 @@ func (c *Consumer) SwitchTopic(newTopic string) {
 }
 
 func (c *Consumer) Close() <-chan bool {
-	Info(c.config.ConsumerId, "Closing consumer")
+	Info(c, "Closing consumer")
 	c.isShuttingdown = true
 	go func() {
 		Info(c, "Closing fetcher")
@@ -182,7 +182,7 @@ func (c *Consumer) updateFetcher() {
 }
 
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
-	Infof(c.config.ConsumerId, "Acking offset %d for topic %s and partition %d", offset, topic, partition)
+	Infof(c, "Acking offset %d for topic %s and partition %d", offset, topic, partition)
 	return nil
 }
 
@@ -196,7 +196,7 @@ func (c *Consumer) addShutdownHook() {
 }
 
 func (c *Consumer) connectToZookeeper() {
-	Infof(c.config.ConsumerId, "Connecting to ZK at %s\n", c.config.ZookeeperConnect)
+	Infof(c, "Connecting to ZK at %s\n", c.config.ZookeeperConnect)
 	if conn, _, err := zk.Connect(c.config.ZookeeperConnect, c.config.ZookeeperTimeout); err != nil {
 		panic(err)
 	} else {
@@ -205,7 +205,7 @@ func (c *Consumer) connectToZookeeper() {
 }
 
 func (c *Consumer) subscribeForChanges(group string) {
-	Infof(c.config.ConsumerId, "Subscribing for changes for %s", NewZKGroupDirs(group).ConsumerRegistryDir)
+	Infof(c, "Subscribing for changes for %s", NewZKGroupDirs(group).ConsumerRegistryDir)
 
 	consumersWatcher, err := GetConsumersInGroupWatcher(c.zkConn, group)
 	if err != nil {
@@ -233,7 +233,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 				InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
 			}
 			case <-c.unsubscribe: {
-				Info(c.config.ConsumerId, "Unsubscribing from changes")
+				Info(c, "Unsubscribing from changes")
 				err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
 				if err != nil {
 					panic(err)
@@ -257,25 +257,25 @@ func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
 func (c *Consumer) rebalance() {
 	partitionAssignor := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	if (!c.isShuttingdown) {
-		Infof(c.config.ConsumerId, "rebalance triggered for %s\n", c.config.ConsumerId)
+		Infof(c, "rebalance triggered for %s\n", c.config.ConsumerId)
 		var success = false
 		var err error
 		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
 			topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
 			if (err != nil) {
-				Warn(c.config.ConsumerId, err.Error())
+				Warn(c, err.Error())
 				time.Sleep(c.config.RebalanceBackoffMs)
 				continue
 			}
-			Infof(c.config.ConsumerId, "%v\n", topicPerThreadIdsMap)
+			Infof(c, "%v\n", topicPerThreadIdsMap)
 
 			brokers, err := GetAllBrokersInCluster(c.zkConn)
 			if (err != nil) {
-				Warn(c.config.ConsumerId, err.Error())
+				Warn(c, err.Error())
 				time.Sleep(c.config.RebalanceBackoffMs)
 				continue
 			}
-			Infof(c.config.ConsumerId, "%v\n", brokers)
+			Infof(c, "%v\n", brokers)
 
 			//TODO: close fetchers
 			c.releasePartitionOwnership(c.topicRegistry)
@@ -289,14 +289,14 @@ func (c *Consumer) rebalance() {
 
 			offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
 			if (err != nil) {
-				Error(c.config.ConsumerId, err.Error())
+				Error(c, err.Error())
 				break
 			}
 
 			currentTopicRegistry := make(map[string]map[int]*PartitionTopicInfo)
 
 			if (c.isShuttingdown) {
-				Warnf(c.config.ConsumerId, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.ConsumerId)
+				Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.ConsumerId)
 				return
 			} else {
 				for _, topicPartition := range topicPartitions {
@@ -310,7 +310,7 @@ func (c *Consumer) rebalance() {
 				c.topicRegistry = currentTopicRegistry
 				c.updateFetcher()
 			} else {
-				Warnf(c.config.ConsumerId, "Failed to reflect partition ownership for consumer %s", c.config.ConsumerId)
+				Warnf(c, "Failed to reflect partition ownership for consumer %s", c.config.ConsumerId)
 				time.Sleep(c.config.RebalanceBackoffMs)
 				continue
 			}
@@ -323,7 +323,7 @@ func (c *Consumer) rebalance() {
 			panic(err)
 		}
 	} else {
-		Infof(c.config.ConsumerId, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...\n", c.config.ConsumerId)
+		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...\n", c.config.ConsumerId)
 	}
 }
 
@@ -358,8 +358,8 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 }
 
 func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int]*PartitionTopicInfo,
-	topicPartition *TopicAndPartition, offset int64,
-	consumerThreadId *ConsumerThreadId) {
+										 topicPartition *TopicAndPartition, offset int64,
+										 consumerThreadId *ConsumerThreadId) {
 	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
 	if (!exists) {
 		partTopicInfoMap = make(map[int]*PartitionTopicInfo)
@@ -389,7 +389,7 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 }
 
 func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]*ConsumerThreadId) bool {
-	Infof(c.config.ConsumerId, "Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
+	Infof(c, "Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, consumerThreadId := range partitionOwnershipDecision {
 		success, err := ClaimPartitionOwnership(c.zkConn, c.config.Groupid, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
@@ -397,15 +397,15 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 			panic(err)
 		}
 		if (success) {
-			Debugf(c.config.ConsumerId, "Consumer %s, successfully claimed partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
+			Debugf(c, "Consumer %s, successfully claimed partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
 			successfullyOwnedPartitions = append(successfullyOwnedPartitions, &topicPartition)
 		} else {
-			Warnf(c.config.ConsumerId, "Consumer %s failed to claim partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
+			Warnf(c, "Consumer %s failed to claim partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
 		}
 	}
 
 	if (len(partitionOwnershipDecision) > len(successfullyOwnedPartitions)) {
-		Warnf(c.config.ConsumerId, "Consumer %s failed to reflect all partitions %d of %d", c.config.ConsumerId, len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
+		Warnf(c, "Consumer %s failed to reflect all partitions %d of %d", c.config.ConsumerId, len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
 		for _, topicPartition := range successfullyOwnedPartitions {
 			DeletePartitionOwnership(c.zkConn, c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
 		}
@@ -416,7 +416,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 }
 
 func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[int]*PartitionTopicInfo) {
-	Info(c.config.ConsumerId, "Releasing partition ownership")
+	Info(c, "Releasing partition ownership")
 	for topic, partitionInfos := range localTopicRegistry {
 		for partition, _ := range partitionInfos {
 			err := DeletePartitionOwnership(c.zkConn, c.config.Groupid, topic, partition)
