@@ -40,6 +40,7 @@ func TestConsumerSingleMessage(t *testing.T) {
 	ReceiveN(t, 1, 5 * time.Second, streams[topic][0])
 
 	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer.Close()
 }
 
 func TestConsumerMultipleMessages(t *testing.T) {
@@ -56,6 +57,28 @@ func TestConsumerMultipleMessages(t *testing.T) {
 	ReceiveN(t, numMessages, 5 * time.Second, streams[topic][0])
 
 	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer.Close()
+}
+
+func TestProduceIntoMultipleAndConsumeFromOne(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numMessages := 100
+	topic1 := fmt.Sprintf("test-producemultiple-noread-%d", time.Now().Unix())
+	topic2 := fmt.Sprintf("test-producemultiple-read-%d", time.Now().Unix())
+
+	kafkaProducer1 := producer.NewKafkaProducer(topic1, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer1)
+	kafkaProducer2 := producer.NewKafkaProducer(topic2, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer2)
+
+	topics := map[string]int {topic2: 1}
+	streams := consumer.CreateMessageStreams(topics)
+	ReceiveN(t, numMessages, 5 * time.Second, streams[topic2][0])
+
+	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer1.Close()
+	kafkaProducer2.Close()
 }
 
 func testConsumer(t *testing.T) *Consumer {

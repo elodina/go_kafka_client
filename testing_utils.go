@@ -66,8 +66,11 @@ func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 	for {
 		select {
 		case batch := <-from: {
+			if numMessages + len(batch) > n {
+				t.Error("Received more messages than expected")
+			}
 			numMessages += len(batch)
-			if numMessages >= n {
+			if numMessages == n {
 				Debugf("consumer", "Successfully consumed %d message[s]", n)
 				return
 			}
