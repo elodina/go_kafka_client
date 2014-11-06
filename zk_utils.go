@@ -52,6 +52,7 @@ func GetAllBrokersInCluster(zkConnection *zk.Conn) ([]*BrokerInfo, error) {
 			return nil, err
 		}
 
+		brokers[i].Id = brokerId
 		brokers[i], err = GetBrokerInfo(zkConnection, int32(brokerIdNum))
 		if (err != nil) {
 			return nil, err
