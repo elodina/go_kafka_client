@@ -19,12 +19,32 @@ package go_kafka_client
 
 import (
 	"github.com/samuel/go-zookeeper/zk"
+	"fmt"
+	"strings"
 )
 
 func NewTopicsToNumStreams(group string, consumerId string, zkConnection *zk.Conn, excludeInternalTopics bool) (TopicsToNumStreams, error) {
 	consumerInfo, err := GetConsumer(zkConnection, group, consumerId)
 	if (err != nil) {
 		return nil, err
+	}
+
+	hasTopicSwitch := strings.HasPrefix(consumerInfo.Pattern, SwitchToPatternPrefix)
+	if (hasTopicSwitch) {
+		var pattern string
+		switch consumerInfo.Pattern {
+		case fmt.Sprintf("%s%s", SwitchToPatternPrefix, WhiteListPattern):
+			pattern = WhiteListPattern
+		case fmt.Sprintf("%s%s", SwitchToPatternPrefix, BlackListPattern):
+			pattern = BlackListPattern
+		default:
+			pattern = StaticPattern
+		}
+		return &TopicSwitch{
+			ConsumerId: consumerId,
+			DesiredPattern: pattern,
+			TopicsToNumStreamsMap: consumerInfo.Subscription,
+		}, nil
 	}
 
 	hasWhiteList := WhiteListPattern == consumerInfo.Pattern
@@ -83,6 +103,7 @@ func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[
 	return result
 }
 
+
 type StaticTopicsToNumStreams struct {
 	ConsumerId string
 	TopicsToNumStreamsMap map[string]int
@@ -99,6 +120,7 @@ func (tc *StaticTopicsToNumStreams) GetTopicsToNumStreamsMap() map[string]int {
 func (tc *StaticTopicsToNumStreams) Pattern() string {
 	return StaticPattern
 }
+
 
 type WildcardTopicsToNumStreams struct {
 	ZkConnection *zk.Conn
@@ -137,4 +159,23 @@ func (tc *WildcardTopicsToNumStreams) Pattern() string {
 	default:
 		panic("unknown topic filter")
 	}
+}
+
+
+type TopicSwitch struct {
+	ConsumerId string
+	DesiredPattern string
+	TopicsToNumStreamsMap map[string]int
+}
+
+func (tc *TopicSwitch) GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId {
+	return makeConsumerThreadIdsPerTopic(tc.ConsumerId, tc.TopicsToNumStreamsMap)
+}
+
+func (tc *TopicSwitch) GetTopicsToNumStreamsMap() map[string]int {
+	return tc.TopicsToNumStreamsMap
+}
+
+func (tc *TopicSwitch) Pattern() string {
+	return tc.DesiredPattern
 }

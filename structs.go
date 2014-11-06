@@ -28,6 +28,7 @@ var (
 	WhiteListPattern = "white_list"
 	BlackListPattern = "black_list"
 	StaticPattern    = "static"
+	SwitchToPatternPrefix = "switch_to_"
 )
 
 type BrokerInfo struct {
@@ -65,6 +66,7 @@ func (t *TopicInfo) String() string {
 }
 
 type TopicsToNumStreams interface {
+	GetTopicsToNumStreamsMap() map[string]int
 	GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId
 	Pattern() string
 }

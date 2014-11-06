@@ -146,10 +146,13 @@ type AssignmentContext struct {
 	PartitionsForTopic map[string][]int
 	ConsumersForTopic map[string][]*ConsumerThreadId
 	Consumers  []string
+	SwitchTriggered bool
+	TopicCount TopicsToNumStreams
 }
 
 func NewAssignmentContext(group string, consumerId string, excludeInternalTopics bool, zkConnection *zk.Conn) *AssignmentContext {
 	topicCount, _ := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
+	_, switchTriggered := topicCount.(*TopicSwitch)
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 	topics := make([]string, 0)
 	for topic, _ := range myTopicThreadIds {
@@ -158,6 +161,7 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 	partitionsForTopic, _ := GetPartitionsForTopics(zkConnection, topics)
 	consumersForTopic, _ := GetConsumersPerTopic(zkConnection, group, excludeInternalTopics)
 	consumers, _ := GetConsumersInGroup(zkConnection, group)
+
 	return &AssignmentContext{
 		ConsumerId: consumerId,
 		Group: group,
@@ -165,5 +169,7 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
 		Consumers: consumers,
+		SwitchTriggered: switchTriggered,
+		TopicCount: topicCount,
 	}
 }

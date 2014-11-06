@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"reflect"
+	"strings"
 )
 
 var InvalidOffset int64 = -1
@@ -156,8 +157,19 @@ func (c *Consumer) Messages() <-chan *Message {
 	return c.messages
 }
 
-func (c *Consumer) SwitchTopic(newTopic string) {
-	c.fetcher.SwitchTopic(newTopic)
+func (c *Consumer) SwitchTopic(topicCountMap map[string]int) {
+	staticTopicCount := &TopicSwitch {
+		ConsumerId : c.config.ConsumerId,
+		TopicsToNumStreamsMap : topicCountMap,
+		DesiredPattern: StaticPattern,
+	}
+
+	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
+		Version : int16(1),
+		Subscription : staticTopicCount.GetTopicsToNumStreamsMap(),
+		Pattern : staticTopicCount.Pattern(),
+		Timestamp : time.Now().Unix(),
+	})
 }
 
 func (c *Consumer) Close() <-chan bool {
@@ -290,6 +302,27 @@ func (c *Consumer) rebalance() {
 			c.releasePartitionOwnership(c.topicRegistry)
 
 			assignmentContext := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
+			if assignmentContext.SwitchTriggered {
+				for _, consumerId := range assignmentContext.Consumers {
+					consumerInfo, err := GetConsumer(c.zkConn, assignmentContext.Group, consumerId)
+					if (err != nil) {
+						time.Sleep(c.config.RebalanceBackoffMs)
+						continue
+					}
+					//We want to be sure that all consumers in group have decided to change the topic too
+					if !strings.HasPrefix(consumerInfo.Pattern, SwitchToPatternPrefix) {
+						return
+					}
+				}
+
+				RegisterConsumer(c.zkConn, assignmentContext.Group, assignmentContext.ConsumerId, &ConsumerInfo{
+					Version : int16(1),
+					Subscription : assignmentContext.TopicCount.GetTopicsToNumStreamsMap(),
+					Pattern : assignmentContext.TopicCount.Pattern(),
+					Timestamp : time.Now().Unix(),
+				})
+			}
+
 			partitionOwnershipDecision := partitionAssignor(assignmentContext)
 			topicPartitions := make([]*TopicAndPartition, 0)
 			for topicPartition, _ := range partitionOwnershipDecision {
