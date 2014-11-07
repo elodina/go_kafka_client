@@ -24,10 +24,11 @@ import (
 	"time"
 	"os/exec"
 	"os"
+	"runtime"
 )
 
-var TEST_KAFKA_HOST = "192.168.86.10:9092"
-var TEST_ZOOKEEPER_HOST = "192.168.86.5:2181"
+var TEST_KAFKA_HOST = "localhost:9092"
+var TEST_ZOOKEEPER_HOST = "localhost:2181"
 
 func TestConsumerSingleMessage(t *testing.T) {
 	consumer := testConsumer(t)
@@ -179,15 +180,69 @@ func testConsumer(t *testing.T) *Consumer {
 
 func createMultiplePartitionsTopic(t *testing.T, numPartitions int) string {
 	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Unix())
-	params := fmt.Sprintf("--zookeeper %s --replica 1 --partition %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
-
-	script := fmt.Sprintf("%s/bin/kafka-create-topic.sh %s", os.Getenv("KAFKA_PATH"), params)
-	Debug("script", script)
-	out, err := exec.Command("sh", "-c", script).Output()
-	if err != nil {
-		t.Fatalf("Could not create multiple partitions topic %s", topicName)
+	params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
+	script := ""
+	if runtime.GOOS == "windows" {
+		script = fmt.Sprintf("%s\\bin\\windows\\kafka-topics.bat %s", os.Getenv("KAFKA_PATH"), params)
+	} else {
+		script = fmt.Sprintf("%s/bin/kafka-topics.sh %s", os.Getenv("KAFKA_PATH"), params)
 	}
+	Debug("script", script)
+	out, _ := exec.Command("sh", "-c", script).Output()
 	Debug("create topic", out)
 
 	return topicName
+}
+
+func TestConsumersSwitchTopic(t *testing.T) {
+	topic1 := createMultiplePartitionsTopic(t, 4)
+	topic2 := createMultiplePartitionsTopic(t, 4)
+
+	topics1 := map[string]int {topic1: 2}
+	topics2 := map[string]int {topic2: 2}
+
+	config := DefaultConsumerConfig()
+	config.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}
+	config.AutoOffsetReset = SmallestOffset
+	config.ConsumerId = "consumer-1"
+	consumer1 := NewConsumer(config)
+
+	consumer1.CreateMessageStreams(topics1)
+	time.Sleep(5 * time.Second)
+
+	config = DefaultConsumerConfig()
+	config.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}
+	config.AutoOffsetReset = SmallestOffset
+	config.ConsumerId = "consumer-2"
+	consumer2 := NewConsumer(config)
+
+	consumer2.CreateMessageStreams(topics1)
+	time.Sleep(5 * time.Second)
+
+	_, exists1_1 := consumer1.TopicRegistry[topic1]
+	_, exists1_2 := consumer1.TopicRegistry[topic2]
+
+	_, exists2_1 := consumer2.TopicRegistry[topic1]
+	_, exists2_2 := consumer2.TopicRegistry[topic2]
+
+	Assert(t, exists1_1, true)
+	Assert(t, exists1_2, false)
+
+	Assert(t, exists2_1, true)
+	Assert(t, exists2_2, false)
+
+	consumer1.SwitchTopic(topics2, StaticPattern)
+	time.Sleep(5 * time.Second)
+
+	_, exists1_1 = consumer1.TopicRegistry[topic1]
+	_, exists1_2 = consumer1.TopicRegistry[topic2]
+
+	_, exists2_1 = consumer2.TopicRegistry[topic1]
+	_, exists2_2 = consumer2.TopicRegistry[topic2]
+
+	Assert(t, exists1_1, false)
+	Assert(t, exists1_2, true)
+
+	Assert(t, exists2_1, false)
+	Assert(t, exists2_2, true)
 }

@@ -24,6 +24,13 @@ import (
 	"math"
 )
 
+type ConsumerGroupContextState struct {
+	IsGroupTopicSwitchInProgress bool
+	IsGroupTopicSwitchInSync bool
+	DesiredPattern string
+	DesiredTopicCountMap map[string]int
+}
+
 type AssignStrategy func(context *AssignmentContext) map[TopicAndPartition]*ConsumerThreadId
 
 func NewPartitionAssignor(strategy string) AssignStrategy {
@@ -146,13 +153,13 @@ type AssignmentContext struct {
 	PartitionsForTopic map[string][]int
 	ConsumersForTopic map[string][]*ConsumerThreadId
 	Consumers  []string
-	SwitchTriggered bool
-	TopicCount TopicsToNumStreams
+	InTopicSwitch bool
+	State *ConsumerGroupContextState
 }
 
-func NewAssignmentContext(group string, consumerId string, excludeInternalTopics bool, zkConnection *zk.Conn) *AssignmentContext {
+func NewAssignmentContext(group string, consumerId string, excludeInternalTopics bool, zkConnection *zk.Conn) (*AssignmentContext, error) {
 	topicCount, _ := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
-	_, switchTriggered := topicCount.(*TopicSwitch)
+	_, inTopicSwitch := topicCount.(*TopicSwitch)
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 	topics := make([]string, 0)
 	for topic, _ := range myTopicThreadIds {
@@ -162,6 +169,25 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 	consumersForTopic, _ := GetConsumersPerTopic(zkConnection, group, excludeInternalTopics)
 	consumers, _ := GetConsumersInGroup(zkConnection, group)
 
+	isGroupTopicSwitchInProgress := false
+	isGroupTopicSwitchInSync := true
+	desiredPattern := ""
+	desiredTopicCountMap := make(map[string]int)
+	for _, consumerId := range consumers {
+		topicCount, err := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
+		topicSwitch, inTopicSwitch := topicCount.(*TopicSwitch)
+		if (err != nil) {
+			return nil, err
+		}
+		if !inTopicSwitch {
+			isGroupTopicSwitchInSync = false
+		} else if !isGroupTopicSwitchInProgress && inTopicSwitch {
+			isGroupTopicSwitchInProgress = true
+			desiredTopicCountMap = topicSwitch.GetTopicsToNumStreamsMap()
+			desiredPattern = topicSwitch.Pattern()
+		}
+	}
+
 	return &AssignmentContext{
 		ConsumerId: consumerId,
 		Group: group,
@@ -169,7 +195,12 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
 		Consumers: consumers,
-		SwitchTriggered: switchTriggered,
-		TopicCount: topicCount,
-	}
+		State: &ConsumerGroupContextState{
+			IsGroupTopicSwitchInProgress: isGroupTopicSwitchInProgress,
+			IsGroupTopicSwitchInSync: isGroupTopicSwitchInSync,
+			DesiredPattern: desiredPattern,
+			DesiredTopicCountMap: desiredTopicCountMap,
+		},
+		InTopicSwitch: inTopicSwitch,
+	}, nil
 }

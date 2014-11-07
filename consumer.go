@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"reflect"
-	"strings"
 )
 
 var InvalidOffset int64 = -1
@@ -45,7 +44,7 @@ type Consumer struct {
 	isShuttingdown bool
 	topicChannels map[string][]<-chan []*Message
 	topicThreadIdsAndSharedChannels map[TopicAndThreadId]*SharedBlockChannel
-	topicRegistry map[string]map[int]*PartitionTopicInfo
+	TopicRegistry map[string]map[int]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
 	closeChannels []chan bool
 }
@@ -67,7 +66,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		closeFinished : make(chan bool),
 		topicChannels : make(map[string][]<-chan []*Message),
 		topicThreadIdsAndSharedChannels : make(map[TopicAndThreadId]*SharedBlockChannel),
-		topicRegistry: make(map[string]map[int]*PartitionTopicInfo),
+		TopicRegistry: make(map[string]map[int]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
 		closeChannels: make([]chan bool, 0),
 	}
@@ -157,11 +156,12 @@ func (c *Consumer) Messages() <-chan *Message {
 	return c.messages
 }
 
-func (c *Consumer) SwitchTopic(topicCountMap map[string]int) {
+func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
+	//TODO: whitelist/blacklist pattern handling
 	staticTopicCount := &TopicSwitch {
 		ConsumerId : c.config.ConsumerId,
 		TopicsToNumStreamsMap : topicCountMap,
-		DesiredPattern: StaticPattern,
+		DesiredPattern: pattern,
 	}
 
 	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
@@ -192,7 +192,7 @@ func (c *Consumer) Close() <-chan bool {
 
 func (c *Consumer) updateFetcher() {
 	allPartitionInfos := make([]*PartitionTopicInfo, 0)
-	for _, partitionAndInfo := range c.topicRegistry {
+	for _, partitionAndInfo := range c.TopicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
 			allPartitionInfos = append(allPartitionInfos, partitionInfo)
 		}
@@ -254,7 +254,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 			}
 			case <-c.unsubscribe: {
 				Info(c, "Unsubscribing from changes")
-				c.releasePartitionOwnership(c.topicRegistry)
+				c.releasePartitionOwnership(c.TopicRegistry)
 				err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
 				if err != nil {
 					panic(err)
@@ -299,26 +299,19 @@ func (c *Consumer) rebalance() {
 			Infof(c, "%v\n", brokers)
 
 			//TODO: close fetchers
-			c.releasePartitionOwnership(c.topicRegistry)
+			c.releasePartitionOwnership(c.TopicRegistry)
 
-			assignmentContext := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
-			if assignmentContext.SwitchTriggered {
-				for _, consumerId := range assignmentContext.Consumers {
-					consumerInfo, err := GetConsumer(c.zkConn, assignmentContext.Group, consumerId)
-					if (err != nil) {
-						time.Sleep(c.config.RebalanceBackoffMs)
-						continue
-					}
-					//We want to be sure that all consumers in group have decided to change the topic too
-					if !strings.HasPrefix(consumerInfo.Pattern, SwitchToPatternPrefix) {
-						return
-					}
+			assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
+			if assignmentContext.State.IsGroupTopicSwitchInProgress {
+				if (!assignmentContext.InTopicSwitch) {
+					c.SwitchTopic(assignmentContext.State.DesiredTopicCountMap, assignmentContext.State.DesiredPattern)
+					return
 				}
 
 				RegisterConsumer(c.zkConn, assignmentContext.Group, assignmentContext.ConsumerId, &ConsumerInfo{
 					Version : int16(1),
-					Subscription : assignmentContext.TopicCount.GetTopicsToNumStreamsMap(),
-					Pattern : assignmentContext.TopicCount.Pattern(),
+					Subscription : assignmentContext.State.DesiredTopicCountMap,
+					Pattern : assignmentContext.State.DesiredPattern,
 					Timestamp : time.Now().Unix(),
 				})
 			}
@@ -349,7 +342,7 @@ func (c *Consumer) rebalance() {
 			}
 
 			if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
-				c.topicRegistry = currentTopicRegistry
+				c.TopicRegistry = currentTopicRegistry
 				c.updateFetcher()
 			} else {
 				Warnf(c, "Failed to reflect partition ownership for consumer %s", c.config.ConsumerId)
