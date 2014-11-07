@@ -144,18 +144,3 @@ func CloseWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	}
 	}
 }
-
-func CreateMultiplePartitionsTopic(t *testing.T, zk string, numPartitions int) string {
-	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Unix())
-	params := fmt.Sprintf("--zookeeper %s --replica 1 --partition %d --topic %s", zk, numPartitions, topicName)
-
-	script := fmt.Sprintf("%s/bin/kafka-create-topic.sh %s", os.Getenv("KAFKA_PATH"), params)
-	Debug("script", script)
-	out, err := exec.Command("sh", "-c", script).Output()
-	if err != nil {
-		t.Fatalf("Could not create multiple partitions topic %s", topicName)
-	}
-	Debug("create topic", out)
-
-	return topicName
-}

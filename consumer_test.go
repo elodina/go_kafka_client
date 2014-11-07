@@ -101,7 +101,7 @@ func TestMultiplePartitions(t *testing.T) {
 	consumer := testConsumer(t)
 
 	numMessages := 100
-	topic := CreateMultiplePartitionsTopic(t, TEST_ZOOKEEPER_HOST, 3)
+	topic := createMultiplePartitionsTopic(t, 3)
 
 	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
 	ProduceN(t, numMessages, kafkaProducer)
@@ -191,7 +191,7 @@ func testConsumer(t *testing.T) *Consumer {
 	return consumer
 }
 
-func createMultiplePartitionsTopic(t *testing.T, numPartitions int) string {
+func createMultiplePartitionsTopic(_ *testing.T, numPartitions int) string {
 	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Unix())
 	params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
 	script := ""
