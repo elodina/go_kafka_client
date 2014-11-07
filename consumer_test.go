@@ -22,12 +22,23 @@ import (
 	"github.com/stealthly/go-kafka/producer"
 	"fmt"
 	"time"
-	"os/exec"
-	"os"
 )
 
 var TEST_KAFKA_HOST = "192.168.86.10:9092"
 var TEST_ZOOKEEPER_HOST = "192.168.86.5:2181"
+
+func TestDistinctTopics(t *testing.T) {
+	fetcher := &consumerFetcherManager{}
+	fakeTopicsAndPartitions := []*TopicAndPartition {
+		&TopicAndPartition{"topic1", 1},
+		&TopicAndPartition{"topic1", 2},
+		&TopicAndPartition{"topic2", 1},
+		&TopicAndPartition{"topic3", 1},
+		&TopicAndPartition{"topic3", 2},
+	}
+	fetcher.noLeaderPartitions = fakeTopicsAndPartitions
+	Assert(t, fetcher.distinctTopics(), []string{"topic1", "topic2", "topic3"})
+}
 
 func TestConsumerSingleMessage(t *testing.T) {
 	consumer := testConsumer(t)
@@ -87,7 +98,7 @@ func TestMultiplePartitions(t *testing.T) {
 	consumer := testConsumer(t)
 
 	numMessages := 100
-	topic := createMultiplePartitionsTopic(t, 3)
+	topic := CreateMultiplePartitionsTopic(t, TEST_ZOOKEEPER_HOST, 3)
 
 	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
 	ProduceN(t, numMessages, kafkaProducer)
@@ -114,7 +125,7 @@ func TestMultiplePartitionsWithMoreConsumerThreads(t *testing.T) {
 	numMessages := 100
 	numPartitions := 3
 	numThreads := numPartitions + 1
-	topic := createMultiplePartitionsTopic(t, numPartitions)
+	topic := CreateMultiplePartitionsTopic(t, TEST_ZOOKEEPER_HOST, numPartitions)
 
 	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
 	ProduceN(t, numMessages, kafkaProducer)
@@ -147,7 +158,7 @@ func TestMultiplePartitionsWithLessConsumerThreads(t *testing.T) {
 	numMessages := 100
 	numPartitions := 3
 	numThreads := numPartitions - 1
-	topic := createMultiplePartitionsTopic(t, numPartitions)
+	topic := CreateMultiplePartitionsTopic(t, TEST_ZOOKEEPER_HOST, numPartitions)
 
 	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
 	ProduceN(t, numMessages, kafkaProducer)
@@ -175,19 +186,4 @@ func testConsumer(t *testing.T) *Consumer {
 	consumer := NewConsumer(config)
 	AssertNot(t, consumer.zkConn, nil)
 	return consumer
-}
-
-func createMultiplePartitionsTopic(t *testing.T, numPartitions int) string {
-	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Unix())
-	params := fmt.Sprintf("--zookeeper %s --replica 1 --partition %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
-
-	script := fmt.Sprintf("%s/bin/kafka-create-topic.sh %s", os.Getenv("KAFKA_PATH"), params)
-	Debug("script", script)
-	out, err := exec.Command("sh", "-c", script).Output()
-	if err != nil {
-		t.Fatalf("Could not create multiple partitions topic %s", topicName)
-	}
-	Debug("create topic", out)
-
-	return topicName
 }
