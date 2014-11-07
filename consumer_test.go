@@ -27,8 +27,8 @@ import (
 	"runtime"
 )
 
-var TEST_KAFKA_HOST = "192.168.86.10:9092"
-var TEST_ZOOKEEPER_HOST = "192.168.86.5:2181"
+var TEST_KAFKA_HOST = "localhost:9092"
+var TEST_ZOOKEEPER_HOST = "localhost:2181"
 
 func TestDistinctTopics(t *testing.T) {
 	fetcher := &consumerFetcherManager{}
@@ -202,7 +202,7 @@ func createMultiplePartitionsTopic(_ *testing.T, numPartitions int) string {
 		script = fmt.Sprintf("%s/bin/kafka-topics.sh %s", os.Getenv("KAFKA_PATH"), params)
 		exec.Command("sh", "-c", script).Output()
 	}
-	Debug("script", script))
+	Debug("script", script)
 
 	return topicName
 }

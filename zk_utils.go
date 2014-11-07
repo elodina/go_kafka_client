@@ -319,7 +319,7 @@ func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, 
 			Debugf(consumerThreadId, "waiting for the partition ownership to be deleted: %d", partition)
 			return false, nil
 		} else {
-			Error(consumerThreadId, err.Error())
+			Error(consumerThreadId, err)
 			return false, err
 		}
 	}
