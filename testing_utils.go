@@ -24,8 +24,6 @@ import (
 	"time"
 	"github.com/stealthly/go-kafka/producer"
 	"fmt"
-	"os"
-	"os/exec"
 )
 
 func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {

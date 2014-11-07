@@ -41,7 +41,7 @@ type ConsumerConfig struct {
 	FetchMessageMaxBytes int32
 
 	/** the number threads used to fetch data */
-	NumConsumerFetchers int32
+	NumConsumerFetchers int
 
 	/** if true, periodically commit to zookeeper the offset of messages already fetched by the consumer */
 	AutoCommitEnable bool

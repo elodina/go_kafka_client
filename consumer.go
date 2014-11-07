@@ -46,7 +46,7 @@ type Consumer struct {
 	topicThreadIdsAndSharedChannels map[TopicAndThreadId]*SharedBlockChannel
 	TopicRegistry map[string]map[int]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
-	closeChannels []chan bool
+	closeChannels  []chan bool
 }
 
 type Message struct {
@@ -100,23 +100,79 @@ func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string
 		channelsAndStreams = append(channelsAndStreams, channelsAndStreamsForThread...)
 	}
 
-	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
-			Version : int16(1),
-			Subscription : staticTopicCount.GetTopicsToNumStreamsMap(),
-			Pattern : staticTopicCount.Pattern(),
-			Timestamp : time.Now().Unix(),
-		})
-
+	c.RegisterInZK(staticTopicCount)
 	c.ReinitializeConsumer(staticTopicCount, channelsAndStreams)
 
 	return c.topicChannels
 }
 
+func (c *Consumer) CreateMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) []<-chan []*Message {
+	var channelsAndStreams []*ChannelAndStream = nil
+	for i := 0; i < numStreams; i++ {
+		closeChannel := make(chan bool, 1)
+		c.closeChannels = append(c.closeChannels, closeChannel)
+		channelsAndStreams = append(channelsAndStreams, NewChannelAndStream(c.config, closeChannel))
+	}
+	allTopics, err := GetTopics(c.zkConn)
+	if err != nil {
+		panic(err)
+	}
+	filteredTopics := make([]string, 0)
+	for _, topic := range allTopics {
+		if topicFilter.IsTopicAllowed(topic, c.config.ExcludeInternalTopics) {
+			filteredTopics = append(filteredTopics, topic)
+		}
+	}
+	topicCount := &WildcardTopicsToNumStreams{
+		ZkConnection : c.zkConn,
+		ConsumerId : c.config.ConsumerId,
+		TopicFilter : topicFilter,
+		NumStreams : numStreams,
+		ExcludeInternalTopics : c.config.ExcludeInternalTopics,
+	}
+
+	c.RegisterInZK(topicCount)
+	c.ReinitializeConsumer(topicCount, channelsAndStreams)
+
+	//TODO subscriptions?
+
+	messages := make([]<-chan []*Message, 0)
+	for _, channelAndStream := range channelsAndStreams {
+		messages = append(messages, channelAndStream.Messages)
+	}
+
+	return messages
+}
+
+func (c *Consumer) CreateMessageStreamsByFilter(topicFilter TopicFilter) []<-chan []*Message {
+	return c.CreateMessageStreamsByFilterN(topicFilter, c.config.NumConsumerFetchers)
+}
+
+func (c *Consumer) RegisterInZK(topicCount TopicsToNumStreams) {
+	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
+			Version : int16(1),
+			Subscription : topicCount.GetTopicsToNumStreamsMap(),
+			Pattern : topicCount.Pattern(),
+			Timestamp : time.Now().Unix(),
+		})
+}
+
 func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsAndStreams []*ChannelAndStream) {
 	consumerThreadIdsPerTopic := topicCount.GetConsumerThreadIdsPerTopic()
 
-	//TODO wildcard handling
-	allChannelsAndStreams := channelsAndStreams
+	allChannelsAndStreams := make([]*ChannelAndStream, 0)
+	switch topicCount.(type) {
+		case *StaticTopicsToNumStreams: {
+			allChannelsAndStreams = channelsAndStreams
+		}
+		case *WildcardTopicsToNumStreams: {
+			for _, _ = range consumerThreadIdsPerTopic {
+				for _, channelAndStream := range channelsAndStreams {
+					allChannelsAndStreams = append(allChannelsAndStreams, channelAndStream)
+				}
+			}
+		}
+	}
 	topicThreadIds := make([]TopicAndThreadId, 0)
 	for topic, threadIds := range consumerThreadIdsPerTopic {
 		for _, threadId := range threadIds {
@@ -150,10 +206,6 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsA
 	//TODO more subscriptions
 
 	c.rebalance()
-}
-
-func (c *Consumer) Messages() <-chan *Message {
-	return c.messages
 }
 
 func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
@@ -483,25 +535,25 @@ func (cs *ChannelAndStream) processIncomingBlocks() {
 	Debug("cs", "Started processing blocks")
 	for {
 		select {
-			case <-cs.closeChannel: {
-				return
-			}
-			case b := <-cs.Blocks.chunks: {
-				if b != nil {
-					messages := make([]*Message, 0)
-					for _, message := range b.MsgSet.Messages {
-						msg := &Message {
-							Key : message.Msg.Key,
-							Value : message.Msg.Value,
-							Offset : message.Offset,
-						}
-						messages = append(messages, msg)
+		case <-cs.closeChannel: {
+			return
+		}
+		case b := <-cs.Blocks.chunks: {
+			if b != nil {
+				messages := make([]*Message, 0)
+				for _, message := range b.MsgSet.Messages {
+					msg := &Message {
+						Key : message.Msg.Key,
+						Value : message.Msg.Value,
+						Offset : message.Offset,
 					}
-					if len(messages) > 0 {
-						cs.Messages <- messages
-					}
+					messages = append(messages, msg)
+				}
+				if len(messages) > 0 {
+					cs.Messages <- messages
 				}
 			}
+		}
 		}
 	}
 }
