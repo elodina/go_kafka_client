@@ -44,7 +44,7 @@ type Consumer struct {
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
 	topicChannels map[string][]<-chan []*Message
-	topicThreadIdsAndChannels map[TopicAndThreadId]chan *sarama.FetchResponseBlock
+	topicThreadIdsAndSharedChannels map[TopicAndThreadId]*SharedBlockChannel
 	topicRegistry map[string]map[int]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
 	closeChannels []chan bool
@@ -66,7 +66,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		unsubscribe : make(chan bool, 1),
 		closeFinished : make(chan bool),
 		topicChannels : make(map[string][]<-chan []*Message),
-		topicThreadIdsAndChannels : make(map[TopicAndThreadId]chan *sarama.FetchResponseBlock),
+		topicThreadIdsAndSharedChannels : make(map[TopicAndThreadId]*SharedBlockChannel),
 		topicRegistry: make(map[string]map[int]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
 		closeChannels: make([]chan bool, 0),
@@ -134,7 +134,7 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsA
 	}
 
 	for topicThread, channelStream := range threadStreamPairs {
-		c.topicThreadIdsAndChannels[topicThread] = channelStream.Blocks
+		c.topicThreadIdsAndSharedChannels[topicThread] = channelStream.Blocks
 	}
 
 	topicToStreams := make(map[string][]<-chan []*Message)
@@ -409,8 +409,8 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 	}
 
 	topicAndThreadId := TopicAndThreadId{topicPartition.Topic, consumerThreadId}
-	var blocks chan *sarama.FetchResponseBlock = nil
-	for topicThread, blocksChannel := range c.topicThreadIdsAndChannels {
+	var blocks *SharedBlockChannel = nil
+	for topicThread, blocksChannel := range c.topicThreadIdsAndSharedChannels {
 		if reflect.DeepEqual(topicAndThreadId, topicThread) {
 			blocks = blocksChannel
 		}
@@ -475,8 +475,9 @@ func IsOffsetInvalid(offset int64) bool {
 }
 
 func NewChannelAndStream(config *ConsumerConfig, closeChannel chan bool) *ChannelAndStream {
+	blockChannel := &SharedBlockChannel{make(chan *sarama.FetchResponseBlock, config.QueuedMaxMessages), false}
 	cs := &ChannelAndStream {
-		Blocks : make(chan *sarama.FetchResponseBlock, config.QueuedMaxMessages),
+		Blocks : blockChannel,
 		Messages : make(chan []*Message),
 		closeChannel : closeChannel,
 	}
@@ -492,7 +493,7 @@ func (cs *ChannelAndStream) processIncomingBlocks() {
 			case <-cs.closeChannel: {
 				return
 			}
-			case b := <-cs.Blocks: {
+			case b := <-cs.Blocks.chunks: {
 				if b != nil {
 					messages := make([]*Message, 0)
 					for _, message := range b.MsgSet.Messages {

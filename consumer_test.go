@@ -108,6 +108,66 @@ func TestMultiplePartitions(t *testing.T) {
 	kafkaProducer.Close()
 }
 
+func TestMultiplePartitionsWithMoreConsumerThreads(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numMessages := 100
+	numPartitions := 3
+	numThreads := numPartitions + 1
+	topic := createMultiplePartitionsTopic(t, numPartitions)
+
+	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer)
+
+	topics := map[string]int {topic: numThreads}
+	streams := consumer.CreateMessageStreams(topics)
+	consumerStats := ReceiveNFromMultipleChannels(t, numMessages, 5 * time.Second, streams[topic])
+	if consumerStats != nil {
+		//one channel should never receive a message, check this
+		noMessagesReceived := 0
+		for i, ch := range streams[topic] {
+			if consumerStats[ch] == 0 {
+				Debugf("test", "Channel %d never received a message", i)
+				noMessagesReceived++
+			}
+		}
+
+		if noMessagesReceived != 1 {
+			t.Error("One channel should never receive a message when consuming from %d partitions with %d threads", numPartitions, numThreads)
+		}
+	}
+
+	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer.Close()
+}
+
+func TestMultiplePartitionsWithLessConsumerThreads(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numMessages := 100
+	numPartitions := 3
+	numThreads := numPartitions - 1
+	topic := createMultiplePartitionsTopic(t, numPartitions)
+
+	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer)
+
+	topics := map[string]int {topic: numThreads}
+	streams := consumer.CreateMessageStreams(topics)
+	consumerStats := ReceiveNFromMultipleChannels(t, numMessages, 5 * time.Second, streams[topic])
+	if consumerStats != nil {
+		//also check that all channels produced messages
+		for _, ch := range streams[topic] {
+			if consumerStats[ch] == 0 {
+				t.Error("Messages were consumed, but one of channels never received a message")
+			}
+		}
+	}
+
+	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer.Close()
+}
+
 func testConsumer(t *testing.T) *Consumer {
 	config := DefaultConsumerConfig()
 	config.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}

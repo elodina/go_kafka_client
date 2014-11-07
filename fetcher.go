@@ -341,7 +341,6 @@ func (f *consumerFetcherRoutine) Start() {
 			InLock(&f.partitionMapLock, func() {
 				Debugf(f, "Partition map: %v", f.partitionMap)
 				for topicAndPartition, offset := range f.partitionMap {
-					Debug(f, "Adding request block")
 					f.fetchRequestBlockMap[topicAndPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
 				}
 			})
@@ -450,7 +449,7 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 	Info(f, "Processing partition data")
 
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
-	partitionTopicInfo.BlockChannel <- partitionData
+	partitionTopicInfo.BlockChannel.chunks <- partitionData
 }
 
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {
@@ -510,7 +509,10 @@ func (f *consumerFetcherRoutine) Close() <-chan bool {
 		f.close <- true
 		f.fetchStopper <- true
 		for _, pti := range f.allPartitionMap {
-			close(pti.BlockChannel)
+			if !pti.BlockChannel.closed {
+				pti.BlockChannel.closed = true
+				close(pti.BlockChannel.chunks)
+			}
 		}
 		f.closeFinished <- true
 	}()

@@ -71,7 +71,7 @@ func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 			}
 			numMessages += len(batch)
 			if numMessages == n {
-				Debugf("consumer", "Successfully consumed %d message[s]", n)
+				Debugf("test", "Successfully consumed %d message[s]", n)
 				return
 			}
 		}
@@ -108,14 +108,14 @@ func ReceiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 		batch := value.Interface().([]*Message)
 		batchSize := len(batch)
 
-		Debugf("consumer", "Received %d messages from channel %d", batchSize, chosen)
+		Debugf("test", "Received %d messages from channel %d", batchSize, chosen-1)
 		if numMessages + batchSize > n {
 			t.Error("Received more messages than expected")
 		}
 		numMessages += batchSize
 		messageStats[from[chosen-1]] = messageStats[from[chosen-1]] + batchSize
 		if numMessages == n {
-			Debugf("consumer", "Successfully consumed %d message[s]", n)
+			Debugf("test", "Successfully consumed %d message[s]", n)
 			return messageStats
 		}
 	}
@@ -135,7 +135,7 @@ func ProduceN(t *testing.T, n int, p *producer.KafkaProducer) {
 func CloseWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	select {
 	case <-consumer.Close(): {
-		Info(consumer, "Successfully closed consumer")
+		Info("test", "Successfully closed consumer")
 	}
 	case <-time.After(timeout): {
 		t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())

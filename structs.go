@@ -103,10 +103,15 @@ func (tp *TopicAndPartition) String() string {
 	return fmt.Sprintf("{Topic: %s, Partition: %d}", tp.Topic, tp.Partition)
 }
 
+type SharedBlockChannel struct {
+	chunks chan *sarama.FetchResponseBlock
+	closed bool
+}
+
 type PartitionTopicInfo struct {
 	Topic string
 	Partition int
-	BlockChannel chan *sarama.FetchResponseBlock
+	BlockChannel *SharedBlockChannel
 	ConsumedOffset int64
 	FetchedOffset int64
 	FetchSize int
@@ -155,7 +160,7 @@ func (p *PartitionFetchInfo) String() string {
 }
 
 type ChannelAndStream struct {
-	Blocks chan *sarama.FetchResponseBlock
+	Blocks *SharedBlockChannel
 	Messages chan []*Message
 	closeChannel chan bool
 }
