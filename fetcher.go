@@ -325,15 +325,15 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 		allPartitionMap : allPartitionMap,
 		partitionMap : make(map[TopicAndPartition]int64),
 		close : make(chan bool, 1),
-		closeFinished : make(chan bool),
+		closeFinished : make(chan bool, 1),
 		fetchRequestBlockMap : make(map[TopicAndPartition]*PartitionFetchInfo),
-		fetchStopper : make(chan bool),
+		fetchStopper : make(chan bool, 1),
 	}
 }
 
 func (f *consumerFetcherRoutine) Start() {
 	Info(f, "Fetcher started")
-	for {
+//	for {
 		select {
 		case <-f.fetchStopper: return
 		default: {
@@ -361,7 +361,7 @@ func (f *consumerFetcherRoutine) Start() {
 			}
 		}
 		}
-	}
+//	}
 }
 
 func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndPartition]int64) {

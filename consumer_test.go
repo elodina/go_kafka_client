@@ -22,6 +22,8 @@ import (
 	"github.com/stealthly/go-kafka/producer"
 	"fmt"
 	"time"
+	"os/exec"
+	"os"
 )
 
 var TEST_KAFKA_HOST = "192.168.86.10:9092"
@@ -81,6 +83,31 @@ func TestProduceIntoMultipleAndConsumeFromOne(t *testing.T) {
 	kafkaProducer2.Close()
 }
 
+func TestMultiplePartitions(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numMessages := 100
+	topic := createMultiplePartitionsTopic(t, 3)
+
+	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer)
+
+	topics := map[string]int {topic: 3}
+	streams := consumer.CreateMessageStreams(topics)
+	consumerStats := ReceiveNFromMultipleChannels(t, numMessages, 5 * time.Second, streams[topic])
+	if consumerStats != nil {
+		//also check that all channels produced messages
+		for _, ch := range streams[topic] {
+			if consumerStats[ch] == 0 {
+				t.Error("Messages were consumed, but one of channels never received a message")
+			}
+		}
+	}
+
+	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer.Close()
+}
+
 func testConsumer(t *testing.T) *Consumer {
 	config := DefaultConsumerConfig()
 	config.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}
@@ -88,4 +115,19 @@ func testConsumer(t *testing.T) *Consumer {
 	consumer := NewConsumer(config)
 	AssertNot(t, consumer.zkConn, nil)
 	return consumer
+}
+
+func createMultiplePartitionsTopic(t *testing.T, numPartitions int) string {
+	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Unix())
+	params := fmt.Sprintf("--zookeeper %s --replica 1 --partition %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
+
+	script := fmt.Sprintf("%s/bin/kafka-create-topic.sh %s", os.Getenv("KAFKA_PATH"), params)
+	Debug("script", script)
+	out, err := exec.Command("sh", "-c", script).Output()
+	if err != nil {
+		t.Fatalf("Could not create multiple partitions topic %s", topicName)
+	}
+	Debug("create topic", out)
+
+	return topicName
 }

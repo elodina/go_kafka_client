@@ -80,6 +80,49 @@ func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 	}
 }
 
+func ReceiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, from []<-chan []*Message) map[<-chan []*Message]int {
+	numMessages := 0
+
+	messageStats := make(map[<-chan []*Message]int)
+	cases := make([]reflect.SelectCase, len(from)+1)
+	for i, ch := range from {
+		cases[i+1] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
+	}
+	cases[0] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(timeout))}
+
+	remaining := len(cases)
+	for remaining > 0 {
+		chosen, value, ok := reflect.Select(cases)
+		if !ok {
+			// The chosen channel has been closed, so zero out the channel to disable the case
+			cases[chosen].Chan = reflect.ValueOf(nil)
+			remaining -= 1
+			continue
+		}
+
+		if _, ok := value.Interface().(time.Time); ok {
+			t.Errorf("Failed to receive %d messages within %d seconds", n, timeout.Seconds())
+			return nil
+		}
+
+		batch := value.Interface().([]*Message)
+		batchSize := len(batch)
+
+		Debugf("consumer", "Received %d messages from channel %d", batchSize, chosen)
+		if numMessages + batchSize > n {
+			t.Error("Received more messages than expected")
+		}
+		numMessages += batchSize
+		messageStats[from[chosen-1]] = messageStats[from[chosen-1]] + batchSize
+		if numMessages == n {
+			Debugf("consumer", "Successfully consumed %d message[s]", n)
+			return messageStats
+		}
+	}
+
+	return nil
+}
+
 func ProduceN(t *testing.T, n int, p *producer.KafkaProducer) {
 	for i := 0; i < n; i++ {
 		message := fmt.Sprintf("test-kafka-message-%d", n)

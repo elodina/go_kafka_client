@@ -326,7 +326,7 @@ func (c *Consumer) rebalance() {
 			partitionOwnershipDecision := partitionAssignor(assignmentContext)
 			topicPartitions := make([]*TopicAndPartition, 0)
 			for topicPartition, _ := range partitionOwnershipDecision {
-				topicPartitions = append(topicPartitions, &topicPartition)
+				topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 			}
 
 			offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
