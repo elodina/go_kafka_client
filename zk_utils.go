@@ -24,6 +24,7 @@ import (
 	"path"
 	"github.com/samuel/go-zookeeper/zk"
 	"sort"
+	"time"
 )
 
 var (
@@ -120,8 +121,18 @@ func GetConsumersInGroup(zkConnection *zk.Conn, group string) ([]string, error) 
 }
 
 func GetConsumersInGroupWatcher(zkConnection *zk.Conn, group string) (<- chan zk.Event, error) {
-	Debugf("zk", "Getting consumers in group %s", group)
+	Debugf("zk", "Getting consumer watcher for group %s", group)
 	_, _, watcher, err := zkConnection.ChildrenW(NewZKGroupDirs(group).ConsumerRegistryDir)
+	if (err != nil) {
+		return nil, err
+	}
+
+	return watcher, nil
+}
+
+func GetConsumerGroupChangesWatcher(zkConnection *zk.Conn, group string) (<- chan zk.Event, error) {
+	Debugf("zk", "Getting watcher for consumer group '%s' changes", group)
+	_, _, watcher, err := zkConnection.ChildrenW(NewZKGroupDirs(group).ConsumerChangesDir)
 	if (err != nil) {
 		return nil, err
 	}
@@ -305,10 +316,10 @@ func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, 
 	err := CreateOrUpdatePathParentMayNotExist(zkConnection, pathToOwn, []byte(consumerThreadId.String()))
 	if (err != nil) {
 		if (err == zk.ErrNodeExists) {
-			Debugf("zk", "waiting for the partition ownership to be deleted: %d", partition)
+			Debugf(consumerThreadId, "waiting for the partition ownership to be deleted: %d", partition)
 			return false, nil
 		} else {
-			Error("zk", err.Error())
+			Error(consumerThreadId, err.Error())
 			return false, err
 		}
 	}
@@ -332,6 +343,64 @@ func DeletePartitionOwnership(zkConnection *zk.Conn, group string, topic string,
 	return nil
 }
 
+func IsConsumerGroupInSync(zkConnection *zk.Conn, group string) (bool, error) {
+	Debugf("zk", "Trying to check consumer group '%s' lock existance", group)
+	inSync, _, err := zkConnection.Exists(NewZKGroupDirs(group).ConsumerSyncDir)
+	return inSync, err
+}
+
+func CreateConsumerGroupSync(zkConnection *zk.Conn, group string) error {
+	Debugf("zk", "Creating lock for consumer group '%s'", group)
+	return CreateOrUpdatePathParentMayNotExist(zkConnection, NewZKGroupDirs(group).ConsumerSyncDir, make([]byte, 0))
+}
+
+func DeleteConsumerGroupSync(zkConnection *zk.Conn, group string) error {
+	Debugf("zk", "Trying to delete consumer group '%s' lock", group)
+	pathToDelete := NewZKGroupDirs(group).ConsumerSyncDir
+	_, stat, err := zkConnection.Get(pathToDelete)
+	if err != nil {
+		if err == zk.ErrNoNode {
+			return nil
+		} else {
+			return err
+		}
+	}
+	err = zkConnection.Delete(pathToDelete, stat.Version)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func NotifyConsumerGroup(zkConnection *zk.Conn, group string, consumerId string) error {
+	path := fmt.Sprintf("%s/%s-%d", NewZKGroupDirs(group).ConsumerChangesDir, consumerId, time.Now().Nanosecond())
+	Debugf("zk", "Sending notification to consumer group at %s", path)
+	return CreateOrUpdatePathParentMayNotExist(zkConnection, path, make([]byte, 0))
+}
+
+func PurgeObsoleteConsumerGroupNotifications(zkConnection *zk.Conn, group string) error {
+	Debugf("zk", "Trying to delete obsolete notifications from consumer group '%s'", group)
+	notifications, _, err := zkConnection.Children(NewZKGroupDirs(group).ConsumerChangesDir)
+	if err != nil {
+		return err
+	}
+
+	for _, notification := range notifications {
+		pathToDelete := fmt.Sprintf("%s/%s", NewZKGroupDirs(group).ConsumerChangesDir, notification)
+		_, stat, err := zkConnection.Get(pathToDelete)
+		if (err != nil) {
+			return err
+		}
+		err = zkConnection.Delete(pathToDelete, stat.Version)
+		if (err != nil) {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func UpdateRecord(zkConnection *zk.Conn, pathToCreate string, dataToWrite []byte) error {
 	Debugf("zk", "Trying to update path %s", pathToCreate)
 	_, stat, _ := zkConnection.Get(pathToCreate)
@@ -345,16 +414,22 @@ type ZKGroupDirs struct {
 	ConsumerDir         string
 	ConsumerGroupDir    string
 	ConsumerRegistryDir string
+	ConsumerChangesDir	string
+	ConsumerSyncDir	  string
 }
 
 func NewZKGroupDirs(group string) *ZKGroupDirs {
 	consumerGroupDir := fmt.Sprintf("%s/%s", ConsumersPath, group)
 	consumerRegistryDir := fmt.Sprintf("%s/ids", consumerGroupDir)
+	consumerChangesDir := fmt.Sprintf("%s/changes", consumerGroupDir)
+	consumerSyncDir := fmt.Sprintf("%s/sync", consumerGroupDir)
 	return &ZKGroupDirs {
 		Group: group,
 		ConsumerDir: ConsumersPath,
 		ConsumerGroupDir: consumerGroupDir,
 		ConsumerRegistryDir: consumerRegistryDir,
+		ConsumerChangesDir: consumerChangesDir,
+		ConsumerSyncDir: consumerSyncDir,
 	}
 }
 

@@ -192,17 +192,17 @@ func testConsumer(t *testing.T) *Consumer {
 }
 
 func createMultiplePartitionsTopic(_ *testing.T, numPartitions int) string {
-	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Unix())
+	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Nanosecond())
 	params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
 	script := ""
 	if runtime.GOOS == "windows" {
 		script = fmt.Sprintf("%s\\bin\\windows\\kafka-topics.bat %s", os.Getenv("KAFKA_PATH"), params)
+		exec.Command("cmd", "/C", script).Output()
 	} else {
 		script = fmt.Sprintf("%s/bin/kafka-topics.sh %s", os.Getenv("KAFKA_PATH"), params)
+		exec.Command("sh", "-c", script).Output()
 	}
-	Debug("script", script)
-	out, _ := exec.Command("sh", "-c", script).Output()
-	Debug("create topic", out)
+	Debug("script", script))
 
 	return topicName
 }
@@ -230,6 +230,7 @@ func TestConsumersSwitchTopic(t *testing.T) {
 	consumer2 := NewConsumer(config)
 
 	consumer2.CreateMessageStreams(topics1)
+
 	time.Sleep(5 * time.Second)
 
 	_, exists1_1 := consumer1.TopicRegistry[topic1]

@@ -1,4 +1,4 @@
-<seelog minlevel="debug">
+<seelog minlevel="info">
     <outputs formatid="main">
         <console />
     </outputs>

@@ -174,8 +174,8 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 	desiredPattern := ""
 	desiredTopicCountMap := make(map[string]int)
 	for _, consumerId := range consumers {
-		topicCount, err := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
-		topicSwitch, inTopicSwitch := topicCount.(*TopicSwitch)
+		tc, err := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
+		topicSwitch, inTopicSwitch := tc.(*TopicSwitch)
 		if (err != nil) {
 			return nil, err
 		}

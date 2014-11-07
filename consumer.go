@@ -209,6 +209,7 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsA
 }
 
 func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
+	Infof(c, "Switching to %s with pattern '%s'", topicCountMap, pattern)
 	//TODO: whitelist/blacklist pattern handling
 	staticTopicCount := &TopicSwitch {
 		ConsumerId : c.config.ConsumerId,
@@ -219,9 +220,13 @@ func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
 		Version : int16(1),
 		Subscription : staticTopicCount.GetTopicsToNumStreamsMap(),
-		Pattern : staticTopicCount.Pattern(),
+		Pattern : fmt.Sprintf("%s%s", SwitchToPatternPrefix, staticTopicCount.Pattern()),
 		Timestamp : time.Now().Unix(),
 	})
+	err := NotifyConsumerGroup(c.zkConn, c.config.Groupid, c.config.ConsumerId)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (c *Consumer) Close() <-chan bool {
@@ -277,9 +282,18 @@ func (c *Consumer) connectToZookeeper() {
 }
 
 func (c *Consumer) subscribeForChanges(group string) {
-	Infof(c, "Subscribing for changes for %s", NewZKGroupDirs(group).ConsumerRegistryDir)
+	dirs := NewZKGroupDirs(group)
+	Infof(c, "Subscribing for changes for %s", dirs.ConsumerRegistryDir)
+	err := CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerChangesDir, make([]byte, 0))
+	if err != nil {
+		panic(err)
+	}
 
 	consumersWatcher, err := GetConsumersInGroupWatcher(c.zkConn, group)
+	if err != nil {
+		panic(err)
+	}
+	consumerGroupChangesWatcher, err := GetConsumerGroupChangesWatcher(c.zkConn, group)
 	if err != nil {
 		panic(err)
 	}
@@ -296,16 +310,59 @@ func (c *Consumer) subscribeForChanges(group string) {
 		for {
 			select {
 			case e := <-topicsWatcher: {
-				InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				Trace(c, e)
+				if e.State == zk.StateDisconnected {
+					Debug(c, "Topic registry watcher session ended, reconnecting...")
+					watcher, err := GetTopicsWatcher(c.zkConn)
+					if err != nil {
+						panic(err)
+					}
+					topicsWatcher = watcher
+				} else {
+					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				}
 			}
 			case e := <-consumersWatcher: {
-				InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				Trace(c, e)
+				if e.State == zk.StateDisconnected {
+					Debug(c, "Consumer registry watcher session ended, reconnecting...")
+					watcher, err := GetConsumersInGroupWatcher(c.zkConn, group)
+					if err != nil {
+						panic(err)
+					}
+					consumersWatcher = watcher
+				} else {
+					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				}
 			}
 			case e := <-brokersWatcher: {
-				InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				Trace(c, e)
+				if e.State == zk.StateDisconnected {
+					Debug(c, "Broker registry watcher session ended, reconnecting...")
+					watcher, err := GetAllBrokersInClusterWatcher(c.zkConn)
+					if err != nil {
+						panic(err)
+					}
+					brokersWatcher = watcher
+				} else {
+					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				}
+			}
+			case e := <-consumerGroupChangesWatcher: {
+				Trace(c, e)
+				if e.State == zk.StateDisconnected {
+					Debug(c, "Consumer changes watcher session ended, reconnecting...")
+					watcher, err := GetConsumerGroupChangesWatcher(c.zkConn, group)
+					if err != nil {
+						panic(err)
+					}
+					consumerGroupChangesWatcher = watcher
+				} else {
+					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				}
 			}
 			case <-c.unsubscribe: {
-				Info(c, "Unsubscribing from changes")
+				Debug(c, "Unsubscribing from changes")
 				c.releasePartitionOwnership(c.TopicRegistry)
 				err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
 				if err != nil {
@@ -332,86 +389,129 @@ func (c *Consumer) rebalance() {
 	if (!c.isShuttingdown) {
 		Infof(c, "rebalance triggered for %s\n", c.config.ConsumerId)
 		var success = false
-		var err error
 		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
-			topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
-			if (err != nil) {
-				Warn(c, err.Error())
-				time.Sleep(c.config.RebalanceBackoffMs)
-				continue
-			}
-			Infof(c, "%v\n", topicPerThreadIdsMap)
-
-			brokers, err := GetAllBrokersInCluster(c.zkConn)
-			if (err != nil) {
-				Warn(c, err.Error())
-				time.Sleep(c.config.RebalanceBackoffMs)
-				continue
-			}
-			Infof(c, "%v\n", brokers)
-
-			//TODO: close fetchers
-			c.releasePartitionOwnership(c.TopicRegistry)
-
-			assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
-			if assignmentContext.State.IsGroupTopicSwitchInProgress {
-				if (!assignmentContext.InTopicSwitch) {
-					c.SwitchTopic(assignmentContext.State.DesiredTopicCountMap, assignmentContext.State.DesiredPattern)
-					return
-				}
-
-				RegisterConsumer(c.zkConn, assignmentContext.Group, assignmentContext.ConsumerId, &ConsumerInfo{
-					Version : int16(1),
-					Subscription : assignmentContext.State.DesiredTopicCountMap,
-					Pattern : assignmentContext.State.DesiredPattern,
-					Timestamp : time.Now().Unix(),
-				})
-			}
-
-			partitionOwnershipDecision := partitionAssignor(assignmentContext)
-			topicPartitions := make([]*TopicAndPartition, 0)
-			for topicPartition, _ := range partitionOwnershipDecision {
-				topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
-			}
-
-			offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
-			if (err != nil) {
-				Error(c, err.Error())
+			if (tryRebalance(c, partitionAssignor)) {
+				success = true
 				break
-			}
-
-			currentTopicRegistry := make(map[string]map[int]*PartitionTopicInfo)
-
-			if (c.isShuttingdown) {
-				Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.ConsumerId)
-				return
 			} else {
-				for _, topicPartition := range topicPartitions {
-					offset := offsetsFetchResponse.Blocks[topicPartition.Topic][int32(topicPartition.Partition)].Offset
-					threadId := partitionOwnershipDecision[*topicPartition]
-					c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
-				}
-			}
-
-			if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
-				c.TopicRegistry = currentTopicRegistry
-				c.updateFetcher()
-			} else {
-				Warnf(c, "Failed to reflect partition ownership for consumer %s", c.config.ConsumerId)
 				time.Sleep(c.config.RebalanceBackoffMs)
-				continue
 			}
-
-			success = true
-			break
 		}
 
 		if (!success && !c.isShuttingdown) {
-			panic(err)
+			panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
 		}
 	} else {
 		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...\n", c.config.ConsumerId)
 	}
+}
+
+func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
+	//Don't hurry to delete it, we need it for closing the fetchers
+	topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
+	if (err != nil) {
+		Errorf(c, "Failed to get topic count map: %s", err)
+		return false
+	}
+	Infof(c, "%v\n", topicPerThreadIdsMap)
+
+	brokers, err := GetAllBrokersInCluster(c.zkConn)
+	if (err != nil) {
+		Errorf(c, "Failed to get broker list: %s", err)
+		return false
+	}
+	Infof(c, "%v\n", brokers)
+
+	//TODO: close fetchers
+	Debug(c, c.TopicRegistry)
+	c.releasePartitionOwnership(c.TopicRegistry)
+
+	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
+	if err != nil {
+		Errorf(c, "Failed to initialize assignment context: %s", err)
+		return false
+	}
+	if assignmentContext.State.IsGroupTopicSwitchInProgress {
+		Info(c, "Consumer group is in process of switching to new topics")
+		if !assignmentContext.InTopicSwitch {
+			c.SwitchTopic(assignmentContext.State.DesiredTopicCountMap, assignmentContext.State.DesiredPattern)
+			return true
+		}
+
+		if !assignmentContext.State.IsGroupTopicSwitchInSync {
+			zkGroupInSync, err := IsConsumerGroupInSync(c.zkConn, c.config.Groupid)
+			if err != nil {
+				Error(c, "Failed to get group sync state")
+				return false
+			}
+			if !zkGroupInSync {
+				Infof(c, "Group is not sync yet. Waiting...")
+				return true
+			}
+		} else {
+			err = CreateConsumerGroupSync(c.zkConn, c.config.Groupid)
+			if err != nil {
+				Error(c, "Failed to initialize assignment context")
+				return false
+			}
+		}
+
+		RegisterConsumer(c.zkConn, assignmentContext.Group, assignmentContext.ConsumerId, &ConsumerInfo{
+			Version : int16(1),
+			Subscription : assignmentContext.State.DesiredTopicCountMap,
+			Pattern : assignmentContext.State.DesiredPattern,
+			Timestamp : time.Now().Unix(),
+		})
+		err = NotifyConsumerGroup(c.zkConn, c.config.Groupid, c.config.ConsumerId)
+		if (err != nil) {
+			Errorf(c, "Failed to notify consumer group: %s", err)
+			return false
+		}
+	} else {
+		err = DeleteConsumerGroupSync(c.zkConn, c.config.Groupid)
+		if err != nil {
+			Errorf(c, "Failed to delete consumer group sync: %s", err)
+		}
+		err = PurgeObsoleteConsumerGroupNotifications(c.zkConn, c.config.Groupid)
+		if err != nil {
+			Errorf(c, "Failed to delete obsolete notifications for consumer group: %s", err)
+		}
+	}
+
+	partitionOwnershipDecision := partitionAssignor(assignmentContext)
+	topicPartitions := make([]*TopicAndPartition, 0)
+	for topicPartition, _ := range partitionOwnershipDecision {
+		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
+	}
+
+	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	if (err != nil) {
+		Errorf(c, "Failed to fetch offsets during rebalance: %s", err)
+		return false
+	}
+
+	currentTopicRegistry := make(map[string]map[int]*PartitionTopicInfo)
+
+	if (c.isShuttingdown) {
+		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.ConsumerId)
+		return true
+	} else {
+		for _, topicPartition := range topicPartitions {
+			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][int32(topicPartition.Partition)].Offset
+			threadId := partitionOwnershipDecision[*topicPartition]
+			c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
+		}
+	}
+
+	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
+		c.TopicRegistry = currentTopicRegistry
+		c.updateFetcher()
+	} else {
+		Errorf(c, "Failed to reflect partition ownership during rebalance")
+		return false
+	}
+
+	return true
 }
 
 func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.OffsetFetchResponse, error) {
@@ -508,7 +608,11 @@ func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[i
 		for partition, _ := range partitionInfos {
 			err := DeletePartitionOwnership(c.zkConn, c.config.Groupid, topic, partition)
 			if (err != nil) {
-				panic(err)
+				if err == zk.ErrNoNode {
+					Warn(c, err)
+				} else {
+					panic(err)
+				}
 			}
 		}
 		delete(localTopicRegistry, topic)
