@@ -26,15 +26,13 @@ import (
 
 type WorkerManager struct {
 	Config *ConsumerConfig
-	Strategy WorkerStrategy
-	Workers []*Worker
+	Strategy         WorkerStrategy
+	Workers          []*Worker
 	AvailableWorkers chan *Worker
 	CurrentBatch map[TaskId]*Task
-	InputChannel chan[] *Message
-	OutputChannel chan map[TopicAndPartition]int64
+	InputChannel     chan [] *Message
+	OutputChannel    chan map[TopicAndPartition]int64
 	LargestOffsets map[TopicAndPartition]int64
-	CurrentBatchCreated time.Time
-	IsTimedOut bool
 }
 
 func (wm *WorkerManager) String() string {
@@ -42,38 +40,37 @@ func (wm *WorkerManager) String() string {
 }
 
 func (wm *WorkerManager) Start() {
-	go wm.startResultDispatcher()
 	for {
 		batch := <-wm.InputChannel
-		wm.IsTimedOut = false
 		for _, message := range batch {
 			wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, int(message.Partition) }, message.Offset }] = &Task{
 				Msg: message,
-				Retries: 0,
 			}
 		}
 
 		for _, task := range wm.CurrentBatch {
-			if wm.IsTimedOut { break }
-
 			worker := <-wm.AvailableWorkers
-			go worker.Start(task)
+			worker.Start(task, wm.Strategy)
 		}
 
+		wm.awaitResult()
+
 		wm.OutputChannel <- wm.LargestOffsets
+		wm.LargestOffsets = make(map[TopicAndPartition]int64)
 	}
 }
 
-func(wm *WorkerManager) IsBatchProcessed() bool {
+func (wm *WorkerManager) IsBatchProcessed() bool {
 	return len(wm.CurrentBatch) == 0
 }
 
-func (wm *WorkerManager) startResultDispatcher() {
+func (wm *WorkerManager) awaitResult() {
 	outputChannels := make([]chan WorkerResult, wm.Config.NumWorkers)
 	for i, worker := range wm.Workers {
 		outputChannels[i] = worker.OutputChannel
 	}
 
+	Loop:
 	for {
 		cases := make([]reflect.SelectCase, len(outputChannels))
 		for i, ch := range outputChannels {
@@ -107,8 +104,8 @@ func (wm *WorkerManager) startResultDispatcher() {
 						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
 					}
 					cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(wm.Config.BatchTimeout))})
-					wm.IsTimedOut = true
-					continue
+					wm.CurrentBatch = make(map[TaskId]*Task)
+					break Loop
 				} else {
 					panic("Incorrect result has been returned from worker")
 				}
@@ -126,9 +123,11 @@ func (wm *WorkerManager) startResultDispatcher() {
 				} else {
 					Warnf(wm, "Retrying worker task %s %dth time", result.Id, task.Retries)
 					time.Sleep(wm.Config.WorkerBackoff)
-					go task.Callee.Start(task)
+					go task.Callee.Start(task, wm.Strategy)
 				}
 			}
+
+			if wm.IsBatchProcessed() { break Loop }
 		}
 	}
 }
@@ -137,6 +136,7 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	key := result.Id.TopicPartition
 	wm.LargestOffsets[key] = int64(math.Max(float64(wm.LargestOffsets[key]), float64(result.Id.Offset)))
 	wm.AvailableWorkers <- wm.CurrentBatch[result.Id].Callee
+	delete(wm.CurrentBatch, result.Id)
 }
 
 func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64) *WorkerManager {
@@ -144,7 +144,6 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
 		workers[i] = &Worker{
-			InputChannel: make(chan *Message),
 			OutputChannel: make(chan WorkerResult),
 		}
 		availableWorkers <- workers[i]
@@ -155,7 +154,7 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 		Strategy: config.Strategy,
 		Workers: workers,
 		AvailableWorkers: availableWorkers,
-		InputChannel: make(chan[] *Message),
+		InputChannel: make(chan [] *Message),
 		OutputChannel: batchOutputChannel,
 		CurrentBatch: make(map[TaskId]*Task),
 		LargestOffsets: make(map[TopicAndPartition]int64),
@@ -163,13 +162,12 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 }
 
 type Worker struct {
-	InputChannel chan *Message
 	OutputChannel chan WorkerResult
 }
 
-func (w *Worker) Start(task *Task) {
+func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	task.Callee = w
-	w.InputChannel <- task.Msg
+	go strategy(task.Msg, w.OutputChannel)
 }
 
 type WorkerStrategy func(*Message, chan WorkerResult)
@@ -181,13 +179,13 @@ type Task struct {
 }
 
 type WorkerResult struct {
-	Id TaskId
+	Id      TaskId
 	Success bool
 }
 
 type TaskId struct {
 	TopicPartition TopicAndPartition
-	Offset int64
+	Offset         int64
 }
 
 func (tid *TaskId) String() string {
