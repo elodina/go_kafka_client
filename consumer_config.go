@@ -113,6 +113,21 @@ type ConsumerConfig struct {
 
 	/** Zookeeper read timeout */
 	ZookeeperTimeout time.Duration
+
+	/* Amount of workers */
+	NumWorkers int
+
+	/* Times to retry failed message processing by worker */
+	MaxWorkerRetries int
+
+	/* Backoff for worker message processing */
+	WorkerBackoff time.Duration
+
+	/* Timeout for processing the whole batch by cosumer */
+	BatchTimeout time.Duration
+
+	/* Worker strategy */
+	Strategy WorkerStrategy
 }
 
 func DefaultConsumerConfig() *ConsumerConfig {
