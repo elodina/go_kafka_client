@@ -68,14 +68,18 @@ func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 		case batch := <-from: {
 			if numMessages + len(batch) > n {
 				t.Error("Received more messages than expected")
+				return
 			}
 			numMessages += len(batch)
 			if numMessages == n {
-				Debugf("test", "Successfully consumed %d message[s]", n)
+				Infof("test", "Successfully consumed %d message[s]", n)
 				return
 			}
 		}
-		case <-time.After(timeout): t.Errorf("Failed to receive a message within %d seconds", timeout.Seconds())
+		case <-time.After(timeout): {
+			t.Errorf("Failed to receive a message within %f seconds", timeout.Seconds())
+			return
+		}
 		}
 	}
 }
@@ -108,19 +112,33 @@ func ReceiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 		batch := value.Interface().([]*Message)
 		batchSize := len(batch)
 
-		Debugf("test", "Received %d messages from channel %d", batchSize, chosen-1)
+		Infof("test", "Received %d messages from channel %d", batchSize, chosen-1)
 		if numMessages + batchSize > n {
 			t.Error("Received more messages than expected")
 		}
 		numMessages += batchSize
 		messageStats[from[chosen-1]] = messageStats[from[chosen-1]] + batchSize
 		if numMessages == n {
-			Debugf("test", "Successfully consumed %d message[s]", n)
+			Infof("test", "Successfully consumed %d message[s]", n)
 			return messageStats
 		}
 	}
 
 	return nil
+}
+
+func ReceiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Message) {
+	for {
+		select {
+		case batch := <-from: {
+			t.Errorf("Received %d messages when should receive none", len(batch))
+		}
+		case <-time.After(timeout): {
+			Info("test", "Received no messages as expected")
+			return
+		}
+		}
+	}
 }
 
 func ProduceN(t *testing.T, n int, p *producer.KafkaProducer) {

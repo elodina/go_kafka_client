@@ -288,6 +288,39 @@ func TestWhitelistWithLessConsumerThreads(t *testing.T) {
 	kafkaProducer2.Close()
 }
 
+func TestStartOffsets(t *testing.T) {
+	numMessages := 100
+	numThreads := 1
+
+	consumerSmallest := testConsumer(t)
+
+	topicSmallest := fmt.Sprintf("test-smallestoffsets-%d", time.Now().Unix())
+	kafkaProducer1 := producer.NewKafkaProducer(topicSmallest, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer1)
+
+	topics := map[string]int {topicSmallest: numThreads}
+	stream := consumerSmallest.CreateMessageStreams(topics)[topicSmallest][0]
+	ReceiveN(t, numMessages, 5 * time.Second, stream)
+
+	kafkaProducer1.Close()
+	CloseWithin(t, 5 * time.Second, consumerSmallest)
+
+	configLatest := DefaultConsumerConfig()
+	configLatest.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}
+	consumerLatest := NewConsumer(configLatest)
+
+	topicLatest := fmt.Sprintf("test-latestoffsets-%d", time.Now().Unix())
+	kafkaProducer2 := producer.NewKafkaProducer(topicLatest, []string{TEST_KAFKA_HOST}, nil)
+	ProduceN(t, numMessages, kafkaProducer2)
+
+	topics = map[string]int {topicLatest: numThreads}
+	stream = consumerLatest.CreateMessageStreams(topics)[topicLatest][0]
+	ReceiveNoMessages(t, 5 * time.Second, stream)
+
+	kafkaProducer2.Close()
+	CloseWithin(t, 5 * time.Second, consumerLatest)
+}
+
 func testConsumer(t *testing.T) *Consumer {
 	config := DefaultConsumerConfig()
 	config.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}
@@ -354,7 +387,7 @@ func TestConsumersSwitchTopic(t *testing.T) {
 	Assert(t, exists2_2, false)
 
 	consumer1.SwitchTopic(topics2, StaticPattern)
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	_, exists1_1 = consumer1.TopicRegistry[topic1]
 	_, exists1_2 = consumer1.TopicRegistry[topic2]
