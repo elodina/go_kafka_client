@@ -77,7 +77,7 @@ func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 			}
 		}
 		case <-time.After(timeout): {
-			t.Errorf("Failed to receive a message within %f seconds", timeout.Seconds())
+			t.Errorf("Failed to receive a message within %d seconds", int(timeout.Seconds()))
 			return
 		}
 		}
