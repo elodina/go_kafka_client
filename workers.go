@@ -70,8 +70,8 @@ func(wm *WorkerManager) IsBatchProcessed() bool {
 
 func (wm *WorkerManager) startResultDispatcher() {
 	outputChannels := make([]chan WorkerResult, wm.Config.NumWorkers)
-	for i := 0; i < wm.Config.NumWorkers; i++ {
-		outputChannels[i] = make(chan WorkerResult)
+	for i, worker := range wm.Workers {
+		outputChannels[i] = worker.OutputChannel
 	}
 
 	for {
