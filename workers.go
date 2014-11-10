@@ -76,7 +76,7 @@ func (wm *WorkerManager) awaitResult() {
 		for i, ch := range outputChannels {
 			cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
 		}
-		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(wm.Config.BatchTimeout))})
+		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(wm.Config.WorkerBatchTimeout))})
 
 		remaining := len(cases)
 		for remaining > 0 {
@@ -103,7 +103,7 @@ func (wm *WorkerManager) awaitResult() {
 					for i, ch := range outputChannels {
 						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
 					}
-					cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(wm.Config.BatchTimeout))})
+					cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(wm.Config.WorkerBatchTimeout))})
 					wm.CurrentBatch = make(map[TaskId]*Task)
 					break Loop
 				} else {

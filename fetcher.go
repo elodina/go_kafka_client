@@ -45,12 +45,11 @@ func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.ConsumerId)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, fetchInto chan *Message) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config : config,
 		zkConn : zkConn,
 		fetchers : make(map[string]*consumerFetcherRoutine),
-		messages : fetchInto,
 		closeFinished : make(chan bool),
 		partitionMap : make(map[TopicAndPartition]*PartitionTopicInfo),
 		fetcherRoutineMap : make(map[BrokerAndFetcherId]*consumerFetcherRoutine),
@@ -449,7 +448,7 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 	Info(f, "Processing partition data")
 
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
-	partitionTopicInfo.BlockChannel.chunks <- partitionData
+	partitionTopicInfo.BlockChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
 }
 
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {

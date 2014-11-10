@@ -61,7 +61,6 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	Infof(config.ConsumerId, "Starting new consumer with configuration: %s", config)
 	c := &Consumer{
 		config : config,
-		messages : make(chan *Message),
 		unsubscribe : make(chan bool, 1),
 		closeFinished : make(chan bool),
 		topicChannels : make(map[string][]<-chan []*Message),
@@ -74,7 +73,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	c.addShutdownHook()
 
 	c.connectToZookeeper()
-	c.fetcher = newConsumerFetcherManager(config, c.zkConn, c.messages)
+	c.fetcher = newConsumerFetcherManager(config, c.zkConn)
 
 	return c
 }
@@ -89,29 +88,29 @@ func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string
 		TopicsToNumStreamsMap : topicCountMap,
 	}
 
-	var channelsAndStreams []*ChannelAndStream = nil
+	var accumulators []*BatchAccumulator = nil
 	for _, threadIdSet := range staticTopicCount.GetConsumerThreadIdsPerTopic() {
-		channelsAndStreamsForThread := make([]*ChannelAndStream, len(threadIdSet))
-		for i := 0; i < len(channelsAndStreamsForThread); i++ {
+		accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
+		for i := 0; i < len(accumulatorsForThread); i++ {
 			closeChannel := make(chan bool, 1)
 			c.closeChannels = append(c.closeChannels, closeChannel)
-			channelsAndStreamsForThread[i] = NewChannelAndStream(c.config, closeChannel)
+			accumulatorsForThread[i] = NewBatchAccumulator(c.config, closeChannel)
 		}
-		channelsAndStreams = append(channelsAndStreams, channelsAndStreamsForThread...)
+		accumulators = append(accumulators, accumulatorsForThread...)
 	}
 
 	c.RegisterInZK(staticTopicCount)
-	c.ReinitializeConsumer(staticTopicCount, channelsAndStreams)
+	c.ReinitializeConsumer(staticTopicCount, accumulators)
 
 	return c.topicChannels
 }
 
 func (c *Consumer) CreateMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) []<-chan []*Message {
-	var channelsAndStreams []*ChannelAndStream = nil
+	var acuumulators []*BatchAccumulator = nil
 	for i := 0; i < numStreams; i++ {
 		closeChannel := make(chan bool, 1)
 		c.closeChannels = append(c.closeChannels, closeChannel)
-		channelsAndStreams = append(channelsAndStreams, NewChannelAndStream(c.config, closeChannel))
+		acuumulators = append(acuumulators, NewBatchAccumulator(c.config, closeChannel))
 	}
 	allTopics, err := GetTopics(c.zkConn)
 	if err != nil {
@@ -132,13 +131,13 @@ func (c *Consumer) CreateMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 
 	c.RegisterInZK(topicCount)
-	c.ReinitializeConsumer(topicCount, channelsAndStreams)
+	c.ReinitializeConsumer(topicCount, acuumulators)
 
 	//TODO subscriptions?
 
 	messages := make([]<-chan []*Message, 0)
-	for _, channelAndStream := range channelsAndStreams {
-		messages = append(messages, channelAndStream.Messages)
+	for _, accumulator := range acuumulators {
+		messages = append(messages, accumulator.OutputChannel)
 	}
 
 	return messages
@@ -157,18 +156,18 @@ func (c *Consumer) RegisterInZK(topicCount TopicsToNumStreams) {
 		})
 }
 
-func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsAndStreams []*ChannelAndStream) {
+func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulators []*BatchAccumulator) {
 	consumerThreadIdsPerTopic := topicCount.GetConsumerThreadIdsPerTopic()
 
-	allChannelsAndStreams := make([]*ChannelAndStream, 0)
+	allAccumulators := make([]*BatchAccumulator, 0)
 	switch topicCount.(type) {
 		case *StaticTopicsToNumStreams: {
-			allChannelsAndStreams = channelsAndStreams
+			allAccumulators = accumulators
 		}
 		case *WildcardTopicsToNumStreams: {
 			for _, _ = range consumerThreadIdsPerTopic {
-				for _, channelAndStream := range channelsAndStreams {
-					allChannelsAndStreams = append(allChannelsAndStreams, channelAndStream)
+				for _, accumulator := range accumulators {
+					allAccumulators = append(allAccumulators, accumulator)
 				}
 			}
 		}
@@ -180,25 +179,25 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, channelsA
 		}
 	}
 
-	if len(topicThreadIds) != len(allChannelsAndStreams) {
+	if len(topicThreadIds) != len(allAccumulators) {
 		panic("Mismatch between thread ID count and channel count")
 	}
-	threadStreamPairs := make(map[TopicAndThreadId]*ChannelAndStream)
+	threadAccumulatorPairs := make(map[TopicAndThreadId]*BatchAccumulator)
 	for i := 0; i < len(topicThreadIds); i++ {
-		threadStreamPairs[topicThreadIds[i]] = allChannelsAndStreams[i]
+		threadAccumulatorPairs[topicThreadIds[i]] = allAccumulators[i]
 	}
 
-	for topicThread, channelStream := range threadStreamPairs {
-		c.topicThreadIdsAndSharedChannels[topicThread] = channelStream.Blocks
+	for topicThread, accumulator := range threadAccumulatorPairs {
+		c.topicThreadIdsAndSharedChannels[topicThread] = accumulator.InputChannel
 	}
 
 	topicToStreams := make(map[string][]<-chan []*Message)
-	for topicThread, channelStream := range threadStreamPairs {
+	for topicThread, accumulator := range threadAccumulatorPairs {
 		topic := topicThread.Topic
 		if topicToStreams[topic] == nil {
 			topicToStreams[topic] = make([]<-chan []*Message, 0)
 		}
-		topicToStreams[topic] = append(topicToStreams[topic], channelStream.Messages)
+		topicToStreams[topic] = append(topicToStreams[topic], accumulator.OutputChannel)
 	}
 	c.topicChannels = topicToStreams
 
@@ -621,43 +620,4 @@ func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[i
 
 func IsOffsetInvalid(offset int64) bool {
 	return offset <= InvalidOffset
-}
-
-func NewChannelAndStream(config *ConsumerConfig, closeChannel chan bool) *ChannelAndStream {
-	blockChannel := &SharedBlockChannel{make(chan *sarama.FetchResponseBlock, config.QueuedMaxMessages), false}
-	cs := &ChannelAndStream {
-		Blocks : blockChannel,
-		Messages : make(chan []*Message),
-		closeChannel : closeChannel,
-	}
-
-	go cs.processIncomingBlocks()
-	return cs
-}
-
-func (cs *ChannelAndStream) processIncomingBlocks() {
-	Debug("cs", "Started processing blocks")
-	for {
-		select {
-		case <-cs.closeChannel: {
-			return
-		}
-		case b := <-cs.Blocks.chunks: {
-			if b != nil {
-				messages := make([]*Message, 0)
-				for _, message := range b.MsgSet.Messages {
-					msg := &Message {
-						Key : message.Msg.Key,
-						Value : message.Msg.Value,
-						Offset : message.Offset,
-					}
-					messages = append(messages, msg)
-				}
-				if len(messages) > 0 {
-					cs.Messages <- messages
-				}
-			}
-		}
-		}
-	}
 }

@@ -124,10 +124,16 @@ type ConsumerConfig struct {
 	WorkerBackoff time.Duration
 
 	/* Timeout for processing the whole batch by cosumer */
-	BatchTimeout time.Duration
+	WorkerBatchTimeout time.Duration
 
 	/* Worker strategy */
 	Strategy WorkerStrategy
+
+	/* Batch size */
+	FetchBatchSize int
+
+	/* Timeout to accumulate messages */
+	FetchBatchTimeout time.Duration
 }
 
 func DefaultConsumerConfig() *ConsumerConfig {
@@ -158,6 +164,9 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.PartitionAssignmentStrategy = "range"/* select between "range", and "roundrobin" */
 	config.ZookeeperConnect = []string{"localhost"}
 	config.ZookeeperTimeout = 1 * time.Second
+
+	config.FetchBatchSize = 1
+	config.FetchBatchTimeout = 5 * time.Second
 
 	return config
 }
