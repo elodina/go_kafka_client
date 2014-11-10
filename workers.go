@@ -102,7 +102,7 @@ func (wm *WorkerManager) startResultDispatcher() {
 						task.Callee.OutputChannel = channel
 						wm.AvailableWorkers <- task.Callee
 					}
-					cases := make([]reflect.SelectCase, len(outputChannels))
+					cases = make([]reflect.SelectCase, len(outputChannels))
 					for i, ch := range outputChannels {
 						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
 					}
