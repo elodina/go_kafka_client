@@ -402,7 +402,7 @@ func (c *Consumer) rebalance() {
 			panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
 		}
 	} else {
-		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...\n", c.config.ConsumerId)
+		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.ConsumerId)
 	}
 }
 

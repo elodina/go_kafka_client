@@ -27,8 +27,8 @@ import (
 	"runtime"
 )
 
-var TEST_KAFKA_HOST = "localhost:9092"
-var TEST_ZOOKEEPER_HOST = "localhost:2181"
+var TEST_KAFKA_HOST = "192.168.86.10:9092"
+var TEST_ZOOKEEPER_HOST = "192.168.86.5:2181"
 
 func TestDistinctTopics(t *testing.T) {
 	fetcher := &consumerFetcherManager{}
@@ -101,7 +101,8 @@ func TestMultiplePartitions(t *testing.T) {
 	consumer := testConsumer(t)
 
 	numMessages := 100
-	topic := createMultiplePartitionsTopic(t, 3)
+	topic := fmt.Sprintf("test-partitions-%d", time.Now().Nanosecond())
+	createMultiplePartitionsTopic(t, topic, 3)
 
 	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
 	ProduceN(t, numMessages, kafkaProducer)
@@ -128,7 +129,8 @@ func TestMultiplePartitionsWithMoreConsumerThreads(t *testing.T) {
 	numMessages := 100
 	numPartitions := 3
 	numThreads := numPartitions + 1
-	topic := createMultiplePartitionsTopic(t, numPartitions)
+	topic := fmt.Sprintf("test-partitions-%d", time.Now().Nanosecond())
+	createMultiplePartitionsTopic(t, topic, numPartitions)
 
 	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
 	ProduceN(t, numMessages, kafkaProducer)
@@ -161,7 +163,8 @@ func TestMultiplePartitionsWithLessConsumerThreads(t *testing.T) {
 	numMessages := 100
 	numPartitions := 3
 	numThreads := numPartitions - 1
-	topic := createMultiplePartitionsTopic(t, numPartitions)
+	topic := fmt.Sprintf("test-partitions-%d", time.Now().Nanosecond())
+	createMultiplePartitionsTopic(t, topic, numPartitions)
 
 	kafkaProducer := producer.NewKafkaProducer(topic, []string{TEST_KAFKA_HOST}, nil)
 	ProduceN(t, numMessages, kafkaProducer)
@@ -182,6 +185,109 @@ func TestMultiplePartitionsWithLessConsumerThreads(t *testing.T) {
 	kafkaProducer.Close()
 }
 
+func TestWhitelist(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numMessages := 100
+	prefix := fmt.Sprintf("test-wildcard-%d", time.Now().Nanosecond())
+	topic1 := fmt.Sprintf("%s-1", prefix)
+	topic2 := fmt.Sprintf("%s-2", prefix)
+	createMultiplePartitionsTopic(t, topic1, 2)
+	createMultiplePartitionsTopic(t, topic2, 2)
+	kafkaProducer1 := producer.NewKafkaProducer(topic1, []string{TEST_KAFKA_HOST}, nil)
+	kafkaProducer2 := producer.NewKafkaProducer(topic2, []string{TEST_KAFKA_HOST}, nil)
+
+	ProduceN(t, numMessages, kafkaProducer1)
+	ProduceN(t, numMessages, kafkaProducer2)
+
+	filter := NewWhiteList(fmt.Sprintf("%s.+", prefix))
+	streams := consumer.CreateMessageStreamsByFilterN(filter, 2)
+	consumerStats := ReceiveNFromMultipleChannels(t, numMessages*2, 5 * time.Second, streams)
+	if consumerStats != nil {
+		//also check that all channels produced messages
+		for _, ch := range streams {
+			if consumerStats[ch] == 0 {
+				t.Error("Messages were consumed, but one of channels never received a message")
+			}
+		}
+	}
+	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer1.Close()
+	kafkaProducer2.Close()
+}
+
+func TestWhitelistWithMoreConsumerThreads(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numPartitions := 3
+	numThreads := numPartitions + 1
+	numMessages := 100
+	prefix := fmt.Sprintf("test-wildcard-%d", time.Now().Nanosecond())
+	topic1 := fmt.Sprintf("%s-1", prefix)
+	topic2 := fmt.Sprintf("%s-2", prefix)
+	createMultiplePartitionsTopic(t, topic1, numPartitions)
+	createMultiplePartitionsTopic(t, topic2, numPartitions)
+	kafkaProducer1 := producer.NewKafkaProducer(topic1, []string{TEST_KAFKA_HOST}, nil)
+	kafkaProducer2 := producer.NewKafkaProducer(topic2, []string{TEST_KAFKA_HOST}, nil)
+
+	ProduceN(t, numMessages, kafkaProducer1)
+	ProduceN(t, numMessages, kafkaProducer2)
+
+	filter := NewWhiteList(fmt.Sprintf("%s.+", prefix))
+	streams := consumer.CreateMessageStreamsByFilterN(filter, numThreads)
+	consumerStats := ReceiveNFromMultipleChannels(t, numMessages*2, 5 * time.Second, streams)
+	if consumerStats != nil {
+		//one channel should never receive a message, check this
+		noMessagesReceived := 0
+		for i, ch := range streams {
+			if consumerStats[ch] == 0 {
+				Debugf("test", "Channel %d never received a message", i)
+				noMessagesReceived++
+			}
+		}
+
+		if noMessagesReceived != 1 {
+			t.Error("One channel should never receive a message when consuming from %d partitions with %d threads", numPartitions, numThreads)
+		}
+	}
+	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer1.Close()
+	kafkaProducer2.Close()
+}
+
+func TestWhitelistWithLessConsumerThreads(t *testing.T) {
+	consumer := testConsumer(t)
+
+	numPartitions := 3
+	numThreads := numPartitions - 1
+	numMessages := 100
+	prefix := fmt.Sprintf("test-wildcard-%d", time.Now().Nanosecond())
+	topic1 := fmt.Sprintf("%s-1", prefix)
+	topic2 := fmt.Sprintf("%s-2", prefix)
+	createMultiplePartitionsTopic(t, topic1, numPartitions)
+	createMultiplePartitionsTopic(t, topic2, numPartitions)
+	kafkaProducer1 := producer.NewKafkaProducer(topic1, []string{TEST_KAFKA_HOST}, nil)
+	kafkaProducer2 := producer.NewKafkaProducer(topic2, []string{TEST_KAFKA_HOST}, nil)
+
+	ProduceN(t, numMessages, kafkaProducer1)
+	ProduceN(t, numMessages, kafkaProducer2)
+
+	filter := NewWhiteList(fmt.Sprintf("%s.+", prefix))
+	streams := consumer.CreateMessageStreamsByFilterN(filter, numThreads)
+	consumerStats := ReceiveNFromMultipleChannels(t, numMessages*2, 5 * time.Second, streams)
+	if consumerStats != nil {
+		//also check that all channels produced messages
+		for _, ch := range streams {
+			if consumerStats[ch] == 0 {
+				t.Error("Messages were consumed, but one of channels never received a message")
+			}
+		}
+	}
+	CloseWithin(t, 5 * time.Second, consumer)
+	kafkaProducer1.Close()
+	kafkaProducer2.Close()
+}
+
 func testConsumer(t *testing.T) *Consumer {
 	config := DefaultConsumerConfig()
 	config.ZookeeperConnect = []string{TEST_ZOOKEEPER_HOST}
@@ -191,25 +297,27 @@ func testConsumer(t *testing.T) *Consumer {
 	return consumer
 }
 
-func createMultiplePartitionsTopic(_ *testing.T, numPartitions int) string {
-	topicName := fmt.Sprintf("test-partitions-%d", time.Now().Nanosecond())
-	params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
-	script := ""
+func createMultiplePartitionsTopic(t *testing.T, topicName string, numPartitions int) {
 	if runtime.GOOS == "windows" {
-		script = fmt.Sprintf("%s\\bin\\windows\\kafka-topics.bat %s", os.Getenv("KAFKA_PATH"), params)
+		params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
+		script := fmt.Sprintf("%s\\bin\\windows\\kafka-topics.bat %s", os.Getenv("KAFKA_PATH"), params)
 		exec.Command("cmd", "/C", script).Output()
 	} else {
-		script = fmt.Sprintf("%s/bin/kafka-topics.sh %s", os.Getenv("KAFKA_PATH"), params)
-		exec.Command("sh", "-c", script).Output()
+		params := fmt.Sprintf("--zookeeper %s --replica 1 --partition %d --topic %s", TEST_ZOOKEEPER_HOST, numPartitions, topicName)
+		script := fmt.Sprintf("%s/bin/kafka-create-topic.sh %s", os.Getenv("KAFKA_PATH"), params)
+		out, err := exec.Command("sh", "-c", script).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		Debug("create topic", out)
 	}
-	Debug("script", script)
-
-	return topicName
 }
 
 func TestConsumersSwitchTopic(t *testing.T) {
-	topic1 := createMultiplePartitionsTopic(t, 4)
-	topic2 := createMultiplePartitionsTopic(t, 4)
+	topic1 := fmt.Sprintf("test-partitions-%d", time.Now().Nanosecond())
+	topic2 := fmt.Sprintf("test-partitions-%d", time.Now().Nanosecond())
+	createMultiplePartitionsTopic(t, topic1, 4)
+	createMultiplePartitionsTopic(t, topic2, 4)
 
 	topics1 := map[string]int {topic1: 2}
 	topics2 := map[string]int {topic2: 2}
@@ -259,4 +367,6 @@ func TestConsumersSwitchTopic(t *testing.T) {
 
 	Assert(t, exists2_1, false)
 	Assert(t, exists2_2, true)
+	CloseWithin(t, 5 * time.Second, consumer1)
+	CloseWithin(t, 5 * time.Second, consumer2)
 }
