@@ -150,7 +150,7 @@ type AssignmentContext struct {
 	ConsumerId string
 	Group      string
 	MyTopicThreadIds map[string][]*ConsumerThreadId
-	PartitionsForTopic map[string][]int
+	PartitionsForTopic map[string][]int32
 	ConsumersForTopic map[string][]*ConsumerThreadId
 	Consumers  []string
 	InTopicSwitch bool

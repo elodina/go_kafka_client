@@ -166,8 +166,8 @@ func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTo
 	return consumersPerTopicMap, nil
 }
 
-func GetPartitionsForTopics(zkConnection *zk.Conn, topics []string) (map[string][]int, error) {
-	result := make(map[string][]int)
+func GetPartitionsForTopics(zkConnection *zk.Conn, topics []string) (map[string][]int32, error) {
+	result := make(map[string][]int32)
 	partitionAssignments, err := GetPartitionAssignmentsForTopics(zkConnection, topics)
 	if (err != nil) {
 		return nil, err
@@ -181,9 +181,9 @@ func GetPartitionsForTopics(zkConnection *zk.Conn, topics []string) (map[string]
 	return result, nil
 }
 
-func GetReplicaAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[TopicAndPartition][]int, error) {
+func GetReplicaAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[TopicAndPartition][]int32, error) {
 	Debugf("zk", "Trying to get replica assignments for topics %v", topics)
-	result := make(map[TopicAndPartition][]int)
+	result := make(map[TopicAndPartition][]int32)
 	for _, topic := range topics {
 		topicInfo, err := GetTopicInfo(zkConnection, topic)
 		if (err != nil) {
@@ -196,7 +196,7 @@ func GetReplicaAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map
 			}
 			topicAndPartition := TopicAndPartition{
 				Topic: topic,
-				Partition: partitionInt,
+				Partition: int32(partitionInt),
 			}
 			result[topicAndPartition] = replicaIds
 		}
@@ -205,21 +205,21 @@ func GetReplicaAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map
 	return result, nil
 }
 
-func GetPartitionAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[string]map[int][]int, error) {
+func GetPartitionAssignmentsForTopics(zkConnection *zk.Conn, topics []string) (map[string]map[int32][]int32, error) {
 	Debugf("zk", "Trying to get partition assignments for topics %v", topics)
-	result := make(map[string]map[int][]int)
+	result := make(map[string]map[int32][]int32)
 	for _, topic := range topics {
 		topicInfo, err := GetTopicInfo(zkConnection, topic)
 		if (err != nil) {
 			return nil, err
 		}
-		result[topic] = make(map[int][]int)
+		result[topic] = make(map[int32][]int32)
 		for partition, replicaIds := range topicInfo.Partitions {
 			partitionInt, err := strconv.Atoi(partition)
 			if (err != nil) {
 				return nil, err
 			}
-			result[topic][partitionInt] = replicaIds
+			result[topic][int32(partitionInt)] = replicaIds
 		}
 	}
 
@@ -311,7 +311,7 @@ func GetOffsetForTopicPartition(zkConnection *zk.Conn, group string, topicPartit
 	return int64(offsetNum), nil
 }
 
-func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int, consumerThreadId *ConsumerThreadId) (bool, error) {
+func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int32, consumerThreadId *ConsumerThreadId) (bool, error) {
 	pathToOwn := fmt.Sprintf("%s/%d", NewZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
 	err := CreateOrUpdatePathParentMayNotExist(zkConnection, pathToOwn, []byte(consumerThreadId.String()))
 	if (err != nil) {
@@ -329,7 +329,7 @@ func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, 
 	return true, nil
 }
 
-func DeletePartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int) error {
+func DeletePartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int32) error {
 	pathToDelete := fmt.Sprintf("%s/%d", NewZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
 	_, stat, err := zkConnection.Get(pathToDelete)
 	if (err != nil) {

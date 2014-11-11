@@ -108,7 +108,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 			for _, meta := range topicsMetadata {
 				topic := meta.Name
 				for _, partition := range meta.Partitions {
-					topicAndPartition := TopicAndPartition{topic, int(partition.ID) }
+					topicAndPartition := TopicAndPartition{topic, partition.ID }
 
 					var leaderBroker *BrokerInfo = nil
 					for _, broker := range brokers {
@@ -246,7 +246,7 @@ func (m *consumerFetcherManager) addPartitionsWithError(partitions []*TopicAndPa
 	})
 }
 
-func (m *consumerFetcherManager) getFetcherId(topic string, partitionId int) int {
+func (m *consumerFetcherManager) getFetcherId(topic string, partitionId int32) int {
 	return int(math.Abs(float64(31 * Hash(topic) + partitionId))) % int(m.config.NumConsumerFetchers)
 }
 
@@ -405,7 +405,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 		InLock(&f.partitionMapLock, func() {
 			for topic, partitionAndData := range response.Blocks {
 				for partition, data := range partitionAndData {
-					topicAndPartition := TopicAndPartition{topic, int(partition)}
+					topicAndPartition := TopicAndPartition{topic, partition}
 					currentOffset, exists := f.partitionMap[topicAndPartition]
 					if exists && f.fetchRequestBlockMap[topicAndPartition].Offset == currentOffset {
 						switch data.Err {

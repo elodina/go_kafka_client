@@ -43,7 +43,7 @@ func (wm *WorkerManager) Start() {
 	for {
 		batch := <-wm.InputChannel
 		for _, message := range batch {
-			wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, int(message.Partition) }, message.Offset }] = &Task{
+			wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, message.Partition }, message.Offset }] = &Task{
 				Msg: message,
 			}
 		}

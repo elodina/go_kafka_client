@@ -118,8 +118,8 @@ func Position(haystack interface {}, needle interface {}) int {
 	return -1
 }
 
-func Hash(s string) int {
+func Hash(s string) int32 {
 	h := fnv.New32a()
 	h.Write([]byte(s))
-	return int(h.Sum32())
+	return int32(h.Sum32())
 }

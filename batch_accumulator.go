@@ -68,8 +68,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 						Key : message.Msg.Key,
 						Value : message.Msg.Value,
 						Topic : topicPartition.Topic,
-						//TODO fix casting int to int32 everywhere
-						Partition : int32(topicPartition.Partition),
+						Partition : topicPartition.Partition,
 						Offset : message.Offset,
 					}
 					ba.MessagesBuffer = append(ba.MessagesBuffer, msg)

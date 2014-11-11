@@ -29,8 +29,8 @@ var (
 		&ConsumerThreadId{"consumerid2", 0},
 		&ConsumerThreadId{"consumerid2", 1},
 	}
-	partitionsForTopic = map[string][]int {
-		"topic1": []int{0, 1, 2 ,3, 4},
+	partitionsForTopic = map[string][]int32 {
+		"topic1": []int32{0, 1, 2 ,3, 4},
 	}
 	consumersForTopic = map[string][]*ConsumerThreadId {
 		"topic1": consumerThreadIds,

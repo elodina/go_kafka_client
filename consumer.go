@@ -44,7 +44,7 @@ type Consumer struct {
 	isShuttingdown bool
 	topicChannels map[string][]<-chan []*Message
 	topicThreadIdsAndSharedChannels map[TopicAndThreadId]*SharedBlockChannel
-	TopicRegistry map[string]map[int]*PartitionTopicInfo
+	TopicRegistry map[string]map[int32]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
 	closeChannels  []chan bool
 }
@@ -65,7 +65,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		closeFinished : make(chan bool),
 		topicChannels : make(map[string][]<-chan []*Message),
 		topicThreadIdsAndSharedChannels : make(map[TopicAndThreadId]*SharedBlockChannel),
-		TopicRegistry: make(map[string]map[int]*PartitionTopicInfo),
+		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
 		closeChannels: make([]chan bool, 0),
 	}
@@ -489,14 +489,14 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		return false
 	}
 
-	currentTopicRegistry := make(map[string]map[int]*PartitionTopicInfo)
+	currentTopicRegistry := make(map[string]map[int32]*PartitionTopicInfo)
 
 	if (c.isShuttingdown) {
 		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.ConsumerId)
 		return true
 	} else {
 		for _, topicPartition := range topicPartitions {
-			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][int32(topicPartition.Partition)].Offset
+			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
 			threadId := partitionOwnershipDecision[*topicPartition]
 			c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
 		}
@@ -543,12 +543,12 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 	}
 }
 
-func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int]*PartitionTopicInfo,
+func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int32]*PartitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
 	consumerThreadId *ConsumerThreadId) {
 	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
 	if (!exists) {
-		partTopicInfoMap = make(map[int]*PartitionTopicInfo)
+		partTopicInfoMap = make(map[int32]*PartitionTopicInfo)
 		currentTopicRegistry[topicPartition.Topic] = partTopicInfoMap
 	}
 
@@ -601,7 +601,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	return true
 }
 
-func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[int]*PartitionTopicInfo) {
+func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[int32]*PartitionTopicInfo) {
 	Info(c, "Releasing partition ownership")
 	for topic, partitionInfos := range localTopicRegistry {
 		for partition, _ := range partitionInfos {

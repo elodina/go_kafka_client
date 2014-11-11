@@ -57,7 +57,7 @@ func (c *ConsumerInfo) String() string {
 
 type TopicInfo struct {
 	Version int16
-	Partitions map[string][]int
+	Partitions map[string][]int32
 }
 
 func (t *TopicInfo) String() string {
@@ -96,7 +96,7 @@ type TopicFilter interface {
 
 type TopicAndPartition struct {
 	Topic string
-	Partition int
+	Partition int32
 }
 
 func (tp *TopicAndPartition) String() string {
@@ -110,7 +110,7 @@ type SharedBlockChannel struct {
 
 type PartitionTopicInfo struct {
 	Topic string
-	Partition int
+	Partition int32
 	BlockChannel *SharedBlockChannel
 	ConsumedOffset int64
 	FetchedOffset int64
