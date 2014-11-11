@@ -121,7 +121,19 @@ type ConsumerConfig struct {
 	MaxWorkerRetries int
 
 	/* Worker retry threshold */
-	WorkerRetryThreshold int
+	WorkerRetryThreshold int32
+
+	/* Time period in which workers could be considered failed if WorkerRetryThreshold is exceeded */
+	WorkerConsideredFailedTimeWindow time.Duration
+
+	/* Callback executed when WorkerRetryThreshold exceeded within WorkerConsideredFailedTimeWindow */
+	WorkerFailureCallback FailedCallback
+
+	/* Callback executed when Worker failed to process the message after MaxWorkerRetries and WorkerRetryThreshold is not hit */
+	WorkerFailedAttemptCallback FailedCallback
+
+	/* Timeout to close the worker */
+	WorkerCloseTimeout time.Duration
 
 	/* Backoff for worker message processing */
 	WorkerBackoff time.Duration

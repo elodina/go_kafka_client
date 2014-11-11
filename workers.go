@@ -22,17 +22,21 @@ import (
 	"reflect"
 	"math"
 	"fmt"
+	"sync"
 )
 
 type WorkerManager struct {
 	Config *ConsumerConfig
 	Strategy         WorkerStrategy
+	FailureCallback FailedCallback
+	FailedAttemptCallback FailedCallback
 	Workers          []*Worker
 	AvailableWorkers chan *Worker
 	CurrentBatch map[TaskId]*Task
 	InputChannel     chan [] *Message
 	OutputChannel    chan map[TopicAndPartition]int64
 	LargestOffsets map[TopicAndPartition]int64
+	FailCounter *FailureCounter
 }
 
 func (wm *WorkerManager) String() string {
@@ -58,6 +62,18 @@ func (wm *WorkerManager) Start() {
 		wm.OutputChannel <- wm.LargestOffsets
 		wm.LargestOffsets = make(map[TopicAndPartition]int64)
 	}
+}
+
+func (wm *WorkerManager) Stop() chan bool {
+	finished := make(chan bool)
+	go func() {
+		for _, worker := range wm.Workers {
+			worker.Close()
+		}
+		finished <- true
+	}()
+
+	return finished
 }
 
 func (wm *WorkerManager) IsBatchProcessed() bool {
@@ -119,7 +135,13 @@ func (wm *WorkerManager) awaitResult() {
 				task.Retries++
 				if task.Retries >= wm.Config.MaxWorkerRetries {
 					Errorf(wm, "Worker task %s has failed after %d retries", result.Id, wm.Config.MaxWorkerRetries)
+
 					wm.taskIsDone(result)
+					if wm.FailCounter.Failed() {
+						wm.FailureCallback(wm)
+					} else {
+						wm.FailedAttemptCallback(wm)
+					}
 				} else {
 					Warnf(wm, "Retrying worker task %s %dth time", result.Id, task.Retries)
 					time.Sleep(wm.Config.WorkerBackoff)
@@ -145,6 +167,7 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 	for i := 0; i < config.NumWorkers; i++ {
 		workers[i] = &Worker{
 			OutputChannel: make(chan WorkerResult),
+			CloseTimeout: config.WorkerCloseTimeout,
 		}
 		availableWorkers <- workers[i]
 	}
@@ -152,25 +175,83 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 	return &WorkerManager {
 		Config: config,
 		Strategy: config.Strategy,
-		Workers: workers,
+		FailureCallback: config.WorkerFailureCallback,
+		FailedAttemptCallback: config.WorkerFailedAttemptCallback,
 		AvailableWorkers: availableWorkers,
 		InputChannel: make(chan [] *Message),
 		OutputChannel: batchOutputChannel,
 		CurrentBatch: make(map[TaskId]*Task),
 		LargestOffsets: make(map[TopicAndPartition]int64),
+		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
 	}
 }
 
 type Worker struct {
 	OutputChannel chan WorkerResult
+	CloseTimeout time.Duration
+	Closed bool
 }
 
 func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	task.Callee = w
-	go strategy(task.Msg, w.OutputChannel)
+	go strategy(w, task.Msg, w.OutputChannel)
 }
 
-type WorkerStrategy func(*Message, chan WorkerResult)
+func (w *Worker) Close() *WorkerResult {
+	if !w.Closed {
+		w.Closed = true
+		select {
+		case result := <- w.OutputChannel: {
+			return &result
+		}
+		case <- time.After(w.CloseTimeout): {
+			Warnf(w, "Worker failed to close within %f seconds", w.CloseTimeout.Seconds())
+			return nil
+		}
+		}
+	}
+
+	return nil
+}
+
+type WorkerStrategy func(*Worker, *Message, chan WorkerResult)
+
+type FailedCallback func(*WorkerManager)
+
+type FailureCounter struct {
+	count int32
+	failed bool
+	countLock sync.Mutex
+	failedThreshold int32
+}
+
+func NewFailureCounter(FailedThreshold int32, WorkerConsideredFailedTimeWindow time.Duration) *FailureCounter {
+	counter := &FailureCounter {
+		failedThreshold : FailedThreshold,
+	}
+	go func() {
+		for {
+			select {
+			case <- time.After(WorkerConsideredFailedTimeWindow): {
+				if counter.count >= FailedThreshold {
+					counter.failed = true
+					return
+				} else {
+					InLock(&counter.countLock, func() {
+						counter.count = 0
+					})
+				}
+			}
+			}
+		}
+	}()
+	return counter
+}
+
+func (f *FailureCounter) Failed() bool {
+	InLock(&f.countLock, func() { f.count++ })
+	return f.count >= f.failedThreshold || f.failed
+}
 
 type Task struct {
 	Msg *Message
