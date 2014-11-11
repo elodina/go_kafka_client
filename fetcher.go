@@ -39,13 +39,14 @@ type consumerFetcherManager struct {
 	noLeaderPartitions    []*TopicAndPartition
 	stopFindLeaders       bool
 	leaderCond            *sync.Cond
+	next chan bool
 }
 
 func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.ConsumerId)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, next chan bool) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config : config,
 		zkConn : zkConn,
@@ -54,6 +55,7 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn) *consume
 		partitionMap : make(map[TopicAndPartition]*PartitionTopicInfo),
 		fetcherRoutineMap : make(map[BrokerAndFetcherId]*consumerFetcherRoutine),
 		noLeaderPartitions : make([]*TopicAndPartition, 0),
+		next : next,
 	}
 	manager.leaderCond = sync.NewCond(&manager.lock)
 
@@ -332,11 +334,10 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 
 func (f *consumerFetcherRoutine) Start() {
 	Info(f, "Fetcher started")
-//	for {
+	for {
 		select {
 		case <-f.fetchStopper: return
-		default: {
-			time.Sleep(1 * time.Second)
+		case <-f.manager.next: {
 			InLock(&f.partitionMapLock, func() {
 				Debugf(f, "Partition map: %v", f.partitionMap)
 				for topicAndPartition, offset := range f.partitionMap {
@@ -359,7 +360,7 @@ func (f *consumerFetcherRoutine) Start() {
 			}
 		}
 		}
-//	}
+	}
 }
 
 func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndPartition]int64) {

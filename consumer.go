@@ -47,6 +47,9 @@ type Consumer struct {
 	TopicRegistry map[string]map[int32]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
 	closeChannels  []chan bool
+	offsetsCommitter *OffsetsCommitter
+	workerManager *WorkerManager
+	askNextBatch chan bool
 }
 
 type Message struct {
@@ -68,12 +71,15 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
 		closeChannels: make([]chan bool, 0),
+		workerManager: NewWorkerManager(config, make(chan map[TopicAndPartition]int64)),
 	}
 
 	c.addShutdownHook()
 
 	c.connectToZookeeper()
-	c.fetcher = newConsumerFetcherManager(config, c.zkConn)
+	c.askNextBatch = make(chan bool)
+	c.offsetsCommitter = NewOffsetsCommiter(c.config, c.workerManager.OutputChannel, c.askNextBatch, c.zkConn)
+	c.fetcher = newConsumerFetcherManager(config, c.zkConn, c.askNextBatch)
 
 	return c
 }
@@ -82,7 +88,46 @@ func (c *Consumer) String() string {
 	return c.config.ConsumerId
 }
 
-func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string][]<-chan []*Message {
+func (c *Consumer) StartStatic(topicCountMap map[string]int) {
+	streams := c.createMessageStreams(topicCountMap)
+	cases := make([]reflect.SelectCase, 0)
+	for _, channels := range streams {
+		for _, ch := range channels {
+			cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)})
+		}
+	}
+
+	c.startStreams(cases)
+}
+
+func (c *Consumer) StartWildcard(topicFilter TopicFilter, numStreams int) {
+	streams := c.createMessageStreamsByFilterN(topicFilter, numStreams)
+	cases := make([]reflect.SelectCase, len(streams))
+	for i := 0; i < len(streams); i++ {
+		cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(streams[i])}
+	}
+
+	c.startStreams(cases)
+}
+
+func (c *Consumer) startStreams(cases []reflect.SelectCase) {
+	for {
+		remaining := len(cases)
+		for remaining > 0 {
+			chosen, value, ok := reflect.Select(cases)
+			if !ok {
+				// The chosen channel has been closed, so zero out the channel to disable the case
+				cases[chosen].Chan = reflect.ValueOf(nil)
+				remaining -= 1
+				continue
+			}
+
+			c.workerManager.InputChannel <- value.Interface().([]*Message)
+		}
+	}
+}
+
+func (c *Consumer) createMessageStreams(topicCountMap map[string]int) map[string][]<-chan []*Message {
 	staticTopicCount := &StaticTopicsToNumStreams {
 		ConsumerId : c.config.ConsumerId,
 		TopicsToNumStreamsMap : topicCountMap,
@@ -105,7 +150,7 @@ func (c *Consumer) CreateMessageStreams(topicCountMap map[string]int) map[string
 	return c.topicChannels
 }
 
-func (c *Consumer) CreateMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) []<-chan []*Message {
+func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) []<-chan []*Message {
 	var acuumulators []*BatchAccumulator = nil
 	for i := 0; i < numStreams; i++ {
 		closeChannel := make(chan bool, 1)
@@ -143,8 +188,8 @@ func (c *Consumer) CreateMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	return messages
 }
 
-func (c *Consumer) CreateMessageStreamsByFilter(topicFilter TopicFilter) []<-chan []*Message {
-	return c.CreateMessageStreamsByFilterN(topicFilter, c.config.NumConsumerFetchers)
+func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) []<-chan []*Message {
+	return c.createMessageStreamsByFilterN(topicFilter, c.config.NumConsumerFetchers)
 }
 
 func (c *Consumer) RegisterInZK(topicCount TopicsToNumStreams) {
@@ -205,6 +250,7 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulat
 	//TODO more subscriptions
 
 	c.rebalance()
+	c.askNextBatch <- true
 }
 
 func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
