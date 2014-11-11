@@ -120,6 +120,9 @@ type ConsumerConfig struct {
 	/* Times to retry failed message processing by worker */
 	MaxWorkerRetries int
 
+	/* Worker retry threshold */
+	WorkerRetryThreshold int
+
 	/* Backoff for worker message processing */
 	WorkerBackoff time.Duration
 
@@ -164,6 +167,12 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.PartitionAssignmentStrategy = "range"/* select between "range", and "roundrobin" */
 	config.ZookeeperConnect = []string{"localhost"}
 	config.ZookeeperTimeout = 1 * time.Second
+
+	config.NumWorkers = 10
+	config.MaxWorkerRetries = 3
+	config.WorkerRetryThreshold = 100
+	config.WorkerBackoff = 500 * time.Millisecond
+	config.WorkerBatchTimeout = 1 * time.Minute
 
 	config.FetchBatchSize = 1
 	config.FetchBatchTimeout = 5 * time.Second
