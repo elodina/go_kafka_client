@@ -130,10 +130,13 @@ type ConsumerConfig struct {
 	WorkerFailureCallback FailedCallback
 
 	/* Callback executed when Worker failed to process the message after MaxWorkerRetries and WorkerRetryThreshold is not hit */
-	WorkerFailedAttemptCallback FailedCallback
+	WorkerFailedAttemptCallback FailedAttemptCallback
 
 	/* Timeout to close the worker */
 	WorkerCloseTimeout time.Duration
+
+	/* Task timeout */
+	WorkerTaskTimeout time.Duration
 
 	/* Backoff for worker message processing */
 	WorkerBackoff time.Duration

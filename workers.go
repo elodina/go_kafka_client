@@ -28,8 +28,8 @@ import (
 type WorkerManager struct {
 	Config *ConsumerConfig
 	Strategy         WorkerStrategy
-	FailureCallback FailedCallback
-	FailedAttemptCallback FailedCallback
+	FailureHook FailedCallback
+	FailedAttemptHook FailedAttemptCallback
 	Workers          []*Worker
 	AvailableWorkers chan *Worker
 	CurrentBatch map[TaskId]*Task
@@ -127,23 +127,23 @@ func (wm *WorkerManager) awaitResult() {
 				}
 			}
 
-			task := wm.CurrentBatch[result.Id]
-			if result.Success {
+			task := wm.CurrentBatch[result.Id()]
+			if result.Success() {
 				wm.taskIsDone(result)
 			} else {
-				Warnf(wm, "Worker task %s has failed", result.Id)
+				Warnf(wm, "Worker task %s has failed", result.Id())
 				task.Retries++
 				if task.Retries >= wm.Config.MaxWorkerRetries {
-					Errorf(wm, "Worker task %s has failed after %d retries", result.Id, wm.Config.MaxWorkerRetries)
+					Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
 
 					wm.taskIsDone(result)
 					if wm.FailCounter.Failed() {
-						wm.FailureCallback(wm)
+						wm.FailureHook(wm)
 					} else {
-						wm.FailedAttemptCallback(wm)
+						wm.FailedAttemptHook(task, result)
 					}
 				} else {
-					Warnf(wm, "Retrying worker task %s %dth time", result.Id, task.Retries)
+					Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
 					time.Sleep(wm.Config.WorkerBackoff)
 					go task.Callee.Start(task, wm.Strategy)
 				}
@@ -155,10 +155,10 @@ func (wm *WorkerManager) awaitResult() {
 }
 
 func (wm *WorkerManager) taskIsDone(result WorkerResult) {
-	key := result.Id.TopicPartition
-	wm.LargestOffsets[key] = int64(math.Max(float64(wm.LargestOffsets[key]), float64(result.Id.Offset)))
-	wm.AvailableWorkers <- wm.CurrentBatch[result.Id].Callee
-	delete(wm.CurrentBatch, result.Id)
+	key := result.Id().TopicPartition
+	wm.LargestOffsets[key] = int64(math.Max(float64(wm.LargestOffsets[key]), float64(result.Id().Offset)))
+	wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
+	delete(wm.CurrentBatch, result.Id())
 }
 
 func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64) *WorkerManager {
@@ -168,6 +168,7 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 		workers[i] = &Worker{
 			OutputChannel: make(chan WorkerResult),
 			CloseTimeout: config.WorkerCloseTimeout,
+			TaskTimeout: config.WorkerTaskTimeout,
 		}
 		availableWorkers <- workers[i]
 	}
@@ -175,8 +176,8 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 	return &WorkerManager {
 		Config: config,
 		Strategy: config.Strategy,
-		FailureCallback: config.WorkerFailureCallback,
-		FailedAttemptCallback: config.WorkerFailedAttemptCallback,
+		FailureHook: config.WorkerFailureCallback,
+		FailedAttemptHook: config.WorkerFailedAttemptCallback,
 		AvailableWorkers: availableWorkers,
 		InputChannel: make(chan [] *Message),
 		OutputChannel: batchOutputChannel,
@@ -189,20 +190,32 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 type Worker struct {
 	OutputChannel chan WorkerResult
 	CloseTimeout time.Duration
+	TaskTimeout time.Duration
 	Closed bool
 }
 
 func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	task.Callee = w
-	go strategy(w, task.Msg, w.OutputChannel)
+	go func() {
+		resultChannel := make(chan WorkerResult)
+		go func() {resultChannel <- strategy(w, task.Msg)}()
+		select {
+		case result := <-resultChannel: {
+			w.OutputChannel <- result
+		}
+		case <-time.After(w.TaskTimeout): {
+			w.OutputChannel <- &TimedOutResult{task.Id()}
+		}
+		}
+	}()
 }
 
-func (w *Worker) Close() *WorkerResult {
+func (w *Worker) Close() WorkerResult {
 	if !w.Closed {
 		w.Closed = true
 		select {
 		case result := <- w.OutputChannel: {
-			return &result
+			return result
 		}
 		case <- time.After(w.CloseTimeout): {
 			Warnf(w, "Worker failed to close within %f seconds", w.CloseTimeout.Seconds())
@@ -214,9 +227,11 @@ func (w *Worker) Close() *WorkerResult {
 	return nil
 }
 
-type WorkerStrategy func(*Worker, *Message, chan WorkerResult)
+type WorkerStrategy func(*Worker, *Message) WorkerResult
 
 type FailedCallback func(*WorkerManager)
+
+type FailedAttemptCallback func(*Task, WorkerResult)
 
 type FailureCounter struct {
 	count int32
@@ -259,9 +274,49 @@ type Task struct {
 	Callee *Worker
 }
 
-type WorkerResult struct {
-	Id      TaskId
-	Success bool
+func (t *Task) Id() TaskId {
+	return TaskId{TopicAndPartition{t.Msg.Topic, t.Msg.Partition}, t.Msg.Offset}
+}
+
+type WorkerResult interface {
+	Id() TaskId
+	Success() bool
+}
+
+type SuccessfulResult struct {
+	id TaskId
+}
+
+func (wr *SuccessfulResult) Id() TaskId {
+	return wr.id
+}
+
+func (wr *SuccessfulResult) Success() bool {
+	return true
+}
+
+type ProcessingFailedResult struct {
+	id TaskId
+}
+
+func (wr *ProcessingFailedResult) Id() TaskId {
+	return wr.id
+}
+
+func (wr *ProcessingFailedResult) Success() bool {
+	return false
+}
+
+type TimedOutResult struct {
+	id TaskId
+}
+
+func (wr *TimedOutResult) Id() TaskId {
+	return wr.id
+}
+
+func (wr *TimedOutResult) Success() bool {
+	return false
 }
 
 type TaskId struct {
