@@ -163,6 +163,7 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 		FailureHook: config.WorkerFailureCallback,
 		FailedAttemptHook: config.WorkerFailedAttemptCallback,
 		AvailableWorkers: availableWorkers,
+		Workers: workers,
 		InputChannel: make(chan [] *Message),
 		OutputChannel: batchOutputChannel,
 		CurrentBatch: make(map[TaskId]*Task),
