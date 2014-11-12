@@ -123,3 +123,44 @@ func Hash(s string) int32 {
 	h.Write([]byte(s))
 	return int32(h.Sum32())
 }
+
+func RedirectChannelsTo(inputChannels interface{}, outputChannel interface{}) chan bool {
+	reflectInputChannels := reflect.ValueOf(inputChannels)
+	reflectOutputChannel := reflect.ValueOf(outputChannel)
+	killChannel := make(chan bool)
+	if reflectInputChannels.Kind() != reflect.Array && reflectInputChannels.Kind() != reflect.Slice {
+		panic("Incorrect input channels type")
+	}
+
+	if reflectOutputChannel.Kind() != reflect.Chan {
+		panic("Incorrect output channel type")
+	}
+
+	cases := make([]reflect.SelectCase, reflectInputChannels.Len())
+	for i := 0; i < reflectInputChannels.Len(); i++ {
+		cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(reflectInputChannels.Index(i).Interface())}
+	}
+	cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(killChannel)})
+	go func() {
+		for {
+			remaining := len(cases)
+			for remaining > 0 {
+				chosen, value, ok := reflect.Select(cases)
+				if !ok {
+					// The chosen channel has been closed, so zero out the channel to disable the case
+					cases[chosen].Chan = reflect.ValueOf(nil)
+					remaining -= 1
+					continue
+				}
+
+				if cases[chosen].Chan.Interface() == killChannel {
+					return
+				}
+
+				reflectOutputChannel.Send(value)
+			}
+		}
+	}()
+
+	return killChannel
+}
