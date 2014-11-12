@@ -152,9 +152,6 @@ type ConsumerConfig struct {
 
 	/* Timeout to accumulate messages */
 	FetchBatchTimeout time.Duration
-
-	/* Backoff for checking whether it is time to flush a non-full batch */
-	FetchBatchFlushBackoff time.Duration
 }
 
 func DefaultConsumerConfig() *ConsumerConfig {
@@ -194,7 +191,6 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.FetchBatchSize = 1
 	config.FetchBatchTimeout = 5 * time.Second
-	config.FetchBatchFlushBackoff = 1 * time.Second
 
 	return config
 }
@@ -239,7 +235,6 @@ WorkerBatchTimeout %v
 Strategy %v
 FetchBatchSize %d
 FetchBatchTimeout %v
-FetchBatchFlushBackoff %v
 `, c.Groupid, c.SocketTimeoutMs, c.SocketReceiveBufferBytes,
    c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.AutoCommitEnable,
    c.AutoCommitIntervalMs, c.QueuedMaxMessages, c.RebalanceMaxRetries,
@@ -251,5 +246,5 @@ FetchBatchFlushBackoff %v
    c.ZookeeperTimeout, c.NumWorkers, c.MaxWorkerRetries, c.WorkerRetryThreshold,
    c.WorkerConsideredFailedTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
    c.WorkerCloseTimeout, c.WorkerTaskTimeout, c.WorkerBackoff, c.WorkerBatchTimeout,
-   c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout, c.FetchBatchFlushBackoff)
+   c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)
 }

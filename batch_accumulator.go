@@ -86,11 +86,11 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 
 type MessageBuffer struct {
 	OutputChannel chan []*Message
-	Messages []*Message
+	Messages      []*Message
 	Config *ConsumerConfig
-	FlushTime time.Time
+	Timer *time.Timer
 	MessageLock sync.Mutex
-	Close chan bool
+	Close       chan bool
 	TopicPartition *TopicAndPartition
 }
 
@@ -99,10 +99,10 @@ func NewMessageBuffer(topicPartition *TopicAndPartition, outputChannel chan []*M
 		OutputChannel : outputChannel,
 		Messages : make([]*Message, 0),
 		Config : config,
+		Timer : time.NewTimer(config.FetchBatchTimeout),
 		Close : make(chan bool),
 		TopicPartition : topicPartition,
 	}
-	buffer.NextFlushTime()
 
 	go buffer.Start()
 
@@ -116,14 +116,11 @@ func (mb *MessageBuffer) String() string {
 func (mb *MessageBuffer) Start() {
 	for {
 		select {
-			case <-mb.Close: return
-			default: {
-				if time.Now().After(mb.FlushTime) {
-					Debug(mb, "Batch accumulation timed out. Flushing...")
-					mb.Flush()
-				}
-				time.Sleep(mb.Config.FetchBatchFlushBackoff)
-			}
+		case <-mb.Close: return
+		case <-mb.Timer.C: {
+			Debug(mb, "Batch accumulation timed out. Flushing...")
+			mb.Flush()
+		}
 		}
 	}
 }
@@ -131,10 +128,6 @@ func (mb *MessageBuffer) Start() {
 func (mb *MessageBuffer) Stop() {
 	mb.Close <- true
 	mb.Flush()
-}
-
-func (mb *MessageBuffer) NextFlushTime() {
-	mb.FlushTime = time.Now().Add(mb.Config.FetchBatchTimeout)
 }
 
 func (mb *MessageBuffer) Add(msg *Message) {
@@ -154,5 +147,5 @@ func (mb *MessageBuffer) Flush() {
 			mb.Messages = make([]*Message, 0)
 		})
 	}
-	mb.NextFlushTime()
+	mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 }
