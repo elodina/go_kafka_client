@@ -43,6 +43,8 @@ func (wm *WorkerManager) String() string {
 }
 
 func (wm *WorkerManager) Start() {
+	batchProcessed := make(chan bool)
+	go wm.processBatch(batchProcessed)
 	for {
 		batch := <-wm.InputChannel
 		for _, message := range batch {
@@ -56,7 +58,7 @@ func (wm *WorkerManager) Start() {
 			worker.Start(task, wm.Strategy)
 		}
 
-		wm.awaitResult()
+		<-batchProcessed
 
 		wm.OutputChannel <- wm.LargestOffsets
 		wm.LargestOffsets = make(map[TopicAndPartition]int64)
@@ -79,7 +81,7 @@ func (wm *WorkerManager) IsBatchProcessed() bool {
 	return len(wm.CurrentBatch) == 0
 }
 
-func (wm *WorkerManager) awaitResult() {
+func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
 	outputChannels := make([]chan WorkerResult, wm.Config.NumWorkers)
 	for i, worker := range wm.Workers {
 		outputChannels[i] = worker.OutputChannel
@@ -114,7 +116,7 @@ func (wm *WorkerManager) awaitResult() {
 
 			if wm.IsBatchProcessed() {
 				stopRedirecting <- true
-				return
+				batchProcessed <- true
 			}
 		}
 		case <-timeoutChannel: {
@@ -132,7 +134,7 @@ func (wm *WorkerManager) awaitResult() {
 
 			stopRedirecting, timeoutChannel = RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
 
-			return
+			batchProcessed <- true
 		}
 		}
 	}
