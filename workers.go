@@ -88,8 +88,8 @@ func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
 	}
 
 	resultsChannel := make(chan WorkerResult)
-	stopRedirecting, timeoutChannel := RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
 	for {
+		stopRedirecting, timeoutChannel := RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
 		select {
 		case result := <- resultsChannel: {
 			task := wm.CurrentBatch[result.Id()]
@@ -132,7 +132,7 @@ func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
 
 			wm.CurrentBatch = make(map[TaskId]*Task)
 
-			stopRedirecting, timeoutChannel = RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
+//			stopRedirecting, timeoutChannel = RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
 
 			batchProcessed <- true
 		}
