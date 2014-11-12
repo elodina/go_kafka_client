@@ -189,7 +189,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.WorkerBackoff = 500 * time.Millisecond
 	config.WorkerBatchTimeout = 1 * time.Minute
 
-	config.FetchBatchSize = 1
+	config.FetchBatchSize = 100
 	config.FetchBatchTimeout = 5 * time.Second
 
 	return config

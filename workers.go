@@ -182,7 +182,7 @@ func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	task.Callee = w
 	go func() {
 		resultChannel := make(chan WorkerResult)
-		go func() {resultChannel <- strategy(w, task.Msg)}()
+		go func() {resultChannel <- strategy(w, task.Msg, task.Id())}()
 		select {
 		case result := <-resultChannel: {
 			w.OutputChannel <- result
@@ -211,7 +211,7 @@ func (w *Worker) Close() WorkerResult {
 	return nil
 }
 
-type WorkerStrategy func(*Worker, *Message) WorkerResult
+type WorkerStrategy func(*Worker, *Message, TaskId) WorkerResult
 
 type FailedCallback func(*WorkerManager)
 
@@ -269,6 +269,10 @@ type WorkerResult interface {
 
 type SuccessfulResult struct {
 	id TaskId
+}
+
+func NewSuccessfulResult(id TaskId) *SuccessfulResult {
+	return &SuccessfulResult{id}
 }
 
 func (wr *SuccessfulResult) Id() TaskId {

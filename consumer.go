@@ -111,6 +111,7 @@ func (c *Consumer) StartWildcard(topicFilter TopicFilter, numStreams int) {
 }
 
 func (c *Consumer) startStreams(cases []reflect.SelectCase) {
+	go c.workerManager.Start()
 	for {
 		remaining := len(cases)
 		for remaining > 0 {
