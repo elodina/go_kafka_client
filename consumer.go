@@ -49,7 +49,7 @@ type Consumer struct {
 	closeChannels  []chan bool
 	offsetsCommitter *OffsetsCommitter
 	workerManager *WorkerManager
-	askNextBatch chan bool
+	askNextBatch chan TopicAndPartition
 }
 
 type Message struct {
@@ -77,7 +77,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	c.addShutdownHook()
 
 	c.connectToZookeeper()
-	c.askNextBatch = make(chan bool)
+	c.askNextBatch = make(chan TopicAndPartition)
 	c.offsetsCommitter = NewOffsetsCommiter(c.config, c.workerManager.OutputChannel, c.askNextBatch, c.zkConn)
 	c.fetcher = newConsumerFetcherManager(config, c.zkConn, c.askNextBatch)
 
@@ -250,7 +250,6 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulat
 	//TODO more subscriptions
 
 	c.rebalance()
-	c.askNextBatch <- true
 }
 
 func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
@@ -467,7 +466,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	}
 	Infof(c, "%v\n", brokers)
 
-	//TODO: close fetchers
+	c.fetcher.CloseAllFetchers()
 	Debug(c, c.TopicRegistry)
 	c.releasePartitionOwnership(c.TopicRegistry)
 
