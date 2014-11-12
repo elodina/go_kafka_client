@@ -163,3 +163,8 @@ type TopicPartitionData struct {
 	TopicPartition TopicAndPartition
 	Data *sarama.FetchResponseBlock
 }
+
+type WorkerManagerAndNextBatchChannel struct {
+	WorkerMgr *WorkerManager
+	AskNextBatch chan bool
+}

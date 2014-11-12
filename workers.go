@@ -19,7 +19,6 @@ package go_kafka_client
 
 import (
 	"time"
-	"reflect"
 	"math"
 	"fmt"
 	"sync"
@@ -86,47 +85,11 @@ func (wm *WorkerManager) awaitResult() {
 		outputChannels[i] = worker.OutputChannel
 	}
 
-	Loop:
+	resultsChannel := make(chan WorkerResult)
+	stopRedirecting, timeoutChannel := RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
 	for {
-		cases := make([]reflect.SelectCase, len(outputChannels))
-		for i, ch := range outputChannels {
-			cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
-		}
-		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(wm.Config.WorkerBatchTimeout))})
-
-		remaining := len(cases)
-		for remaining > 0 {
-			chosen, value, ok := reflect.Select(cases)
-			if !ok {
-				// The chosen channel has been closed, so zero out the channel to disable the case
-				cases[chosen].Chan = reflect.ValueOf(nil)
-				remaining -= 1
-				continue
-			}
-
-			result, ok := value.Interface().(WorkerResult)
-			if !ok {
-				if _, ok := value.Interface().(time.Time); ok {
-					Errorf(wm, "Worker batch has timed out")
-					outputChannels = make([] chan WorkerResult, 0)
-					for _, task := range wm.CurrentBatch {
-						channel := make(chan WorkerResult)
-						outputChannels = append(outputChannels, channel)
-						task.Callee.OutputChannel = channel
-						wm.AvailableWorkers <- task.Callee
-					}
-					cases = make([]reflect.SelectCase, len(outputChannels))
-					for i, ch := range outputChannels {
-						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
-					}
-					cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(time.After(wm.Config.WorkerBatchTimeout))})
-					wm.CurrentBatch = make(map[TaskId]*Task)
-					break Loop
-				} else {
-					panic("Incorrect result has been returned from worker")
-				}
-			}
-
+		select {
+		case result := <- resultsChannel: {
 			task := wm.CurrentBatch[result.Id()]
 			if result.Success() {
 				wm.taskIsDone(result)
@@ -149,7 +112,28 @@ func (wm *WorkerManager) awaitResult() {
 				}
 			}
 
-			if wm.IsBatchProcessed() { break Loop }
+			if wm.IsBatchProcessed() {
+				stopRedirecting <- true
+				break
+			}
+		}
+		case <-timeoutChannel: {
+			Errorf(wm, "Worker batch has timed out")
+			stopRedirecting <- true
+			outputChannels = make([] chan WorkerResult, 0)
+			for _, task := range wm.CurrentBatch {
+				channel := make(chan WorkerResult)
+				outputChannels = append(outputChannels, channel)
+				task.Callee.OutputChannel = channel
+				wm.AvailableWorkers <- task.Callee
+			}
+
+			wm.CurrentBatch = make(map[TaskId]*Task)
+
+			stopRedirecting, timeoutChannel = RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
+
+			break
+		}
 		}
 	}
 }

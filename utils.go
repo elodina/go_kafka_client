@@ -26,6 +26,7 @@ import (
 	"hash/fnv"
 	log "github.com/cihub/seelog"
 	"fmt"
+	"time"
 )
 
 var Logger, _ = log.LoggerFromConfigAsFile("seelog.xml")
@@ -125,22 +126,39 @@ func Hash(s string) int32 {
 }
 
 func RedirectChannelsTo(inputChannels interface{}, outputChannel interface{}) chan bool {
-	reflectInputChannels := reflect.ValueOf(inputChannels)
-	reflectOutputChannel := reflect.ValueOf(outputChannel)
+	killChannel, _ := RedirectChannelsToWithTimeout(inputChannels, outputChannel, 0 * time.Second)
+	return killChannel
+}
+
+func RedirectChannelsToWithTimeout(inputChannels interface{}, outputChannel interface{}, timeout time.Duration) (chan bool, <-chan time.Time) {
+	input := reflect.ValueOf(inputChannels)
+	var timeoutInputChannel <-chan time.Time
+	if timeout.Seconds() == 0 {
+		timeoutInputChannel = nil
+	} else {
+		timeoutInputChannel = time.After(timeout)
+	}
+	output := reflect.ValueOf(outputChannel)
+	timeoutOutputChannel := make(chan time.Time)
 	killChannel := make(chan bool)
-	if reflectInputChannels.Kind() != reflect.Array && reflectInputChannels.Kind() != reflect.Slice {
+
+	if input.Kind() != reflect.Array && input.Kind() != reflect.Slice {
 		panic("Incorrect input channels type")
 	}
 
-	if reflectOutputChannel.Kind() != reflect.Chan {
+	if output.Kind() != reflect.Chan {
 		panic("Incorrect output channel type")
 	}
 
-	cases := make([]reflect.SelectCase, reflectInputChannels.Len())
-	for i := 0; i < reflectInputChannels.Len(); i++ {
-		cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(reflectInputChannels.Index(i).Interface())}
+	cases := make([]reflect.SelectCase, input.Len())
+	for i := 0; i < input.Len(); i++ {
+		cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(input.Index(i).Interface())}
 	}
 	cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(killChannel)})
+	if timeoutInputChannel != nil {
+		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(timeoutInputChannel)})
+	}
+
 	go func() {
 		for {
 			remaining := len(cases)
@@ -157,10 +175,14 @@ func RedirectChannelsTo(inputChannels interface{}, outputChannel interface{}) ch
 					return
 				}
 
-				reflectOutputChannel.Send(value)
+				if cases[chosen].Chan.Interface() == timeoutInputChannel {
+					timeoutOutputChannel <- value.Interface().(time.Time)
+				}
+
+				output.Send(value)
 			}
 		}
 	}()
 
-	return killChannel
+	return killChannel, timeoutOutputChannel
 }
