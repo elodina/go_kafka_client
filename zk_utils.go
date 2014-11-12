@@ -403,7 +403,7 @@ func PurgeObsoleteConsumerGroupNotifications(zkConnection *zk.Conn, group string
 
 func CommitOffset(zkConnection *zk.Conn, group string, topicPartition *TopicAndPartition, offset int64) error {
 	dirs := NewZKGroupTopicDirs(group, topicPartition.Topic)
-	return CreateOrUpdatePathParentMayNotExist(zkConnection, fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, topicPartition.Partition), []byte(string(offset)))
+	return CreateOrUpdatePathParentMayNotExist(zkConnection, fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, topicPartition.Partition), []byte(strconv.FormatInt(offset, 10)))
 }
 
 func UpdateRecord(zkConnection *zk.Conn, pathToCreate string, dataToWrite []byte) error {

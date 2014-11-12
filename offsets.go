@@ -47,6 +47,7 @@ func (oc *OffsetsCommitter) Start() {
 	RedirectChannelsTo(oc.WorkerAcks, acksChannel)
 	for {
 		ack := <-acksChannel
+		Debugf(oc, "Committing offsets: %+v", ack)
 		oc.Commit(ack)
 		for topicPartition, _ := range ack {
 			oc.AskNext <- topicPartition
@@ -61,14 +62,15 @@ func (oc *OffsetsCommitter) Commit(ack map[TopicAndPartition]int64) {
 			err := CommitOffset(oc.zkConn, oc.Config.Groupid, &topicPartition, offset)
 			if err == nil {
 				success = true
+				Debugf(oc, "Successfully committed offset %d for %s", offset, &topicPartition)
 				break
 			} else {
-				Warnf(oc, "Failed to commit offset %d for %s. Retying...", offset, topicPartition)
+				Warnf(oc, "Failed to commit offset %d for %s. Retying...", offset, &topicPartition)
 			}
 		}
 
 		if !success {
-			Errorf(oc, "Failed to commit offset %d for %s after %d retries", offset, topicPartition, oc.Config.OffsetsCommitMaxRetries)
+			Errorf(oc, "Failed to commit offset %d for %s after %d retries", offset, &topicPartition, oc.Config.OffsetsCommitMaxRetries)
 			//TODO: what to do next?
 		}
 	}

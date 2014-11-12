@@ -114,7 +114,7 @@ func (wm *WorkerManager) awaitResult() {
 
 			if wm.IsBatchProcessed() {
 				stopRedirecting <- true
-				break
+				return
 			}
 		}
 		case <-timeoutChannel: {
@@ -132,7 +132,7 @@ func (wm *WorkerManager) awaitResult() {
 
 			stopRedirecting, timeoutChannel = RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
 
-			break
+			return
 		}
 		}
 	}
