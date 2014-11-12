@@ -51,7 +51,6 @@ func NewTopicsToNumStreams(group string, consumerId string, zkConnection *zk.Con
 	hasBlackList := BlackListPattern == consumerInfo.Pattern
 
 	if (len(consumerInfo.Subscription) == 0 || !(hasWhiteList || hasBlackList)) {
-		//TODO: do we really need it?
 		return &StaticTopicsToNumStreams{
 			ConsumerId: consumerId,
 			TopicsToNumStreamsMap: consumerInfo.Subscription,
