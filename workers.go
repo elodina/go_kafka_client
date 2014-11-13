@@ -58,10 +58,7 @@ func (wm *WorkerManager) Start() {
 			worker.Start(task, wm.Strategy)
 		}
 
-		select {
-		case <-batchProcessed: { Debug(wm, "batch has been processed") }
-		case <-time.After(wm.Config.WorkerBatchTimeout): { Errorf(wm, "Worker batch has timed out") }
-		}
+		<-batchProcessed
 
 		wm.OutputChannel <- wm.LargestOffsets
 		wm.LargestOffsets = make(map[TopicAndPartition]int64)
