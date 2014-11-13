@@ -71,6 +71,7 @@ func (wm *WorkerManager) Stop() chan bool {
 		for _, worker := range wm.Workers {
 			worker.Close()
 		}
+		wm.CurrentBatch = make(map[TaskId]*Task)
 		finished <- true
 	}()
 
@@ -104,11 +105,27 @@ func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
 			if task.Retries >= wm.Config.MaxWorkerRetries {
 				Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
 
-				wm.taskIsDone(result)
+				var decision FailedDecision
 				if wm.FailCounter.Failed() {
-					wm.FailureHook(wm)
+					decision = wm.FailureHook(wm)
 				} else {
-					wm.FailedAttemptHook(task, result)
+					decision = wm.FailedAttemptHook(task, result)
+				}
+				switch decision {
+				case CommitOffsetAndContinue: {
+					wm.taskIsDone(result)
+				}
+				case DoNotCommitOffsetAndContinue: {
+					wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
+					delete(wm.CurrentBatch, result.Id())
+				}
+				case CommitOffsetAndStop: {
+					wm.taskIsDone(result)
+					wm.stopBatch()
+				}
+				case DoNotCommitOffsetAndStop: {
+					wm.stopBatch()
+				}
 				}
 			} else {
 				Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
@@ -121,6 +138,13 @@ func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
 			stopRedirecting <- true
 			batchProcessed <- true
 		}
+	}
+}
+
+func (wm *WorkerManager) stopBatch() {
+	wm.CurrentBatch = make(map[TaskId]*Task)
+	for _, worker := range wm.Workers {
+		worker.OutputChannel = make(chan WorkerResult)
 	}
 }
 
@@ -200,9 +224,9 @@ func (w *Worker) Close() WorkerResult {
 
 type WorkerStrategy func(*Worker, *Message, TaskId) WorkerResult
 
-type FailedCallback func(*WorkerManager)
+type FailedCallback func(*WorkerManager) FailedDecision
 
-type FailedAttemptCallback func(*Task, WorkerResult)
+type FailedAttemptCallback func(*Task, WorkerResult) FailedDecision
 
 type FailureCounter struct {
 	count int32
@@ -314,3 +338,12 @@ type TaskId struct {
 func (tid TaskId) String() string {
 	return fmt.Sprintf("%s, Offset: %d", &tid.TopicPartition, tid.Offset)
 }
+
+type FailedDecision int32
+
+const (
+	CommitOffsetAndContinue FailedDecision = iota
+	DoNotCommitOffsetAndContinue
+	CommitOffsetAndStop
+	DoNotCommitOffsetAndStop
+)
