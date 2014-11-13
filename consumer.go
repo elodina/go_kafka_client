@@ -249,13 +249,13 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulat
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			workerChannel := make(chan map[TopicAndPartition]int64)
-			manager := NewWorkerManager(c.config, workerChannel)
+			manager := NewWorkerManager(c.config, workerChannel, c.askNextBatch)
 			c.workerManagers[TopicAndPartition{topic, partition}] = manager
 			go manager.Start()
 			workerChannels = append(workerChannels, workerChannel)
 		}
 	}
-	c.offsetsCommitter = NewOffsetsCommiter(c.config, workerChannels, c.askNextBatch, c.zkConn)
+	c.offsetsCommitter = NewOffsetsCommiter(c.config, workerChannels, c.zkConn)
 	go c.offsetsCommitter.Start()
 }
 

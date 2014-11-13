@@ -35,6 +35,7 @@ type WorkerManager struct {
 	InputChannel     chan [] *Message
 	OutputChannel    chan map[TopicAndPartition]int64
 	LargestOffsets map[TopicAndPartition]int64
+	AskNext chan TopicAndPartition
 	FailCounter *FailureCounter
 	batchProcessed chan bool
 	stopLock sync.Mutex
@@ -64,6 +65,11 @@ func (wm *WorkerManager) Start() {
 		<-wm.batchProcessed
 
 		wm.OutputChannel <- wm.LargestOffsets
+		if !wm.stopped {
+			for topicPartition, _ := range wm.LargestOffsets {
+				wm.AskNext <- topicPartition
+			}
+		}
 		wm.LargestOffsets = make(map[TopicAndPartition]int64)
 	}
 }
@@ -174,7 +180,7 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	delete(wm.CurrentBatch, result.Id())
 }
 
-func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64) *WorkerManager {
+func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64, askNext chan TopicAndPartition) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -197,6 +203,7 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 		OutputChannel: batchOutputChannel,
 		CurrentBatch: make(map[TaskId]*Task),
 		LargestOffsets: make(map[TopicAndPartition]int64),
+		AskNext: askNext,
 		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
 		batchProcessed: make(chan bool),
 	}

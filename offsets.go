@@ -25,7 +25,6 @@ import (
 type OffsetsCommitter struct {
 	Config *ConsumerConfig
 	WorkerAcks []chan map[TopicAndPartition]int64
-	AskNext chan TopicAndPartition
 	zkConn *zk.Conn
 	close chan bool
 }
@@ -34,11 +33,10 @@ func (oc *OffsetsCommitter) String() string {
 	return fmt.Sprintf("%s-offsetsCommitter", oc.Config.ConsumerId)
 }
 
-func NewOffsetsCommiter(config *ConsumerConfig, workerAcks []chan map[TopicAndPartition]int64, askNext chan TopicAndPartition, zkConn *zk.Conn) *OffsetsCommitter {
+func NewOffsetsCommiter(config *ConsumerConfig, workerAcks []chan map[TopicAndPartition]int64, zkConn *zk.Conn) *OffsetsCommitter {
 	return &OffsetsCommitter{
 		Config: config,
 		WorkerAcks: workerAcks,
-		AskNext: askNext,
 		zkConn: zkConn,
 		close: make(chan bool),
 	}
@@ -53,9 +51,6 @@ func (oc *OffsetsCommitter) Start() {
 		case ack := <-acksChannel: {
 			Debugf(oc, "Committing offsets: %+v", ack)
 			oc.Commit(ack)
-			for topicPartition, _ := range ack {
-				oc.AskNext <- topicPartition
-			}
 		}
 		}
 	}
