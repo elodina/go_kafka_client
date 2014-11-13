@@ -26,20 +26,20 @@ import (
 
 type WorkerManager struct {
 	Config *ConsumerConfig
-	Strategy         WorkerStrategy
-	FailureHook FailedCallback
+	Strategy          WorkerStrategy
+	FailureHook       FailedCallback
 	FailedAttemptHook FailedAttemptCallback
-	Workers          []*Worker
-	AvailableWorkers chan *Worker
+	Workers           []*Worker
+	AvailableWorkers  chan *Worker
 	CurrentBatch map[TaskId]*Task
-	InputChannel     chan [] *Message
-	OutputChannel    chan map[TopicAndPartition]int64
+	InputChannel      chan [] *Message
+	OutputChannel     chan map[TopicAndPartition]int64
 	LargestOffsets map[TopicAndPartition]int64
 	AskNext chan TopicAndPartition
 	FailCounter *FailureCounter
-	batchProcessed chan bool
-	stopLock sync.Mutex
-	stopped bool
+	batchProcessed    chan bool
+	stopLock          sync.Mutex
+	stopped           bool
 }
 
 func (wm *WorkerManager) String() string {
@@ -86,7 +86,6 @@ func (wm *WorkerManager) Stop() chan bool {
 					}
 				}
 				wm.CurrentBatch = make(map[TaskId]*Task)
-				wm.batchProcessed <- true
 				finished <- true
 			})
 	}()
@@ -105,64 +104,65 @@ func (wm *WorkerManager) processBatch() {
 	}
 
 	resultsChannel := make(chan WorkerResult)
-	for {
+	for !wm.stopped {
 		InLock(&wm.stopLock, func() {
-				if wm.stopped == true {
-					return
-				}
-				stopRedirecting := RedirectChannelsTo(outputChannels, resultsChannel)
-				result := <- resultsChannel
-				go func() {
-					stopRedirecting <- true
-				}()
+				if wm.stopped { return }
+				for {
+					stopRedirecting := RedirectChannelsTo(outputChannels, resultsChannel)
+					result := <-resultsChannel
+					go func() {
+						stopRedirecting <- true
+					}()
 
-				task := wm.CurrentBatch[result.Id()]
-				if result.Success() {
-					wm.taskIsDone(result)
-				} else {
-					if _, ok := result.(*TimedOutResult); ok {
-						task.Callee.OutputChannel = make(chan WorkerResult)
-					}
-
-					Warnf(wm, "Worker task %s has failed", result.Id())
-					task.Retries++
-					if task.Retries >= wm.Config.MaxWorkerRetries {
-						Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
-
-						var decision FailedDecision
-						if wm.FailCounter.Failed() {
-							decision = wm.FailureHook(wm)
-						} else {
-							decision = wm.FailedAttemptHook(task, result)
-						}
-						switch decision {
-						case CommitOffsetAndContinue: {
-							wm.taskIsDone(result)
-						}
-						case DoNotCommitOffsetAndContinue: {
-							wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
-							delete(wm.CurrentBatch, result.Id())
-						}
-						case CommitOffsetAndStop: {
-							wm.taskIsDone(result)
-							wm.stopBatch()
-						}
-						case DoNotCommitOffsetAndStop: {
-							wm.stopBatch()
-						}
-						}
+					task := wm.CurrentBatch[result.Id()]
+					if result.Success() {
+						wm.taskIsDone(result)
 					} else {
-						Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
-						time.Sleep(wm.Config.WorkerBackoff)
-						go task.Callee.Start(task, wm.Strategy)
+						if _, ok := result.(*TimedOutResult); ok {
+							task.Callee.OutputChannel = make(chan WorkerResult)
+						}
+
+						Warnf(wm, "Worker task %s has failed", result.Id())
+						task.Retries++
+						if task.Retries >= wm.Config.MaxWorkerRetries {
+							Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
+
+							var decision FailedDecision
+							if wm.FailCounter.Failed() {
+								decision = wm.FailureHook(wm)
+							} else {
+								decision = wm.FailedAttemptHook(task, result)
+							}
+							switch decision {
+							case CommitOffsetAndContinue: {
+								wm.taskIsDone(result)
+							}
+							case DoNotCommitOffsetAndContinue: {
+								wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
+								delete(wm.CurrentBatch, result.Id())
+							}
+							case CommitOffsetAndStop: {
+								wm.taskIsDone(result)
+								wm.stopBatch()
+							}
+							case DoNotCommitOffsetAndStop: {
+								wm.stopBatch()
+							}
+							}
+						} else {
+							Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
+							time.Sleep(wm.Config.WorkerBackoff)
+							go task.Callee.Start(task, wm.Strategy)
+						}
+					}
+
+					if wm.IsBatchProcessed() {
+						wm.batchProcessed <- true
+						return
 					}
 				}
-
-				if wm.IsBatchProcessed() {
-					wm.batchProcessed <- true
-				}
-
-		})
+			})
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -211,9 +211,9 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 
 type Worker struct {
 	OutputChannel chan WorkerResult
-	CloseTimeout time.Duration
-	TaskTimeout time.Duration
-	Closed bool
+	CloseTimeout  time.Duration
+	TaskTimeout   time.Duration
+	Closed        bool
 }
 
 func (w *Worker) String() string {
@@ -240,11 +240,11 @@ func (w *Worker) Close() WorkerResult {
 	if !w.Closed {
 		w.Closed = true
 		select {
-		case result := <- w.OutputChannel: {
+		case result := <-w.OutputChannel: {
 			Debug(w, "Received result while closing")
 			return result
 		}
-		case <- time.After(w.CloseTimeout): {
+		case <-time.After(w.CloseTimeout): {
 			Warnf(w, "Worker failed to close within %s", w.CloseTimeout)
 			return nil
 		}
@@ -261,9 +261,9 @@ type FailedCallback func(*WorkerManager) FailedDecision
 type FailedAttemptCallback func(*Task, WorkerResult) FailedDecision
 
 type FailureCounter struct {
-	count int32
-	failed bool
-	countLock sync.Mutex
+	count           int32
+	failed          bool
+	countLock       sync.Mutex
 	failedThreshold int32
 }
 
@@ -274,14 +274,14 @@ func NewFailureCounter(FailedThreshold int32, WorkerConsideredFailedTimeWindow t
 	go func() {
 		for {
 			select {
-			case <- time.After(WorkerConsideredFailedTimeWindow): {
+			case <-time.After(WorkerConsideredFailedTimeWindow): {
 				if counter.count >= FailedThreshold {
 					counter.failed = true
 					return
 				} else {
 					InLock(&counter.countLock, func() {
-						counter.count = 0
-					})
+							counter.count = 0
+						})
 				}
 			}
 			}
