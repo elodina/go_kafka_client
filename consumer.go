@@ -274,6 +274,7 @@ func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 }
 
 func (c *Consumer) Close() <-chan bool {
+	panic("aaa!") //TODO remove this!
 	Info(c, "Closing consumer")
 	c.isShuttingdown = true
 	go func() {

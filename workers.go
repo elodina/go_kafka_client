@@ -92,6 +92,10 @@ func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
 	for {
 		stopRedirecting := RedirectChannelsTo(outputChannels, resultsChannel)
 		result := <- resultsChannel
+		go func() {
+			stopRedirecting <- true
+		}()
+
 		task := wm.CurrentBatch[result.Id()]
 		if result.Success() {
 			wm.taskIsDone(result)
@@ -135,7 +139,6 @@ func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
 		}
 
 		if wm.IsBatchProcessed() {
-			stopRedirecting <- true
 			batchProcessed <- true
 		}
 	}
