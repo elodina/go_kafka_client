@@ -144,6 +144,9 @@ type ConsumerConfig struct {
 	/* Timeout for processing the whole batch by cosumer */
 	WorkerBatchTimeout time.Duration
 
+	/* Worker managers stop timeout */
+	WorkerManagersStopTimeout time.Duration
+
 	/* Worker strategy */
 	Strategy WorkerStrategy
 
@@ -189,6 +192,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.WorkerBackoff = 500 * time.Millisecond
 	config.WorkerBatchTimeout = 5 * time.Minute
 	config.WorkerTaskTimeout = 1 * time.Minute
+	config.WorkerManagersStopTimeout = 1 * time.Minute
 
 	config.FetchBatchSize = 100
 	config.FetchBatchTimeout = 5 * time.Second

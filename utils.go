@@ -125,6 +125,59 @@ func Hash(s string) int32 {
 	return int32(h.Sum32())
 }
 
+func NotifyWhenThresholdIsReached(inputChannels interface{}, outputChannel interface{}, threshold int) chan bool {
+	input := reflect.ValueOf(inputChannels)
+	output := reflect.ValueOf(outputChannel)
+	killChannel := make(chan bool)
+
+	if input.Kind() != reflect.Array && input.Kind() != reflect.Slice {
+		panic("Incorrect input channels type")
+	}
+
+	if output.Kind() != reflect.Chan {
+		panic("Incorrect output channel type")
+	}
+
+
+	cases := make([]reflect.SelectCase, input.Len())
+	for i := 0; i < input.Len(); i++ {
+		if input.Index(i).Kind() == reflect.Ptr {
+			cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(input.Index(i).Elem().Interface())}
+		} else {
+			cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(input.Index(i).Interface())}
+		}
+	}
+
+	count := threshold
+	go func() {
+		for {
+			remaining := len(cases)
+			for remaining > 0 {
+				chosen, _, ok := reflect.Select(cases)
+				if !ok {
+					// The chosen channel has been closed, so zero out the channel to disable the case
+					cases[chosen].Chan = reflect.ValueOf(nil)
+					remaining -= 1
+					continue
+				}
+
+				if cases[chosen].Chan.Interface() == killChannel {
+					return
+				} else {
+					count--
+				}
+
+				if count == 0 {
+					output.Send(reflect.ValueOf(true))
+					return
+				}
+			}
+		}
+	}()
+
+	return killChannel
+}
+
 func RedirectChannelsTo(inputChannels interface{}, outputChannel interface{}) chan bool {
 	killChannel, _ := RedirectChannelsToWithTimeout(inputChannels, outputChannel, 0 * time.Second)
 	return killChannel

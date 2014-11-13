@@ -274,7 +274,6 @@ func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 }
 
 func (c *Consumer) Close() <-chan bool {
-	panic("aaa!") //TODO remove this!
 	Info(c, "Closing consumer")
 	c.isShuttingdown = true
 	go func() {
@@ -286,10 +285,34 @@ func (c *Consumer) Close() <-chan bool {
 		<-c.fetcher.Close()
 		Info(c, "Unsubscribing")
 		c.unsubscribe <- true
+
+		if !c.stopWorkerManagers() {
+			panic("Failed graceful shutdown")
+		}
+
 		Info(c, "Finished")
 		c.closeFinished <- true
 	}()
 	return c.closeFinished
+}
+
+func (c *Consumer) stopWorkerManagers() bool {
+	wmsAreStopped := make(chan bool)
+	wmStopChannels := make([]chan bool, 0)
+	for _, wm := range c.workerManagers {
+		wmStopChannels = append(wmStopChannels, wm.Stop())
+	}
+	NotifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
+	select {
+	case <-wmsAreStopped: {
+		Info(c, "All workers have been gracefully stopped")
+		return true
+	}
+	case <-time.After(c.config.WorkerManagersStopTimeout): {
+		Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
+		return false
+	}
+	}
 }
 
 func (c *Consumer) updateFetcher() {
