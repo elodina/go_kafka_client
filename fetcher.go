@@ -272,7 +272,7 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 	InLock(&m.mapLock, func() {
 		for key, fetcher := range m.fetcherRoutineMap {
 			if fetcher.PartitionCount() <= 0 {
-				fetcher.Close()
+				<-fetcher.Close()
 				delete(m.fetcherRoutineMap, key)
 			}
 		}
@@ -324,7 +324,6 @@ type consumerFetcherRoutine struct {
 	partitionCount   int
 	id               string
 	topic            string
-	close            chan bool
 	closeFinished    chan bool
 	fetchRequestBlockMap map[TopicAndPartition]*PartitionFetchInfo
 	fetchStopper     chan bool
@@ -343,10 +342,9 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 		brokerAddr : fmt.Sprintf("%s:%d", broker.Host, broker.Port),
 		allPartitionMap : allPartitionMap,
 		partitionMap : make(map[TopicAndPartition]int64),
-		close : make(chan bool, 1),
-		closeFinished : make(chan bool, 1),
+		closeFinished : make(chan bool),
 		fetchRequestBlockMap : make(map[TopicAndPartition]*PartitionFetchInfo),
-		fetchStopper : make(chan bool, 1),
+		fetchStopper : make(chan bool),
 		askNext : make(chan TopicAndPartition),
 	}
 }
@@ -535,7 +533,6 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 func (f *consumerFetcherRoutine) Close() <-chan bool {
 	Info(f, "Closing fetcher")
 	go func() {
-		f.close <- true
 		f.fetchStopper <- true
 		f.removeAllPartitions()
 		for _, pti := range f.allPartitionMap {

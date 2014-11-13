@@ -66,7 +66,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	Infof(config.ConsumerId, "Starting new consumer with configuration: %s", config)
 	c := &Consumer{
 		config : config,
-		unsubscribe : make(chan bool, 1),
+		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
 		topicChannels : make(map[string][]<-chan []*Message),
 		topicThreadIdsAndSharedChannels : make(map[TopicAndThreadId]*SharedBlockChannel),
@@ -131,7 +131,7 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) map[string
 	for _, threadIdSet := range staticTopicCount.GetConsumerThreadIdsPerTopic() {
 		accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
 		for i := 0; i < len(accumulatorsForThread); i++ {
-			closeChannel := make(chan bool, 1)
+			closeChannel := make(chan bool)
 			c.closeChannels = append(c.closeChannels, closeChannel)
 			accumulatorsForThread[i] = NewBatchAccumulator(c.config, closeChannel)
 		}
@@ -147,7 +147,7 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) map[string
 func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) []<-chan []*Message {
 	var acuumulators []*BatchAccumulator = nil
 	for i := 0; i < numStreams; i++ {
-		closeChannel := make(chan bool, 1)
+		closeChannel := make(chan bool)
 		c.closeChannels = append(c.closeChannels, closeChannel)
 		acuumulators = append(acuumulators, NewBatchAccumulator(c.config, closeChannel))
 	}
@@ -281,30 +281,27 @@ func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 }
 
 func (c *Consumer) Close() <-chan bool {
-	Info(c, "Closing consumer")
+	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true
 	go func() {
-		Info(c, "Closing channels")
+		Info(c, "Closing all channels...")
 		for _, ch := range c.closeChannels {
 			ch <- true
 		}
-		Info(c, "Unsubscribing")
 		c.unsubscribe <- true
 
+		Info(c, "Stopping worker manager...")
 		if !c.stopWorkerManagers() {
-			panic("Failed graceful shutdown")
+			panic("Graceful shutdown failed")
 		}
 
-		Info(c, "Stopping offsets committer")
+		Info(c, "Stopping offsets committer...")
 		c.offsetsCommitter.Stop()
-		Info(c, "Closing fetcher")
+		Info(c, "Closing fetcher manager...")
 		<-c.fetcher.Close()
-		Info(c, "Finished")
-		Info(c, "Stopping streams")
 		c.stopRedirectingStreams <- true
 		c.stopStreams <- true
 		c.closeFinished <- true
-		Info(c, "DONE!")
 	}()
 	return c.closeFinished
 }
@@ -349,9 +346,9 @@ func (c *Consumer) addShutdownHook() {
 	signal.Notify(s, os.Interrupt)
 	go func() {
 		<-s
-		Info(c, "Got a shutdown event, closing...")
+		Info(c, "Got a shutdown event")
 		<-c.Close()
-		Info(c, "CLOSED!!")
+		Info(c, "Successfully closed a consumer!")
 	}()
 }
 
@@ -445,7 +442,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 				}
 			}
 			case <-c.unsubscribe: {
-				Debug(c, "Unsubscribing from changes")
+				Info(c, "Unsubscribing from Zookeeper changes...")
 				c.releasePartitionOwnership(c.TopicRegistry)
 				err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
 				if err != nil {
