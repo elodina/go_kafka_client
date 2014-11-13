@@ -192,6 +192,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.WorkerBackoff = 500 * time.Millisecond
 	config.WorkerBatchTimeout = 5 * time.Minute
 	config.WorkerTaskTimeout = 1 * time.Minute
+	config.WorkerCloseTimeout = 4 * time.Second
 	config.WorkerManagersStopTimeout = 1 * time.Minute
 
 	config.FetchBatchSize = 100

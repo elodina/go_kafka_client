@@ -49,7 +49,9 @@ type Consumer struct {
 	closeChannels  []chan bool
 	offsetsCommitter *OffsetsCommitter
 	workerManagers map[TopicAndPartition]*WorkerManager
-	askNextBatch chan TopicAndPartition
+	askNextBatch           chan TopicAndPartition
+	stopRedirectingStreams chan bool
+	stopStreams            chan bool
 }
 
 type Message struct {
@@ -73,6 +75,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		closeChannels: make([]chan bool, 0),
 		workerManagers: make(map[TopicAndPartition]*WorkerManager),
 		askNextBatch: make(chan TopicAndPartition),
+		stopStreams: make(chan bool),
 	}
 
 	c.addShutdownHook()
@@ -106,11 +109,15 @@ func (c *Consumer) StartWildcard(topicFilter TopicFilter, numStreams int) {
 
 func (c *Consumer) startStreams(allStreams []<-chan []*Message) {
 	streamsChannel := make(chan []*Message)
-	RedirectChannelsTo(allStreams, streamsChannel)
+	c.stopRedirectingStreams = RedirectChannelsTo(allStreams, streamsChannel)
 	for {
-		batch := <-streamsChannel
-		topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
-		c.workerManagers[topicPartition].InputChannel <- batch
+		select {
+		case <-c.stopStreams: return
+		case batch := <-streamsChannel: {
+			topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
+			c.workerManagers[topicPartition].InputChannel <- batch
+		}
+		}
 	}
 }
 
@@ -193,16 +200,16 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulat
 
 	allAccumulators := make([]*BatchAccumulator, 0)
 	switch topicCount.(type) {
-		case *StaticTopicsToNumStreams: {
-			allAccumulators = accumulators
-		}
-		case *WildcardTopicsToNumStreams: {
-			for _, _ = range consumerThreadIdsPerTopic {
-				for _, accumulator := range accumulators {
-					allAccumulators = append(allAccumulators, accumulator)
-				}
+	case *StaticTopicsToNumStreams: {
+		allAccumulators = accumulators
+	}
+	case *WildcardTopicsToNumStreams: {
+		for _, _ = range consumerThreadIdsPerTopic {
+			for _, accumulator := range accumulators {
+				allAccumulators = append(allAccumulators, accumulator)
 			}
 		}
+	}
 	}
 	topicThreadIds := make([]TopicAndThreadId, 0)
 	for topic, threadIds := range consumerThreadIdsPerTopic {
@@ -281,8 +288,6 @@ func (c *Consumer) Close() <-chan bool {
 		for _, ch := range c.closeChannels {
 			ch <- true
 		}
-		Info(c, "Closing fetcher")
-		<-c.fetcher.Close()
 		Info(c, "Unsubscribing")
 		c.unsubscribe <- true
 
@@ -290,8 +295,16 @@ func (c *Consumer) Close() <-chan bool {
 			panic("Failed graceful shutdown")
 		}
 
+		Info(c, "Stopping offsets committer")
+		c.offsetsCommitter.Stop()
+		Info(c, "Closing fetcher")
+		<-c.fetcher.Close()
 		Info(c, "Finished")
+		Info(c, "Stopping streams")
+		c.stopRedirectingStreams <- true
+		c.stopStreams <- true
 		c.closeFinished <- true
+		Info(c, "DONE!")
 	}()
 	return c.closeFinished
 }
@@ -337,7 +350,8 @@ func (c *Consumer) addShutdownHook() {
 	go func() {
 		<-s
 		Info(c, "Got a shutdown event, closing...")
-		c.Close()
+		<-c.Close()
+		Info(c, "CLOSED!!")
 	}()
 }
 
