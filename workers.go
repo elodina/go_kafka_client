@@ -79,13 +79,6 @@ func (wm *WorkerManager) Stop() chan bool {
 	go func() {
 		InLock(&wm.stopLock, func() {
 				wm.stopped = true
-				for _, worker := range wm.Workers {
-					result := worker.Close()
-					if result != nil {
-						wm.taskIsDone(result)
-					}
-				}
-				wm.CurrentBatch = make(map[TaskId]*Task)
 				finished <- true
 			})
 	}()
@@ -234,24 +227,6 @@ func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 		}
 		}
 	}()
-}
-
-func (w *Worker) Close() WorkerResult {
-	if !w.Closed {
-		w.Closed = true
-		select {
-		case result := <-w.OutputChannel: {
-			Debug(w, "Received result while closing")
-			return result
-		}
-		case <-time.After(w.CloseTimeout): {
-			Warnf(w, "Worker failed to close within %s", w.CloseTimeout)
-			return nil
-		}
-		}
-	}
-
-	return nil
 }
 
 type WorkerStrategy func(*Worker, *Message, TaskId) WorkerResult
