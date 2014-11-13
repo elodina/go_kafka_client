@@ -48,6 +48,7 @@ func (wm *WorkerManager) String() string {
 func (wm *WorkerManager) Start() {
 	go wm.processBatch()
 	for {
+		if wm.stopped { return }
 		batch := <-wm.InputChannel
 		for _, message := range batch {
 			wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, message.Partition }, message.Offset }] = &Task{
