@@ -262,6 +262,10 @@ func NewSuccessfulResult(id TaskId) *SuccessfulResult {
 	return &SuccessfulResult{id}
 }
 
+func (sr *SuccessfulResult) String() string {
+	return fmt.Sprintf("{Success: %s}", sr.Id())
+}
+
 func (wr *SuccessfulResult) Id() TaskId {
 	return wr.id
 }
@@ -274,6 +278,10 @@ type ProcessingFailedResult struct {
 	id TaskId
 }
 
+func (sr *ProcessingFailedResult) String() string {
+	return fmt.Sprintf("{Failed: %s}", sr.Id())
+}
+
 func (wr *ProcessingFailedResult) Id() TaskId {
 	return wr.id
 }
@@ -284,6 +292,10 @@ func (wr *ProcessingFailedResult) Success() bool {
 
 type TimedOutResult struct {
 	id TaskId
+}
+
+func (sr *TimedOutResult) String() string {
+	return fmt.Sprintf("{Timed out: %s}", sr.Id())
 }
 
 func (wr *TimedOutResult) Id() TaskId {
@@ -299,6 +311,6 @@ type TaskId struct {
 	Offset         int64
 }
 
-func (tid *TaskId) String() string {
-	return fmt.Sprintf("%s, Offset: %d", tid.TopicPartition, tid.Offset)
+func (tid TaskId) String() string {
+	return fmt.Sprintf("%s, Offset: %d", &tid.TopicPartition, tid.Offset)
 }

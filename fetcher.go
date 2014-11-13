@@ -434,7 +434,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 							messages := data.MsgSet.Messages
 							newOffset := currentOffset
 							if len(messages) > 0 {
-								newOffset = messages[len(messages)-1].Offset
+								newOffset = messages[len(messages)-1].Offset + 1
 							}
 							f.partitionMap[topicAndPartition] = newOffset
 							f.processPartitionData(topicAndPartition, currentOffset, data)

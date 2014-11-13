@@ -187,7 +187,8 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.MaxWorkerRetries = 3
 	config.WorkerRetryThreshold = 100
 	config.WorkerBackoff = 500 * time.Millisecond
-	config.WorkerBatchTimeout = 1 * time.Minute
+	config.WorkerBatchTimeout = 5 * time.Minute
+	config.WorkerTaskTimeout = 1 * time.Minute
 
 	config.FetchBatchSize = 100
 	config.FetchBatchTimeout = 5 * time.Second
