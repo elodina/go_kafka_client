@@ -244,7 +244,6 @@ func CreateOrUpdatePathParentMayNotExist(zkConnection *zk.Conn, pathToCreate str
 	Debugf("zk", "Trying to create path %s in Zookeeper", pathToCreate)
 	_, err := zkConnection.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 	if (err != nil) {
-		Warn("zk", err.Error())
 		if (zk.ErrNodeExists == err) {
 			if (len(data) > 0) {
 				Debugf("zk", "Trying to update existing node %s", pathToCreate)
