@@ -150,9 +150,14 @@ func RedirectChannelsToWithTimeout(inputChannels interface{}, outputChannel inte
 		panic("Incorrect output channel type")
 	}
 
+
 	cases := make([]reflect.SelectCase, input.Len())
 	for i := 0; i < input.Len(); i++ {
-		cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(input.Index(i).Interface())}
+		if input.Index(i).Kind() == reflect.Ptr {
+			cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(input.Index(i).Elem().Interface())}
+		} else {
+			cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(input.Index(i).Interface())}
+		}
 	}
 	cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(killChannel)})
 	if timeoutInputChannel != nil {

@@ -58,7 +58,10 @@ func (wm *WorkerManager) Start() {
 			worker.Start(task, wm.Strategy)
 		}
 
-		<-batchProcessed
+		select {
+		case <-batchProcessed: { Debug(wm, "batch has been processed") }
+		case <-time.After(wm.Config.WorkerBatchTimeout): { Errorf(wm, "Worker batch has timed out") }
+		}
 
 		wm.OutputChannel <- wm.LargestOffsets
 		wm.LargestOffsets = make(map[TopicAndPartition]int64)
@@ -82,60 +85,44 @@ func (wm *WorkerManager) IsBatchProcessed() bool {
 }
 
 func (wm *WorkerManager) processBatch(batchProcessed chan bool) {
-	outputChannels := make([]chan WorkerResult, wm.Config.NumWorkers)
+	outputChannels := make([]*chan WorkerResult, wm.Config.NumWorkers)
 	for i, worker := range wm.Workers {
-		outputChannels[i] = worker.OutputChannel
+		outputChannels[i] = &worker.OutputChannel
 	}
 
 	resultsChannel := make(chan WorkerResult)
 	for {
-		stopRedirecting, timeoutChannel := RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
-		select {
-		case result := <- resultsChannel: {
-			task := wm.CurrentBatch[result.Id()]
-			if result.Success() {
+		stopRedirecting := RedirectChannelsTo(outputChannels, resultsChannel)
+		result := <- resultsChannel
+		task := wm.CurrentBatch[result.Id()]
+		if result.Success() {
+			wm.taskIsDone(result)
+		} else {
+			if _, ok := result.(*TimedOutResult); ok {
+				task.Callee.OutputChannel = make(chan WorkerResult)
+			}
+
+			Warnf(wm, "Worker task %s has failed", result.Id())
+			task.Retries++
+			if task.Retries >= wm.Config.MaxWorkerRetries {
+				Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
+
 				wm.taskIsDone(result)
-			} else {
-				Warnf(wm, "Worker task %s has failed", result.Id())
-				task.Retries++
-				if task.Retries >= wm.Config.MaxWorkerRetries {
-					Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
-
-					wm.taskIsDone(result)
-					if wm.FailCounter.Failed() {
-						wm.FailureHook(wm)
-					} else {
-						wm.FailedAttemptHook(task, result)
-					}
+				if wm.FailCounter.Failed() {
+					wm.FailureHook(wm)
 				} else {
-					Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
-					time.Sleep(wm.Config.WorkerBackoff)
-					go task.Callee.Start(task, wm.Strategy)
+					wm.FailedAttemptHook(task, result)
 				}
-			}
-
-			if wm.IsBatchProcessed() {
-				stopRedirecting <- true
-				batchProcessed <- true
+			} else {
+				Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
+				time.Sleep(wm.Config.WorkerBackoff)
+				go task.Callee.Start(task, wm.Strategy)
 			}
 		}
-		case <-timeoutChannel: {
-			Errorf(wm, "Worker batch has timed out")
+
+		if wm.IsBatchProcessed() {
 			stopRedirecting <- true
-			outputChannels = make([] chan WorkerResult, 0)
-			for _, task := range wm.CurrentBatch {
-				channel := make(chan WorkerResult)
-				outputChannels = append(outputChannels, channel)
-				task.Callee.OutputChannel = channel
-				wm.AvailableWorkers <- task.Callee
-			}
-
-			wm.CurrentBatch = make(map[TaskId]*Task)
-
-//			stopRedirecting, timeoutChannel = RedirectChannelsToWithTimeout(outputChannels, resultsChannel, wm.Config.WorkerBatchTimeout)
-
 			batchProcessed <- true
-		}
 		}
 	}
 }
