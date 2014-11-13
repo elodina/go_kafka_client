@@ -355,6 +355,7 @@ func (f *consumerFetcherRoutine) Start() {
 		select {
 		case <-f.fetchStopper: return
 		case nextTopicPartition := <-f.askNext: {
+			Debug(f, "Next asked")
 			InLock(&f.partitionMapLock, func() {
 				Debugf(f, "Partition map: %v", f.partitionMap)
 				offset := f.partitionMap[nextTopicPartition]
@@ -381,6 +382,7 @@ func (f *consumerFetcherRoutine) Start() {
 
 func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
 	Infof(f, "Adding partitions: %v", partitionAndOffsets)
+	newPartitions := make(map[TopicAndPartition]chan TopicAndPartition)
 	InLock(&f.partitionMapLock, func() {
 		for topicAndPartition, offset := range partitionAndOffsets {
 			if _, contains := f.partitionMap[topicAndPartition]; !contains {
@@ -390,10 +392,13 @@ func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndP
 				}
 				f.partitionMap[topicAndPartition] = validOffset
 				f.manager.askNextFetchers[topicAndPartition] = f.askNext
-				f.askNext <- topicAndPartition
+				newPartitions[topicAndPartition] = f.askNext
 			}
 		}
 	})
+	for topicAndPartition, askNext := range newPartitions {
+		askNext <- topicAndPartition
+	}
 }
 
 func (f *consumerFetcherRoutine) PartitionCount() int {
@@ -421,6 +426,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	defer saramaBroker.Close()
 
 	if response != nil {
+		Debug(f, "Processing fetch request")
 		InLock(&f.partitionMapLock, func() {
 			for topic, partitionAndData := range response.Blocks {
 				for partition, data := range partitionAndData {
@@ -471,7 +477,7 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 }
 
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {
-	Infof(f.manager.config.ConsumerId, "Error in fetch %v. Possible cause: %s\n", request, err)
+	Infof(f, "Error in fetch %v. Possible cause: %s\n", request, err)
 	InLock(&f.partitionMapLock, func() {
 		for k, _ := range f.partitionMap {
 			partitionsWithError[k] = true
@@ -522,6 +528,7 @@ func (f *consumerFetcherRoutine) removeAllPartitions() {
 }
 
 func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition) {
+	Debug(f, "Remove partitions")
 	InLock(&f.partitionMapLock, func() {
 		for _, topicAndPartition := range partitions {
 			delete(f.partitionMap, topicAndPartition)

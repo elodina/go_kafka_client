@@ -24,6 +24,9 @@ import (
 	"time"
 	"github.com/stealthly/go-kafka/producer"
 	"fmt"
+	"runtime"
+	"os"
+	"os/exec"
 )
 
 func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
@@ -158,5 +161,21 @@ func CloseWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	case <-time.After(timeout): {
 		t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
 	}
+	}
+}
+
+func CreateMultiplePartitionsTopic(zk string, topicName string, numPartitions int) {
+	if runtime.GOOS == "windows" {
+		params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", zk, numPartitions, topicName)
+		script := fmt.Sprintf("%s\\bin\\windows\\kafka-topics.bat %s", os.Getenv("KAFKA_PATH"), params)
+		exec.Command("cmd", "/C", script).Output()
+	} else {
+		params := fmt.Sprintf("--zookeeper %s --replica 1 --partition %d --topic %s", zk, numPartitions, topicName)
+		script := fmt.Sprintf("%s/bin/kafka-create-topic.sh %s", os.Getenv("KAFKA_PATH"), params)
+		out, err := exec.Command("sh", "-c", script).Output()
+		if err != nil {
+			panic(err)
+		}
+		Debug("create topic", out)
 	}
 }
