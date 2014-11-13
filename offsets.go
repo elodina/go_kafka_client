@@ -27,6 +27,7 @@ type OffsetsCommitter struct {
 	WorkerAcks []chan map[TopicAndPartition]int64
 	AskNext chan TopicAndPartition
 	zkConn *zk.Conn
+	close chan bool
 }
 
 func (oc *OffsetsCommitter) String() string {
@@ -39,6 +40,7 @@ func NewOffsetsCommiter(config *ConsumerConfig, workerAcks []chan map[TopicAndPa
 		WorkerAcks: workerAcks,
 		AskNext: askNext,
 		zkConn: zkConn,
+		close: make(chan bool),
 	}
 }
 
@@ -46,13 +48,22 @@ func (oc *OffsetsCommitter) Start() {
 	acksChannel := make(chan map[TopicAndPartition]int64)
 	RedirectChannelsTo(oc.WorkerAcks, acksChannel)
 	for {
-		ack := <-acksChannel
-		Debugf(oc, "Committing offsets: %+v", ack)
-		oc.Commit(ack)
-		for topicPartition, _ := range ack {
-			oc.AskNext <- topicPartition
+		select {
+		case <-oc.close: return
+		case ack := <-acksChannel: {
+			Debugf(oc, "Committing offsets: %+v", ack)
+			oc.Commit(ack)
+			for topicPartition, _ := range ack {
+				oc.AskNext <- topicPartition
+			}
+		}
 		}
 	}
+}
+
+func (oc *OffsetsCommitter) Stop() {
+	oc.close <- true
+	Debug(oc, "Successfully stopped")
 }
 
 func (oc *OffsetsCommitter) Commit(ack map[TopicAndPartition]int64) {

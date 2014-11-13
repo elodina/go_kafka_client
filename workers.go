@@ -209,6 +209,10 @@ type Worker struct {
 	Closed bool
 }
 
+func (w *Worker) String() string {
+	return "worker"
+}
+
 func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	task.Callee = w
 	go func() {
@@ -230,10 +234,11 @@ func (w *Worker) Close() WorkerResult {
 		w.Closed = true
 		select {
 		case result := <- w.OutputChannel: {
+			Debug(w, "Received result while closing")
 			return result
 		}
 		case <- time.After(w.CloseTimeout): {
-			Warnf(w, "Worker failed to close within %f seconds", w.CloseTimeout.Seconds())
+			Warnf(w, "Worker failed to close within %s", w.CloseTimeout)
 			return nil
 		}
 		}
