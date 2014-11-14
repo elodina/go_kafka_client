@@ -245,6 +245,10 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulat
 
 	c.rebalance()
 
+	c.initializeWorkerManagersAndOffsetsCommitter()
+}
+
+func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	workerChannels := make([]chan map[TopicAndPartition]int64, 0)
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
@@ -316,6 +320,7 @@ func (c *Consumer) stopWorkerManagers() bool {
 	select {
 	case <-wmsAreStopped: {
 		Info(c, "All workers have been gracefully stopped")
+		c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 		return true
 	}
 	case <-time.After(c.config.WorkerManagersStopTimeout): {
@@ -503,6 +508,8 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	Infof(c, "%v\n", brokers)
 
 	c.fetcher.CloseAllFetchers()
+	c.stopWorkerManagers()
+	c.offsetsCommitter.Stop()
 	Debug(c, c.TopicRegistry)
 	c.releasePartitionOwnership(c.TopicRegistry)
 
@@ -586,6 +593,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
 		c.TopicRegistry = currentTopicRegistry
 		c.updateFetcher()
+		c.initializeWorkerManagersAndOffsetsCommitter()
 	} else {
 		Errorf(c, "Failed to reflect partition ownership during rebalance")
 		return false
