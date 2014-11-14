@@ -62,7 +62,7 @@ type ConsumerConfig struct {
 	FetchWaitMaxMs int32
 
 	/** backoff time between retries during rebalance */
-	RebalanceBackoffMs time.Duration
+	RebalanceBackoff time.Duration
 
 	/** backoff time to refresh the leader of a partition after it loses the current leader */
 	RefreshLeaderBackoff time.Duration
@@ -171,7 +171,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.ConsumerTimeoutMs = -1
 	config.FetchMinBytes = 1
 	config.FetchWaitMaxMs = 100
-	config.RebalanceBackoffMs = 2000
+	config.RebalanceBackoff = 5 * time.Second
 	config.RefreshLeaderBackoff = 200 * time.Millisecond
 	config.OffsetsChannelBackoffMs = 1000
 	config.OffsetsChannelSocketTimeoutMs = 10000
@@ -245,7 +245,7 @@ FetchBatchTimeout %v
    c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.AutoCommitEnable,
    c.AutoCommitIntervalMs, c.QueuedMaxMessages, c.RebalanceMaxRetries,
    c.ConsumerTimeoutMs, c.FetchMinBytes, c.FetchWaitMaxMs,
-   c.RebalanceBackoffMs, c.RefreshLeaderBackoff, c.OffsetsChannelBackoffMs,
+   c.RebalanceBackoff, c.RefreshLeaderBackoff, c.OffsetsChannelBackoffMs,
    c.OffsetsChannelSocketTimeoutMs, c.OffsetsCommitMaxRetries, c.OffsetsStorage,
    c.AutoOffsetReset, c.ClientId, c.ConsumerId,
    c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.ZookeeperConnect,

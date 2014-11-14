@@ -240,12 +240,11 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulat
 	}
 	c.topicChannels = topicToStreams
 
-	c.subscribeForChanges(c.config.Groupid)
 	//TODO more subscriptions
 
 	c.rebalance()
-
 	c.initializeWorkerManagersAndOffsetsCommitter()
+	c.subscribeForChanges(c.config.Groupid)
 }
 
 func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
@@ -316,6 +315,7 @@ func (c *Consumer) stopWorkerManagers() bool {
 	for _, wm := range c.workerManagers {
 		wmStopChannels = append(wmStopChannels, wm.Stop())
 	}
+	Debugf(c, "Worker channels length: %d", len(wmStopChannels))
 	NotifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
 	select {
 	case <-wmsAreStopped: {
@@ -483,7 +483,7 @@ func (c *Consumer) rebalance() {
 				success = true
 				break
 			} else {
-				time.Sleep(c.config.RebalanceBackoffMs)
+				time.Sleep(c.config.RebalanceBackoff)
 			}
 		}
 
@@ -512,8 +512,12 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	Infof(c, "%v\n", brokers)
 
 	c.fetcher.CloseAllFetchers()
-	c.stopWorkerManagers()
-	c.offsetsCommitter.Stop()
+	Debug(c, "About to stop worker managers")
+	if len(c.workerManagers) > 0 {
+		c.stopWorkerManagers()
+		c.offsetsCommitter.Stop()
+	}
+	Debug(c, "Successfully stopped worker managers")
 	Debug(c, c.TopicRegistry)
 	c.releasePartitionOwnership(c.TopicRegistry)
 

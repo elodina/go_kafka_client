@@ -281,16 +281,16 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 
 func (m *consumerFetcherManager) CloseAllFetchers() {
 	Info(m, "Closing fetchers")
-	//	InLock(&m.mapLock, func() {
-	for _, fetcher := range m.fetcherRoutineMap {
-		Debugf(m, "Closing %s", fetcher)
-		<-fetcher.Close()
-	}
+	InLock(&m.mapLock, func() {
+		for _, fetcher := range m.fetcherRoutineMap {
+			Debugf(m, "Closing %s", fetcher)
+			<-fetcher.Close()
+		}
 
-	for key := range m.fetcherRoutineMap {
-		delete(m.fetcherRoutineMap, key)
-	}
-	//	})
+		for key := range m.fetcherRoutineMap {
+			delete(m.fetcherRoutineMap, key)
+		}
+	})
 }
 
 func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
@@ -366,10 +366,9 @@ func (f *consumerFetcherRoutine) Start() {
 			fetchRequest := new(sarama.FetchRequest)
 			fetchRequest.MinBytes = config.FetchMinBytes
 			fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
-			for topicAndPartition, partitionFetchInfo := range f.fetchRequestBlockMap {
-				Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", topicAndPartition.Topic, int32(topicAndPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-				fetchRequest.AddBlock(topicAndPartition.Topic, int32(topicAndPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-			}
+			partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
+			Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+			fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 
 			Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
 			if len(f.fetchRequestBlockMap) > 0 {
