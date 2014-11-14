@@ -311,8 +311,11 @@ func GetOffsetForTopicPartition(zkConnection *zk.Conn, group string, topicPartit
 }
 
 func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int32, consumerThreadId *ConsumerThreadId) (bool, error) {
-	pathToOwn := fmt.Sprintf("%s/%d", NewZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
-	err := CreateOrUpdatePathParentMayNotExist(zkConnection, pathToOwn, []byte(consumerThreadId.String()))
+	dirs := NewZKGroupTopicDirs(group, topic)
+	CreateOrUpdatePathParentMayNotExist(zkConnection, dirs.ConsumerOwnerDir, make([]byte, 0))
+
+	pathToOwn := fmt.Sprintf("%s/%d", dirs.ConsumerOwnerDir, partition)
+	_, err := zkConnection.Create(pathToOwn, []byte(consumerThreadId.String()), 0, zk.WorldACL(zk.PermAll))
 	if (err != nil) {
 		if (err == zk.ErrNodeExists) {
 			Debugf(consumerThreadId, "waiting for the partition ownership to be deleted: %d", partition)

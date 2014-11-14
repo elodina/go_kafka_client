@@ -366,13 +366,17 @@ func (c *Consumer) connectToZookeeper() {
 	}
 }
 
-func (c *Consumer) subscribeForChanges(group string) {
+func (c *Consumer)ensureZkPathsExist(group string) {
 	dirs := NewZKGroupDirs(group)
-	Infof(c, "Subscribing for changes for %s", dirs.ConsumerRegistryDir)
-	err := CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerChangesDir, make([]byte, 0))
-	if err != nil {
-		panic(err)
-	}
+	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerDir, make([]byte, 0))
+	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerGroupDir, make([]byte, 0))
+	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerRegistryDir, make([]byte, 0))
+	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerChangesDir, make([]byte, 0))
+}
+
+func (c *Consumer) subscribeForChanges(group string) {
+	c.ensureZkPathsExist(group)
+	Infof(c, "Subscribing for changes for %s", group)
 
 	consumersWatcher, err := GetConsumersInGroupWatcher(c.zkConn, group)
 	if err != nil {
