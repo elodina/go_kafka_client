@@ -178,6 +178,10 @@ func GetPartitionsForTopics(zkConnection *zk.Conn, topics []string) (map[string]
 		}
 	}
 
+	for topic, _ := range partitionAssignments {
+		sort.Sort(intArray(result[topic]))
+	}
+
 	return result, nil
 }
 

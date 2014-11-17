@@ -44,10 +44,14 @@ func NewOffsetsCommiter(config *ConsumerConfig, workerAcks []chan map[TopicAndPa
 
 func (oc *OffsetsCommitter) Start() {
 	acksChannel := make(chan map[TopicAndPartition]int64)
-	RedirectChannelsTo(oc.WorkerAcks, acksChannel)
+	kill := RedirectChannelsTo(oc.WorkerAcks, acksChannel)
 	for {
 		select {
-		case <-oc.close: return
+		case <-oc.close: {
+			Debugf(oc, "Closing %s", oc)
+			kill <- true
+			return
+		}
 		case ack := <-acksChannel: {
 			Debugf(oc, "Committing offsets: %+v", ack)
 			oc.Commit(ack)
@@ -57,6 +61,7 @@ func (oc *OffsetsCommitter) Start() {
 }
 
 func (oc *OffsetsCommitter) Stop() {
+	Debugf(oc, "Closing %s", oc)
 	oc.close <- true
 	Debug(oc, "Successfully stopped")
 }

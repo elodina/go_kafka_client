@@ -111,6 +111,8 @@ func RangeAssignor(context *AssignmentContext) map[TopicAndPartition]*ConsumerTh
 		consumersForTopic := context.ConsumersForTopic[topic]
 		partitionsForTopic := context.PartitionsForTopic[topic]
 
+		Debug(context.ConsumerId, partitionsForTopic)
+
 		Tracef(context.ConsumerId, "partitionsForTopic: %d, consumersForTopic: %d", len(partitionsForTopic), len(consumersForTopic))
 
 		nPartsPerConsumer := len(partitionsForTopic) / len(consumersForTopic)
@@ -150,6 +152,7 @@ type AssignmentContext struct {
 	ConsumerId string
 	Group      string
 	MyTopicThreadIds map[string][]*ConsumerThreadId
+	MyTopicToNumStreams TopicsToNumStreams
 	PartitionsForTopic map[string][]int32
 	ConsumersForTopic map[string][]*ConsumerThreadId
 	Consumers  []string
@@ -192,6 +195,7 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 		ConsumerId: consumerId,
 		Group: group,
 		MyTopicThreadIds: myTopicThreadIds,
+		MyTopicToNumStreams: topicCount,
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
 		Consumers: consumers,

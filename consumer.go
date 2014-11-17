@@ -34,23 +34,20 @@ var SmallestOffset = "smallest"
 
 type Consumer struct {
 	config        *ConsumerConfig
-	zookeeper      []string
 	fetcher         *consumerFetcherManager
-	messages       chan *Message
 	unsubscribe    chan bool
 	closeFinished  chan bool
 	zkConn          *zk.Conn
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
-	topicChannels map[string][]<-chan []*Message
-	topicThreadIdsAndSharedChannels map[TopicAndThreadId]*SharedBlockChannel
+	topicThreadIdsAndAccumulators map[TopicAndThreadId]*BatchAccumulator
 	TopicRegistry map[string]map[int32]*PartitionTopicInfo
 	checkPointedZkOffsets map[*TopicAndPartition]int64
-	closeChannels  []chan bool
+	batchChannel chan []*Message
+	restartStreams chan []chan []*Message
 	offsetsCommitter *OffsetsCommitter
 	workerManagers map[TopicAndPartition]*WorkerManager
 	askNextBatch           chan TopicAndPartition
-	stopRedirectingStreams chan bool
 	stopStreams            chan bool
 }
 
@@ -68,11 +65,10 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		config : config,
 		unsubscribe : make(chan bool),
 		closeFinished : make(chan bool),
-		topicChannels : make(map[string][]<-chan []*Message),
-		topicThreadIdsAndSharedChannels : make(map[TopicAndThreadId]*SharedBlockChannel),
+		topicThreadIdsAndAccumulators : make(map[TopicAndThreadId]*BatchAccumulator),
 		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
 		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
-		closeChannels: make([]chan bool, 0),
+		restartStreams: make(chan []chan []*Message),
 		workerManagers: make(map[TopicAndPartition]*WorkerManager),
 		askNextBatch: make(chan TopicAndPartition),
 		stopStreams: make(chan bool),
@@ -91,66 +87,59 @@ func (c *Consumer) String() string {
 }
 
 func (c *Consumer) StartStatic(topicCountMap map[string]int) {
-	streams := c.createMessageStreams(topicCountMap)
-	allStreams := make([]<-chan []*Message, 0)
-	for _, channels := range streams {
-		for _, ch := range channels {
-			allStreams = append(allStreams, ch)
-		}
-	}
+	go c.createMessageStreams(topicCountMap)
 
-	c.startStreams(allStreams)
+	c.startStreams()
 }
 
 func (c *Consumer) StartWildcard(topicFilter TopicFilter, numStreams int) {
-	streams := c.createMessageStreamsByFilterN(topicFilter, numStreams)
-	c.startStreams(streams)
+	go c.createMessageStreamsByFilterN(topicFilter, numStreams)
+	c.startStreams()
 }
 
-func (c *Consumer) startStreams(allStreams []<-chan []*Message) {
-	streamsChannel := make(chan []*Message)
-	c.stopRedirectingStreams = RedirectChannelsTo(allStreams, streamsChannel)
+func (c *Consumer) startStreams() {
+	c.batchChannel = make(chan []*Message)
+	stopRedirectingChannels := RedirectChannelsTo(make([]<-chan []*Message, 0), c.batchChannel)
 	for {
+		Debug(c, "Inside select")
 		select {
-		case <-c.stopStreams: return
-		case batch := <-streamsChannel: {
+		case <-c.stopStreams: {
+			Debug(c, "Stop streams")
+			stopRedirectingChannels <- true
+			return
+		}
+		case newAllStreams := <-c.restartStreams: {
+			Debug(c, "Restart streams")
+			stopRedirectingChannels <- true
+			stopRedirectingChannels = RedirectChannelsTo(newAllStreams, c.batchChannel)
+		}
+		case batch := <-c.batchChannel: {
+			Debugf(c, "Got batch: %s", batch)
+			Debug(c, c.workerManagers)
 			topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
-			c.workerManagers[topicPartition].InputChannel <- batch
+			wm, ok := c.workerManagers[topicPartition]
+			if !ok {
+				panic(fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition) )
+			} else {
+				wm.InputChannel<-batch
+			}
 		}
 		}
 	}
 }
 
-func (c *Consumer) createMessageStreams(topicCountMap map[string]int) map[string][]<-chan []*Message {
-	staticTopicCount := &StaticTopicsToNumStreams {
+func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
+	topicCount := &StaticTopicsToNumStreams {
 		ConsumerId : c.config.ConsumerId,
 		TopicsToNumStreamsMap : topicCountMap,
 	}
 
-	var accumulators []*BatchAccumulator = nil
-	for _, threadIdSet := range staticTopicCount.GetConsumerThreadIdsPerTopic() {
-		accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
-		for i := 0; i < len(accumulatorsForThread); i++ {
-			closeChannel := make(chan bool)
-			c.closeChannels = append(c.closeChannels, closeChannel)
-			accumulatorsForThread[i] = NewBatchAccumulator(c.config, closeChannel)
-		}
-		accumulators = append(accumulators, accumulatorsForThread...)
-	}
-
-	c.RegisterInZK(staticTopicCount)
-	c.ReinitializeConsumer(staticTopicCount, accumulators)
-
-	return c.topicChannels
+	c.RegisterInZK(topicCount)
+	c.ReinitializeAccumulatorsAndChannels(topicCount)
+	c.ReinitializeConsumer()
 }
 
-func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) []<-chan []*Message {
-	var acuumulators []*BatchAccumulator = nil
-	for i := 0; i < numStreams; i++ {
-		closeChannel := make(chan bool)
-		c.closeChannels = append(c.closeChannels, closeChannel)
-		acuumulators = append(acuumulators, NewBatchAccumulator(c.config, closeChannel))
-	}
+func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) {
 	allTopics, err := GetTopics(c.zkConn)
 	if err != nil {
 		panic(err)
@@ -170,20 +159,14 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 
 	c.RegisterInZK(topicCount)
-	c.ReinitializeConsumer(topicCount, acuumulators)
+	c.ReinitializeAccumulatorsAndChannels(topicCount)
+	c.ReinitializeConsumer()
 
 	//TODO subscriptions?
-
-	messages := make([]<-chan []*Message, 0)
-	for _, accumulator := range acuumulators {
-		messages = append(messages, accumulator.OutputChannel)
-	}
-
-	return messages
 }
 
-func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) []<-chan []*Message {
-	return c.createMessageStreamsByFilterN(topicFilter, c.config.NumConsumerFetchers)
+func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) {
+	c.createMessageStreamsByFilterN(topicFilter, c.config.NumConsumerFetchers)
 }
 
 func (c *Consumer) RegisterInZK(topicCount TopicsToNumStreams) {
@@ -195,7 +178,32 @@ func (c *Consumer) RegisterInZK(topicCount TopicsToNumStreams) {
 		})
 }
 
-func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulators []*BatchAccumulator) {
+func (c *Consumer) ReinitializeConsumer() {
+	//TODO more subscriptions
+	c.rebalance()
+	c.initializeWorkerManagersAndOffsetsCommitter()
+	c.subscribeForChanges(c.config.Groupid)
+}
+
+func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStreams) {
+	var accumulators []*BatchAccumulator = nil
+	switch tc := topicCount.(type) {
+	case *StaticTopicsToNumStreams: {
+			for _, threadIdSet := range tc.GetConsumerThreadIdsPerTopic() {
+				accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
+				for i := 0; i < len(accumulatorsForThread); i++ {
+					accumulatorsForThread[i] = NewBatchAccumulator(c.config)
+				}
+				accumulators = append(accumulators, accumulatorsForThread...)
+			}
+		}
+		case *WildcardTopicsToNumStreams: {
+			for i := 0; i < tc.NumStreams; i++ {
+				accumulators = append(accumulators, NewBatchAccumulator(c.config))
+			}
+		}
+	}
+
 	consumerThreadIdsPerTopic := topicCount.GetConsumerThreadIdsPerTopic()
 
 	allAccumulators := make([]*BatchAccumulator, 0)
@@ -227,32 +235,17 @@ func (c *Consumer) ReinitializeConsumer(topicCount TopicsToNumStreams, accumulat
 	}
 
 	for topicThread, accumulator := range threadAccumulatorPairs {
-		c.topicThreadIdsAndSharedChannels[topicThread] = accumulator.InputChannel
+		c.topicThreadIdsAndAccumulators[topicThread] = accumulator
 	}
-
-	topicToStreams := make(map[string][]<-chan []*Message)
-	for topicThread, accumulator := range threadAccumulatorPairs {
-		topic := topicThread.Topic
-		if topicToStreams[topic] == nil {
-			topicToStreams[topic] = make([]<-chan []*Message, 0)
-		}
-		topicToStreams[topic] = append(topicToStreams[topic], accumulator.OutputChannel)
-	}
-	c.topicChannels = topicToStreams
-
-	//TODO more subscriptions
-
-	c.rebalance()
-	c.initializeWorkerManagersAndOffsetsCommitter()
-	c.subscribeForChanges(c.config.Groupid)
 }
 
 func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	workerChannels := make([]chan map[TopicAndPartition]int64, 0)
+	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			workerChannel := make(chan map[TopicAndPartition]int64)
-			manager := NewWorkerManager(c.config, workerChannel, c.askNextBatch)
+			manager := NewWorkerManager(c.config, workerChannel, c.fetcher, c.askNextBatch)
 			c.workerManagers[TopicAndPartition{topic, partition}] = manager
 			go manager.Start()
 			workerChannels = append(workerChannels, workerChannel)
@@ -287,10 +280,6 @@ func (c *Consumer) Close() <-chan bool {
 	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true
 	go func() {
-		Info(c, "Closing all channels...")
-		for _, ch := range c.closeChannels {
-			ch <- true
-		}
 		c.unsubscribe <- true
 
 		Info(c, "Stopping worker manager...")
@@ -302,7 +291,6 @@ func (c *Consumer) Close() <-chan bool {
 		c.offsetsCommitter.Stop()
 		Info(c, "Closing fetcher manager...")
 		<-c.fetcher.Close()
-		c.stopRedirectingStreams <- true
 		c.stopStreams <- true
 		c.closeFinished <- true
 	}()
@@ -330,15 +318,23 @@ func (c *Consumer) stopWorkerManagers() bool {
 	}
 }
 
-func (c *Consumer) updateFetcher() {
+func (c *Consumer) updateFetcher(numStreams int) {
+	Debug(c, "Updating fetcher")
+	newAllStreams := make([]chan []*Message, 0)
 	allPartitionInfos := make([]*PartitionTopicInfo, 0)
+	Debugf(c, "Topic Registry = %s", c.TopicRegistry)
 	for _, partitionAndInfo := range c.TopicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
+			newAllStreams = append(newAllStreams, partitionInfo.Accumulator.OutputChannel)
 			allPartitionInfos = append(allPartitionInfos, partitionInfo)
 		}
 	}
 
-	c.fetcher.startConnections(allPartitionInfos)
+	Debug(c, "Restarting streams")
+	c.restartStreams <- newAllStreams
+	Debug(c, "Restarted streams")
+	c.fetcher.startConnections(allPartitionInfos, numStreams)
+	Debug(c, "Updated fetcher")
 }
 
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
@@ -591,6 +587,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.ConsumerId)
 		return true
 	} else {
+		c.ReinitializeAccumulatorsAndChannels(assignmentContext.MyTopicToNumStreams)
 		for _, topicPartition := range topicPartitions {
 			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
 			threadId := partitionOwnershipDecision[*topicPartition]
@@ -600,8 +597,20 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 
 	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
 		c.TopicRegistry = currentTopicRegistry
-		c.updateFetcher()
 		c.initializeWorkerManagersAndOffsetsCommitter()
+		switch topicCount := assignmentContext.MyTopicToNumStreams.(type) {
+			case *StaticTopicsToNumStreams: {
+				var numStreams int
+				for _, v := range topicCount.GetConsumerThreadIdsPerTopic() {
+					numStreams = len(v)
+					break
+				}
+				c.updateFetcher(numStreams)
+			}
+			case *WildcardTopicsToNumStreams: {
+				c.updateFetcher(topicCount.NumStreams)
+			}
+		}
 	} else {
 		Errorf(c, "Failed to reflect partition ownership during rebalance")
 		return false
@@ -650,17 +659,17 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 	}
 
 	topicAndThreadId := TopicAndThreadId{topicPartition.Topic, consumerThreadId}
-	var blocks *SharedBlockChannel = nil
-	for topicThread, blocksChannel := range c.topicThreadIdsAndSharedChannels {
+	var accumulator *BatchAccumulator = nil
+	for topicThread, acc := range c.topicThreadIdsAndAccumulators {
 		if reflect.DeepEqual(topicAndThreadId, topicThread) {
-			blocks = blocksChannel
+			accumulator = acc
 		}
 	}
 
 	partTopicInfo := &PartitionTopicInfo{
 		Topic: topicPartition.Topic,
 		Partition: topicPartition.Partition,
-		BlockChannel: blocks,
+		Accumulator: accumulator,
 		ConsumedOffset: offset,
 		FetchedOffset: offset,
 		FetchSize: int(c.config.FetchMessageMaxBytes),

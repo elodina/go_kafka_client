@@ -111,7 +111,7 @@ type SharedBlockChannel struct {
 type PartitionTopicInfo struct {
 	Topic string
 	Partition int32
-	BlockChannel *SharedBlockChannel
+	Accumulator *BatchAccumulator
 	ConsumedOffset int64
 	FetchedOffset int64
 	FetchSize int
@@ -168,3 +168,8 @@ type WorkerManagerAndNextBatchChannel struct {
 	WorkerMgr *WorkerManager
 	AskNextBatch chan bool
 }
+
+type intArray []int32
+func (s intArray) Len() int { return len(s) }
+func (s intArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s intArray) Less(i, j int) bool { return s[i] < s[j] }

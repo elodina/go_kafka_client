@@ -27,18 +27,20 @@ type BatchAccumulator struct {
 	Config *ConsumerConfig
 	InputChannel *SharedBlockChannel
 	OutputChannel chan []*Message
-	CloseChannel  chan bool
 	MessageBuffers map[TopicAndPartition]*MessageBuffer
+	closeFinished chan bool
+	closed        bool
+	closeLock     sync.Mutex
 }
 
-func NewBatchAccumulator(config *ConsumerConfig, closeChannel chan bool) *BatchAccumulator {
+func NewBatchAccumulator(config *ConsumerConfig) *BatchAccumulator {
 	blockChannel := &SharedBlockChannel{make(chan *TopicPartitionData, config.QueuedMaxMessages), false}
 	ba := &BatchAccumulator {
 		Config : config,
 		InputChannel : blockChannel,
 		OutputChannel : make(chan []*Message),
-		CloseChannel : closeChannel,
 		MessageBuffers : make(map[TopicAndPartition]*MessageBuffer),
+		closeFinished : make(chan bool),
 	}
 
 	go ba.processIncomingBlocks()
@@ -51,15 +53,21 @@ func (ba *BatchAccumulator) String() string {
 
 func (ba *BatchAccumulator) processIncomingBlocks() {
 	Debug(ba, "Started processing blocks")
-	for {
+	for !ba.closed {
+		var b *TopicPartitionData
 		select {
-		case <-ba.CloseChannel: {
-			for _, buffer := range ba.MessageBuffers {
-				buffer.Stop()
-			}
-			return
+		case b = <-ba.InputChannel.chunks:
+		case <-time.After(1 * time.Second): {
+			Debugf(ba, "Timed out")
 		}
-		case b := <-ba.InputChannel.chunks: {
+		}
+		InLock(&ba.closeLock, func() {
+			Debugf(ba, "Acquired lock for BA close")
+			if ba.closed || b == nil {
+				Debugf(ba, "BA closed: %s", ba.closed)
+				return
+			}
+			Debugf(ba, "BA is not closed")
 			fetchResponseBlock := b.Data
 			topicPartition := b.TopicPartition
 			if fetchResponseBlock != nil {
@@ -79,9 +87,29 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 					buffer.Add(msg)
 				}
 			}
-		}
-		}
+			Debugf(ba, "Released lock for BA close")
+		})
+		time.Sleep(1 * time.Second)
 	}
+
+	Debug(ba, "Exited BA processing loop")
+
+	for _, buffer := range ba.MessageBuffers {
+		buffer.Stop()
+	}
+
+	Debug(ba, "Closed batch accumulator")
+	ba.closeFinished <- true
+}
+
+func (ba *BatchAccumulator) Stop() chan bool {
+	Debug(ba, "Trying to stop BA")
+	InLock(&ba.closeLock, func() {
+		ba.closed = true
+	})
+	Debug(ba, "BA close flag set")
+
+	return ba.closeFinished
 }
 
 type MessageBuffer struct {
@@ -89,8 +117,8 @@ type MessageBuffer struct {
 	Messages      []*Message
 	Config *ConsumerConfig
 	Timer *time.Timer
-	MessageLock sync.Mutex
-	Close       chan bool
+	MessageLock   sync.Mutex
+	Close         chan bool
 	TopicPartition *TopicAndPartition
 }
 
@@ -127,7 +155,6 @@ func (mb *MessageBuffer) Start() {
 
 func (mb *MessageBuffer) Stop() {
 	mb.Close <- true
-	mb.Flush()
 }
 
 func (mb *MessageBuffer) Add(msg *Message) {
@@ -142,7 +169,9 @@ func (mb *MessageBuffer) Add(msg *Message) {
 
 func (mb *MessageBuffer) Flush() {
 	if len(mb.Messages) > 0 {
+		Debug(mb, "Flushing")
 		mb.OutputChannel <- mb.Messages
+		Debug(mb, "Flushed")
 		InLock(&mb.MessageLock, func() {
 			mb.Messages = make([]*Message, 0)
 		})

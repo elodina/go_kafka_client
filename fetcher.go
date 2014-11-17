@@ -27,22 +27,22 @@ import (
 )
 
 type consumerFetcherManager struct {
-	config        *ConsumerConfig
-	zkConn        *zk.Conn
-	fetchers      map[string]*consumerFetcherRoutine
-	messages                chan *Message
+	config *ConsumerConfig
+	zkConn *zk.Conn
+	numStreams              int
 	stopWaitingNextRequests chan bool
 	closeFinished           chan bool
-	lock                    sync.Mutex
-	mapLock                 sync.Mutex
+	partitionMapLock        sync.Mutex
+	fetcherRoutineMapLock   sync.Mutex
 	partitionMap map[TopicAndPartition]*PartitionTopicInfo
 	fetcherRoutineMap map[BrokerAndFetcherId]*consumerFetcherRoutine
 	noLeaderPartitions      []TopicAndPartition
 	shuttingDown            bool
-	leaderCond            *sync.Cond
+	leaderCond *sync.Cond
 	askNext                 chan TopicAndPartition
 	askNextFetchers map[TopicAndPartition]chan TopicAndPartition
-	stopLock sync.Mutex
+	stopLock                sync.Mutex
+	isReady                 bool
 }
 
 func (m *consumerFetcherManager) String() string {
@@ -53,7 +53,6 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, askNext 
 	manager := &consumerFetcherManager{
 		config : config,
 		zkConn : zkConn,
-		fetchers : make(map[string]*consumerFetcherRoutine),
 		stopWaitingNextRequests : make(chan bool),
 		closeFinished : make(chan bool),
 		partitionMap : make(map[TopicAndPartition]*PartitionTopicInfo),
@@ -62,36 +61,47 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, askNext 
 		askNext : askNext,
 		askNextFetchers : make(map[TopicAndPartition]chan TopicAndPartition),
 	}
-	manager.leaderCond = sync.NewCond(&manager.lock)
+	manager.leaderCond = sync.NewCond(&manager.partitionMapLock)
+	go manager.FindLeaders()
+	go manager.WaitForNextRequests()
 
 	return manager
 }
 
-func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo) {
+func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo, numStreams int) {
 	Info(m, "Fetcher Manager started")
-	go m.FindLeaders()
-	go m.WaitForNextRequests()
+	Debugf(m, "TopicInfos = %s", topicInfos)
+	m.numStreams = numStreams
+	m.isReady = true
 
-	InLock(&m.lock, func() {
-			newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
-			for _, info := range topicInfos {
-				topicAndPartition := TopicAndPartition{info.Topic, info.Partition}
-				newPartitionMap[topicAndPartition] = info
+	InLock(&m.partitionMapLock, func() {
+		newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
+		for _, info := range topicInfos {
+			topicAndPartition := TopicAndPartition{info.Topic, info.Partition}
+			newPartitionMap[topicAndPartition] = info
 
-				exists := false
-				for _, noLeader := range m.noLeaderPartitions {
-					if topicAndPartition == noLeader {
-						exists = true
-						break
-					}
-				}
-				if !exists {
-					m.noLeaderPartitions = append(m.noLeaderPartitions, topicAndPartition)
+			exists := false
+			for _, noLeader := range m.noLeaderPartitions {
+				if topicAndPartition == noLeader {
+					exists = true
+					break
 				}
 			}
-			m.partitionMap = newPartitionMap
-			m.leaderCond.Broadcast()
-		})
+			if !exists {
+				Debugf(m, "Adding no leader partition = %s", topicAndPartition)
+				m.noLeaderPartitions = append(m.noLeaderPartitions, topicAndPartition)
+			}
+		}
+		for k, _ := range m.partitionMap {
+			delete(m.partitionMap, k)
+		}
+		for k, v := range newPartitionMap {
+			m.partitionMap[k] = v
+		}
+	})
+
+	Debug(m, "Broadcasting")
+	m.leaderCond.Broadcast()
 }
 
 func (m *consumerFetcherManager) WaitForNextRequests() {
@@ -109,44 +119,45 @@ func (m *consumerFetcherManager) FindLeaders() {
 	for {
 		Info(m, "Find leaders")
 		leaderForPartitions := make(map[TopicAndPartition]*BrokerInfo)
-		InLock(&m.lock, func() {
-				for len(m.noLeaderPartitions) == 0 {
-					if m.shuttingDown {
-						return
-					}
-					Info(m, "No partition for leader election")
-					m.leaderCond.Wait()
+		InLock(&m.partitionMapLock, func() {
+			for len(m.noLeaderPartitions) == 0 {
+				if m.shuttingDown {
+					return
 				}
+				Info(m, "No partition for leader election")
+				m.leaderCond.Wait()
+				Debug(m, "Got broadcast event")
+			}
 
-				Infof(m, "Partitions without leader %v\n", m.noLeaderPartitions)
-				brokers, err := GetAllBrokersInCluster(m.zkConn)
-				if err != nil {
-					panic(err)
-				}
-				topicsMetadata := m.fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
-				for _, meta := range topicsMetadata {
-					topic := meta.Name
-					for _, partition := range meta.Partitions {
-						topicAndPartition := TopicAndPartition{topic, partition.ID }
+			Infof(m, "Partitions without leader %v\n", m.noLeaderPartitions)
+			brokers, err := GetAllBrokersInCluster(m.zkConn)
+			if err != nil {
+				panic(err)
+			}
+			topicsMetadata := m.fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
+			for _, meta := range topicsMetadata {
+				topic := meta.Name
+				for _, partition := range meta.Partitions {
+					topicAndPartition := TopicAndPartition{topic, partition.ID }
 
-						var leaderBroker *BrokerInfo = nil
-						for _, broker := range brokers {
-							if broker.Id == partition.Leader {
-								leaderBroker = broker
-								break
-							}
-						}
-
-						for i, tp := range m.noLeaderPartitions {
-							if tp == topicAndPartition && leaderBroker != nil {
-								leaderForPartitions[topicAndPartition] = leaderBroker
-								m.noLeaderPartitions = append(m.noLeaderPartitions[:i], m.noLeaderPartitions[i+1:]...)
-								break
-							}
+					var leaderBroker *BrokerInfo = nil
+					for _, broker := range brokers {
+						if broker.Id == partition.Leader {
+							leaderBroker = broker
+							break
 						}
 					}
+
+					for i, tp := range m.noLeaderPartitions {
+						if tp == topicAndPartition && leaderBroker != nil {
+							leaderForPartitions[topicAndPartition] = leaderBroker
+							m.noLeaderPartitions = append(m.noLeaderPartitions[:i], m.noLeaderPartitions[i+1:]...)
+							break
+						}
+					}
 				}
-			})
+			}
+		})
 
 		if m.shuttingDown {
 			Info(m, "Stopping find leaders routine")
@@ -159,7 +170,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 		}
 		m.addFetcherForPartitions(partitionAndOffsets)
 
-		m.ShutdownIdleFetchers()
+//		m.ShutdownIdleFetchers()
 		time.Sleep(m.config.RefreshLeaderBackoff)
 	}
 }
@@ -213,85 +224,91 @@ func (m *consumerFetcherManager) distinctTopics() []string {
 
 func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map[TopicAndPartition]*BrokerAndInitialOffset) {
 	Infof(m, "Adding fetcher for partitions %v", partitionAndOffsets)
-	InLock(&m.mapLock, func() {
-			partitionsPerFetcher := make(map[BrokerAndFetcherId]map[TopicAndPartition]*BrokerAndInitialOffset)
-			for topicAndPartition, brokerAndInitialOffset := range partitionAndOffsets {
-				brokerAndFetcher := BrokerAndFetcherId{brokerAndInitialOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
-				if partitionsPerFetcher[brokerAndFetcher] == nil {
-					partitionsPerFetcher[brokerAndFetcher] = make(map[TopicAndPartition]*BrokerAndInitialOffset)
-				}
-				partitionsPerFetcher[brokerAndFetcher][topicAndPartition] = brokerAndInitialOffset
+	InLock(&m.fetcherRoutineMapLock, func() {
 
-				Debugf(m, "partitionsPerFetcher: %v", partitionsPerFetcher)
-				for brokerAndFetcherId, partitionOffsets := range partitionsPerFetcher {
-					if m.fetcherRoutineMap[brokerAndFetcherId] == nil {
-						Debugf(m, "Starting new fetcher")
-						fetcherRoutine := newConsumerFetcher(m,
-							fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.ConsumerId, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
-							brokerAndFetcherId.Broker,
-							m.partitionMap)
-						m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
-						go fetcherRoutine.Start()
-					}
-
-					partitionToOffsetMap := make(map[TopicAndPartition]int64)
-					for tp, b := range partitionOffsets {
-						partitionToOffsetMap[tp] = b.InitOffset
-					}
-					m.fetcherRoutineMap[brokerAndFetcherId].AddPartitions(partitionToOffsetMap)
-				}
+		partitionsPerFetcher := make(map[BrokerAndFetcherId]map[TopicAndPartition]*BrokerAndInitialOffset)
+		for topicAndPartition, brokerAndInitialOffset := range partitionAndOffsets {
+			brokerAndFetcher := BrokerAndFetcherId{brokerAndInitialOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
+			if partitionsPerFetcher[brokerAndFetcher] == nil {
+				partitionsPerFetcher[brokerAndFetcher] = make(map[TopicAndPartition]*BrokerAndInitialOffset)
 			}
-		})
+			partitionsPerFetcher[brokerAndFetcher][topicAndPartition] = brokerAndInitialOffset
+
+			Debugf(m, "partitionsPerFetcher: %v", partitionsPerFetcher)
+			for brokerAndFetcherId, partitionOffsets := range partitionsPerFetcher {
+				if m.fetcherRoutineMap[brokerAndFetcherId] == nil {
+					Debugf(m, "Starting new fetcher")
+					fetcherRoutine := newConsumerFetcher(m,
+						fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.ConsumerId, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
+						brokerAndFetcherId.Broker,
+						m.partitionMap)
+					m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
+					go fetcherRoutine.Start()
+				}
+
+				partitionToOffsetMap := make(map[TopicAndPartition]int64)
+				for tp, b := range partitionOffsets {
+					partitionToOffsetMap[tp] = b.InitOffset
+				}
+				m.fetcherRoutineMap[brokerAndFetcherId].AddPartitions(partitionToOffsetMap)
+			}
+		}
+	})
 }
 
 func (m *consumerFetcherManager) addPartitionsWithError(partitions []TopicAndPartition) {
 	Info(m.config.ConsumerId, "Adding partitions with error")
-	InLock(&m.lock, func() {
-			if m.partitionMap != nil {
-				for _, topicAndPartition := range partitions {
-					exists := false
-					for _, noLeaderPartition := range m.noLeaderPartitions {
-						if topicAndPartition == noLeaderPartition {
-							exists = true
-							break
-						}
-					}
-					if !exists {
-						m.noLeaderPartitions = append(m.noLeaderPartitions, topicAndPartition)
+	InLock(&m.partitionMapLock, func() {
+		if m.partitionMap != nil {
+			for _, topicAndPartition := range partitions {
+				exists := false
+				for _, noLeaderPartition := range m.noLeaderPartitions {
+					if topicAndPartition == noLeaderPartition {
+						exists = true
+						break
 					}
 				}
-				m.leaderCond.Broadcast()
+				if !exists {
+					m.noLeaderPartitions = append(m.noLeaderPartitions, topicAndPartition)
+				}
 			}
-		})
+			m.leaderCond.Broadcast()
+		}
+	})
 }
 
 func (m *consumerFetcherManager) getFetcherId(topic string, partitionId int32) int {
-	return int(math.Abs(float64(31 * Hash(topic) + partitionId))) % int(m.config.NumConsumerFetchers)
+	return int(math.Abs(float64(31 * Hash(topic) + partitionId))) % int(m.numStreams)
 }
 
 func (m *consumerFetcherManager) ShutdownIdleFetchers() {
-	InLock(&m.mapLock, func() {
-			for key, fetcher := range m.fetcherRoutineMap {
-				if fetcher.PartitionCount() <= 0 {
-					<-fetcher.Close()
-					delete(m.fetcherRoutineMap, key)
-				}
+	Debug(m, "Shutting down idle fetchers")
+	InLock(&m.fetcherRoutineMapLock, func() {
+		for key, fetcher := range m.fetcherRoutineMap {
+			if fetcher.PartitionCount() <= 0 {
+				<-fetcher.Close()
+				delete(m.fetcherRoutineMap, key)
 			}
-		})
+		}
+	})
+	Debug(m, "Closed idle fetchers")
 }
 
 func (m *consumerFetcherManager) CloseAllFetchers() {
 	Info(m, "Closing fetchers")
-	InLock(&m.mapLock, func() {
-			for _, fetcher := range m.fetcherRoutineMap {
-				Debugf(m, "Closing %s", fetcher)
-				<-fetcher.Close()
-			}
+	m.isReady = false
+	//	InLock(&m.mapLock, func() {
+	Debugf(m, "Trying to close %d fetchers", len(m.fetcherRoutineMap))
+	for _, fetcher := range m.fetcherRoutineMap {
+		Debugf(m, "Closing %s", fetcher)
+		<-fetcher.Close()
+		Debugf(m, "Closed %s", fetcher)
+	}
 
-			for key := range m.fetcherRoutineMap {
-				delete(m.fetcherRoutineMap, key)
-			}
-		})
+	for key := range m.fetcherRoutineMap {
+		delete(m.fetcherRoutineMap, key)
+	}
+	//		})
 }
 
 func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
@@ -302,15 +319,15 @@ func (m *consumerFetcherManager) Close() <-chan bool {
 	Info(m, "Closing manager")
 	go func() {
 		InLock(&m.stopLock, func() {
-				Info(m, "Stopping find leader")
-				m.shuttingDown = true
-				m.stopWaitingNextRequests <- true
-				m.leaderCond.Broadcast()
-				m.CloseAllFetchers()
-				m.partitionMap = nil
-				m.noLeaderPartitions = nil
-				m.closeFinished <- true
-			})
+			Info(m, "Stopping find leader")
+			m.shuttingDown = true
+			m.stopWaitingNextRequests <- true
+			m.leaderCond.Broadcast()
+			m.CloseAllFetchers()
+			m.partitionMap = nil
+			m.noLeaderPartitions = nil
+			m.closeFinished <- true
+		})
 	}()
 
 	return m.closeFinished
@@ -354,63 +371,65 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 
 func (f *consumerFetcherRoutine) Start() {
 	Info(f, "Fetcher started")
-	for !f.manager.shuttingDown {
+	for !f.manager.shuttingDown || !f.manager.isReady {
 		select {
 		case <-f.fetchStopper: return
 		case nextTopicPartition := <-f.askNext: {
 			InLock(&f.manager.stopLock, func() {
-					if f.manager.shuttingDown { return }
-					Debug(f, "Next asked")
-					InLock(&f.partitionMapLock, func() {
-							Debugf(f, "Partition map: %v", f.partitionMap)
-							offset := f.partitionMap[nextTopicPartition]
-							f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
-						})
-
-					config := f.manager.config
-					fetchRequest := new(sarama.FetchRequest)
-					fetchRequest.MinBytes = config.FetchMinBytes
-					fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
-					partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
-					Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-
-					Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
-					if len(f.fetchRequestBlockMap) > 0 {
-						f.processFetchRequest(fetchRequest)
-					}
+				if f.manager.shuttingDown { return }
+				Debug(f, "Next asked")
+				InLock(&f.partitionMapLock, func() {
+					Debugf(f, "Partition map: %v", f.partitionMap)
+					offset := f.partitionMap[nextTopicPartition]
+					f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
 				})
+
+				config := f.manager.config
+				fetchRequest := new(sarama.FetchRequest)
+				fetchRequest.MinBytes = config.FetchMinBytes
+				fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
+				partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
+				Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+				fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+
+				Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
+				if len(f.fetchRequestBlockMap) > 0 {
+					f.processFetchRequest(fetchRequest)
+				}
+			})
 		}
 		}
 	}
+	Debug(f, "Stopped fetcher")
 }
 
 func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
 	Infof(f, "Adding partitions: %v", partitionAndOffsets)
 	newPartitions := make(map[TopicAndPartition]chan TopicAndPartition)
 	InLock(&f.partitionMapLock, func() {
-			for topicAndPartition, offset := range partitionAndOffsets {
-				if _, contains := f.partitionMap[topicAndPartition]; !contains {
-					validOffset := offset
-					if IsOffsetInvalid(validOffset) {
-						validOffset = f.handleOffsetOutOfRange(&topicAndPartition)
-					}
-					f.partitionMap[topicAndPartition] = validOffset
-					f.manager.askNextFetchers[topicAndPartition] = f.askNext
-					newPartitions[topicAndPartition] = f.askNext
+		for topicAndPartition, offset := range partitionAndOffsets {
+			if _, contains := f.partitionMap[topicAndPartition]; !contains {
+				validOffset := offset
+				if IsOffsetInvalid(validOffset) {
+					validOffset = f.handleOffsetOutOfRange(&topicAndPartition)
 				}
+				f.partitionMap[topicAndPartition] = validOffset
+				f.manager.askNextFetchers[topicAndPartition] = f.askNext
+				newPartitions[topicAndPartition] = f.askNext
 			}
-		})
+		}
+	})
 	for topicAndPartition, askNext := range newPartitions {
+		Debugf(f, "Sending ask next to %s", f)
 		askNext <- topicAndPartition
 	}
 }
 
 func (f *consumerFetcherRoutine) PartitionCount() int {
 	count := 0
-	InLock(&f.manager.mapLock, func() {
-			count = len(f.partitionMap)
-		})
+	InLock(&f.manager.fetcherRoutineMapLock, func() {
+		count = len(f.partitionMap)
+	})
 	return count
 }
 
@@ -433,35 +452,35 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	if response != nil {
 		Debug(f, "Processing fetch request")
 		InLock(&f.partitionMapLock, func() {
-				for topic, partitionAndData := range response.Blocks {
-					for partition, data := range partitionAndData {
-						topicAndPartition := TopicAndPartition{topic, partition}
-						currentOffset, exists := f.partitionMap[topicAndPartition]
-						if exists && f.fetchRequestBlockMap[topicAndPartition].Offset == currentOffset {
-							switch data.Err {
-							case sarama.NoError: {
-								messages := data.MsgSet.Messages
-								newOffset := currentOffset
-								if len(messages) > 0 {
-									newOffset = messages[len(messages)-1].Offset+1
-								}
-								f.partitionMap[topicAndPartition] = newOffset
-								f.processPartitionData(topicAndPartition, currentOffset, data)
+			for topic, partitionAndData := range response.Blocks {
+				for partition, data := range partitionAndData {
+					topicAndPartition := TopicAndPartition{topic, partition}
+					currentOffset, exists := f.partitionMap[topicAndPartition]
+					if exists && f.fetchRequestBlockMap[topicAndPartition].Offset == currentOffset {
+						switch data.Err {
+						case sarama.NoError: {
+							messages := data.MsgSet.Messages
+							newOffset := currentOffset
+							if len(messages) > 0 {
+								newOffset = messages[len(messages)-1].Offset+1
 							}
-							case sarama.OffsetOutOfRange: {
-								newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
-								f.partitionMap[topicAndPartition] = newOffset
-								Infof(f.manager.config.ConsumerId, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
-							}
-							default: {
-								Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing", topicAndPartition)
-								partitionsWithError[topicAndPartition] = true
-							}
-							}
+							f.partitionMap[topicAndPartition] = newOffset
+							f.processPartitionData(topicAndPartition, currentOffset, data)
+						}
+						case sarama.OffsetOutOfRange: {
+							newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
+							f.partitionMap[topicAndPartition] = newOffset
+							Infof(f.manager.config.ConsumerId, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
+						}
+						default: {
+							Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing", topicAndPartition)
+							partitionsWithError[topicAndPartition] = true
+						}
 						}
 					}
 				}
-			})
+			}
+		})
 	}
 
 	if len(partitionsWithError) > 0 {
@@ -478,16 +497,23 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 	Info(f, "Processing partition data")
 
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
-	partitionTopicInfo.BlockChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
+	partitionTopicInfo.Accumulator.InputChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
+	Info(f, "Sent partition data")
+	//	partitionTopicInfo.BlockChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
 }
 
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {
 	Infof(f, "Error in fetch %v. Possible cause: %s\n", request, err)
 	InLock(&f.partitionMapLock, func() {
-			for k, _ := range f.partitionMap {
-				partitionsWithError[k] = true
-			}
-		})
+		//		for k, _ := range f.partitionMap {
+		//			partitionsWithError[k] = true
+		//		}
+		//	})
+		//	Infof(f, "Error in fetch out of lock", request, err)
+		for k, _ := range f.partitionMap {
+			partitionsWithError[k] = true
+		}
+	})
 }
 
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) int64 {
@@ -535,25 +561,28 @@ func (f *consumerFetcherRoutine) removeAllPartitions() {
 func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition) {
 	Debug(f, "Remove partitions")
 	InLock(&f.partitionMapLock, func() {
-			for _, topicAndPartition := range partitions {
-				delete(f.partitionMap, topicAndPartition)
-				delete(f.manager.askNextFetchers, topicAndPartition)
-			}
-		})
+		for _, topicAndPartition := range partitions {
+			delete(f.partitionMap, topicAndPartition)
+			delete(f.manager.askNextFetchers, topicAndPartition)
+		}
+	})
 }
 
 func (f *consumerFetcherRoutine) Close() <-chan bool {
 	Info(f, "Closing fetcher")
 	go func() {
 		f.fetchStopper <- true
-		f.removeAllPartitions()
 		for _, pti := range f.allPartitionMap {
-			if !pti.BlockChannel.closed {
-				pti.BlockChannel.closed = true
-				close(pti.BlockChannel.chunks)
+			Debugf(f, "Stopping %s", pti.Accumulator)
+			if !pti.Accumulator.closed {
+				<-pti.Accumulator.Stop()
 			}
+			Debugf(f, "Stopped %s", pti.Accumulator)
 		}
+		f.removeAllPartitions()
+		Debug(f, "Sending close finished")
 		f.closeFinished <- true
+		Debug(f, "Sent close finished")
 	}()
 	return f.closeFinished
 }

@@ -35,11 +35,13 @@ type WorkerManager struct {
 	InputChannel      chan [] *Message
 	OutputChannel     chan map[TopicAndPartition]int64
 	LargestOffsets map[TopicAndPartition]int64
-	AskNext chan TopicAndPartition
+	AskNext           chan TopicAndPartition
 	FailCounter *FailureCounter
 	batchProcessed    chan bool
 	stopLock          sync.Mutex
-	stopped           bool
+	managerStop       chan bool
+	processingStop    chan bool
+	fetcherManager *consumerFetcherManager
 }
 
 func (wm *WorkerManager) String() string {
@@ -49,38 +51,60 @@ func (wm *WorkerManager) String() string {
 func (wm *WorkerManager) Start() {
 	go wm.processBatch()
 	for {
-		if wm.stopped { return }
-		batch := <-wm.InputChannel
-		for _, message := range batch {
-			wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, message.Partition }, message.Offset }] = &Task{
-				Msg: message,
-			}
-		}
+		select {
+		case batch := <-wm.InputChannel: {
+			Debug(wm, "WorkerManager got batch")
+			InLock(&wm.stopLock, func() {
+				for _, message := range batch {
+					wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, message.Partition }, message.Offset }] = &Task{
+						Msg: message,
+					}
+				}
 
-		for _, task := range wm.CurrentBatch {
-			worker := <-wm.AvailableWorkers
-			worker.Start(task, wm.Strategy)
-		}
+				for _, task := range wm.CurrentBatch {
+					worker := <-wm.AvailableWorkers
+					worker.Start(task, wm.Strategy)
+				}
 
-		<-wm.batchProcessed
+				<-wm.batchProcessed
+				wm.OutputChannel <- wm.LargestOffsets
+			})
+			Debug(wm, "WorkerManager got batch processed")
 
-		wm.OutputChannel <- wm.LargestOffsets
-		if !wm.stopped {
 			for topicPartition, _ := range wm.LargestOffsets {
-				wm.AskNext <- topicPartition
+				for {
+					Debug(wm, "Asking next")
+					select {
+					case wm.AskNext <- topicPartition:
+					case <-time.After(3 * time.Second): {
+						if !wm.fetcherManager.isReady {
+							return
+						}
+					}
+					}
+				}
 			}
+			wm.LargestOffsets = make(map[TopicAndPartition]int64)
 		}
-		wm.LargestOffsets = make(map[TopicAndPartition]int64)
+		case <-wm.managerStop: return
+		}
 	}
 }
 
 func (wm *WorkerManager) Stop() chan bool {
 	finished := make(chan bool)
 	go func() {
+		Debugf(wm, "Trying to stop workerManager")
 		InLock(&wm.stopLock, func() {
-				wm.stopped = true
-				finished <- true
-			})
+			Debug(wm, "Stopping manager")
+			wm.managerStop <- true
+			Debug(wm, "Stopping processor")
+			wm.processingStop <- true
+			Debug(wm, "Successful manager stop")
+			finished <- true
+			Debug(wm, "Leaving manager stop")
+		})
+		Debugf(wm, "Stopped workerManager")
 	}()
 
 	return finished
@@ -97,65 +121,70 @@ func (wm *WorkerManager) processBatch() {
 	}
 
 	resultsChannel := make(chan WorkerResult)
-	for !wm.stopped {
-		InLock(&wm.stopLock, func() {
-				if wm.stopped { return }
-				for {
-					stopRedirecting := RedirectChannelsTo(outputChannels, resultsChannel)
-					result := <-resultsChannel
-					go func() {
-						stopRedirecting <- true
-					}()
+	for {
+		stopRedirecting := RedirectChannelsTo(outputChannels, resultsChannel)
+		select {
+		case result := <-resultsChannel: {
+			go func() {
+				stopRedirecting <- true
+			}()
 
-					task := wm.CurrentBatch[result.Id()]
-					if result.Success() {
-						wm.taskIsDone(result)
-					} else {
-						if _, ok := result.(*TimedOutResult); ok {
-							task.Callee.OutputChannel = make(chan WorkerResult)
-						}
-
-						Warnf(wm, "Worker task %s has failed", result.Id())
-						task.Retries++
-						if task.Retries >= wm.Config.MaxWorkerRetries {
-							Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
-
-							var decision FailedDecision
-							if wm.FailCounter.Failed() {
-								decision = wm.FailureHook(wm)
-							} else {
-								decision = wm.FailedAttemptHook(task, result)
-							}
-							switch decision {
-							case CommitOffsetAndContinue: {
-								wm.taskIsDone(result)
-							}
-							case DoNotCommitOffsetAndContinue: {
-								wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
-								delete(wm.CurrentBatch, result.Id())
-							}
-							case CommitOffsetAndStop: {
-								wm.taskIsDone(result)
-								wm.stopBatch()
-							}
-							case DoNotCommitOffsetAndStop: {
-								wm.stopBatch()
-							}
-							}
-						} else {
-							Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
-							time.Sleep(wm.Config.WorkerBackoff)
-							go task.Callee.Start(task, wm.Strategy)
-						}
-					}
-
-					if wm.IsBatchProcessed() {
-						wm.batchProcessed <- true
-						return
-					}
+			task := wm.CurrentBatch[result.Id()]
+			if result.Success() {
+				wm.taskIsDone(result)
+			} else {
+				if _, ok := result.(*TimedOutResult); ok {
+					task.Callee.OutputChannel = make(chan WorkerResult)
 				}
-			})
-		time.Sleep(1 * time.Second)
+
+				Warnf(wm, "Worker task %s has failed", result.Id())
+				task.Retries++
+				if task.Retries >= wm.Config.MaxWorkerRetries {
+					Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
+
+					var decision FailedDecision
+					if wm.FailCounter.Failed() {
+						decision = wm.FailureHook(wm)
+					} else {
+						decision = wm.FailedAttemptHook(task, result)
+					}
+					switch decision {
+					case CommitOffsetAndContinue: {
+						wm.taskIsDone(result)
+					}
+					case DoNotCommitOffsetAndContinue: {
+						wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
+						delete(wm.CurrentBatch, result.Id())
+					}
+					case CommitOffsetAndStop: {
+						wm.taskIsDone(result)
+						wm.stopBatch()
+					}
+					case DoNotCommitOffsetAndStop: {
+						wm.stopBatch()
+					}
+					}
+				} else {
+					Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
+					time.Sleep(wm.Config.WorkerBackoff)
+					go task.Callee.Start(task, wm.Strategy)
+				}
+			}
+
+			if wm.IsBatchProcessed() {
+				Debug(wm, "Sending batch processed")
+				wm.batchProcessed <- true
+				Debug(wm, "Received batch processed")
+			}
+		}
+		case <-wm.processingStop: {
+			go func() {
+				stopRedirecting <- true
+			}()
+			return
+		}
+		}
+
 	}
 }
 
@@ -173,7 +202,7 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	delete(wm.CurrentBatch, result.Id())
 }
 
-func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64, askNext chan TopicAndPartition) *WorkerManager {
+func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64, fetcherManager *consumerFetcherManager, askNext chan TopicAndPartition) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -199,6 +228,9 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 		AskNext: askNext,
 		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
 		batchProcessed: make(chan bool),
+		managerStop: make(chan bool),
+		processingStop: make(chan bool),
+		fetcherManager: fetcherManager,
 	}
 }
 
@@ -255,8 +287,8 @@ func NewFailureCounter(FailedThreshold int32, WorkerConsideredFailedTimeWindow t
 					return
 				} else {
 					InLock(&counter.countLock, func() {
-							counter.count = 0
-						})
+						counter.count = 0
+					})
 				}
 			}
 			}
