@@ -87,6 +87,20 @@ func InLock(lock *sync.Mutex, fun func()) {
 	fun()
 }
 
+func InReadLock(lock *sync.RWMutex, fun func()) {
+	lock.RLock()
+	defer lock.RUnlock()
+
+	fun()
+}
+
+func InWriteLock(lock *sync.RWMutex, fun func()) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	fun()
+}
+
 func ShuffleArray(src interface{}, dest interface{}) {
 	rSrc := reflect.ValueOf(src).Elem()
 	rDest := reflect.ValueOf(dest).Elem()
