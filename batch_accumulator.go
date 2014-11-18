@@ -60,22 +60,22 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 		case b := <-ba.InputChannel.chunks: {
 			InLock(&ba.closeLock, func() {
 				Debugf(ba, "Acquired lock for BA close")
-				if ba.closed {
-					Debug(ba, "BA is closed")
-					return
-				}
+//				if ba.closed {
+//					Debug(ba, "BA is closed")
+//					return
+//				}
 				Debugf(ba, "BA is not closed")
 				fetchResponseBlock := b.Data
 				topicPartition := b.TopicPartition
 				if fetchResponseBlock != nil {
 					for _, message := range fetchResponseBlock.MsgSet.Messages {
 						msg := &Message {
-						Key : message.Msg.Key,
-						Value : message.Msg.Value,
-						Topic : topicPartition.Topic,
-						Partition : topicPartition.Partition,
-						Offset : message.Offset,
-					}
+							Key : message.Msg.Key,
+							Value : message.Msg.Value,
+							Topic : topicPartition.Topic,
+							Partition : topicPartition.Partition,
+							Offset : message.Offset,
+						}
 						buffer, exists := ba.MessageBuffers[topicPartition]
 						if !exists {
 							ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
@@ -86,7 +86,6 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 				}
 				Debugf(ba, "Released lock for BA close")
 			})
-			time.Sleep(300 * time.Millisecond)
 		}
 		case <-ba.stopProcessing: {
 			Debug(ba, "Stopped processing")
@@ -149,7 +148,9 @@ func (mb *MessageBuffer) Start() {
 		case <-mb.Close: return
 		case <-mb.Timer.C: {
 			Debug(mb, "Batch accumulation timed out. Flushing...")
-			mb.Flush()
+			InLock(&mb.MessageLock, func() {
+				mb.Flush()
+			})
 		}
 		}
 	}
@@ -163,12 +164,13 @@ func (mb *MessageBuffer) Stop() {
 
 func (mb *MessageBuffer) Add(msg *Message) {
 	InLock(&mb.MessageLock, func() {
-			mb.Messages = append(mb.Messages, msg)
-		})
-	if len(mb.Messages) == mb.Config.FetchBatchSize {
-		Debug(mb, "Batch is ready. Flushing")
-		mb.Flush()
-	}
+		Debugf(mb, "Added message: %s", msg)
+		mb.Messages = append(mb.Messages, msg)
+		if len(mb.Messages) == mb.Config.FetchBatchSize {
+			Debug(mb, "Batch is ready. Flushing")
+			mb.Flush()
+		}
+	})
 }
 
 func (mb *MessageBuffer) Flush() {
@@ -176,9 +178,7 @@ func (mb *MessageBuffer) Flush() {
 		Debug(mb, "Flushing")
 		mb.OutputChannel <- mb.Messages
 		Debug(mb, "Flushed")
-		InLock(&mb.MessageLock, func() {
-			mb.Messages = make([]*Message, 0)
-		})
+		mb.Messages = make([]*Message, 0)
 	}
 	mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 }

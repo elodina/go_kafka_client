@@ -32,6 +32,7 @@ func main() {
 	numMessage := 0
 
 	go_kafka_client.CreateMultiplePartitionsTopic("192.168.86.5:2181", topic, 6)
+	time.Sleep(5 * time.Second)
 
 	p := producer.NewKafkaProducer(topic, []string{"192.168.86.10:9092"}, nil)
 	defer p.Close()
@@ -56,21 +57,6 @@ func main() {
 	signal.Notify(s, os.Interrupt)
 	<-s
 	fmt.Println("Leaving main")
-	//	config := go_kafka_client.DefaultConsumerConfig()
-	//	config.ZookeeperConnect = []string{"192.168.86.5:2181"}
-	//	config.AutoOffsetReset = "smallest"
-	//	config.FetchBatchSize = 20
-	//	config.FetchBatchTimeout = 7 * time.Second
-	//	config.WorkerTaskTimeout = 10 * time.Second
-	//	config.Strategy = Strategy
-	//	config.WorkerRetryThreshold = 100
-	//	config.WorkerFailureCallback = FailedCallback
-	//	config.WorkerFailedAttemptCallback = FailedAttemptCallback
-	//	config.WorkerCloseTimeout = 1 * time.Second
-	//
-	//	consumer := go_kafka_client.NewConsumer(config)
-	//	topics := map[string]int {topic : 3}
-	//	consumer.StartStatic(topics)
 }
 
 func startConsumer1(topic string) {
@@ -85,7 +71,6 @@ func startConsumer1(topic string) {
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
 	config.WorkerCloseTimeout = 1 * time.Second
-//	config.PartitionAssignmentStrategy = "roundrobin"
 
 	consumer := go_kafka_client.NewConsumer(config)
 	topics := map[string]int {topic : 3}
@@ -105,7 +90,6 @@ func startConsumer2(topic string) {
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
 	config.WorkerCloseTimeout = 1 * time.Second
-//	config.PartitionAssignmentStrategy = "roundrobin"
 
 	consumer := go_kafka_client.NewConsumer(config)
 	topics := map[string]int {topic : 3}
