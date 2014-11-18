@@ -26,11 +26,12 @@ import (
 type BatchAccumulator struct {
 	Config *ConsumerConfig
 	InputChannel *SharedBlockChannel
-	OutputChannel chan []*Message
+	OutputChannel  chan []*Message
 	MessageBuffers map[TopicAndPartition]*MessageBuffer
-	closeFinished chan bool
-	closed        bool
-	closeLock     sync.Mutex
+	closeFinished  chan bool
+	closed         bool
+	closeLock      sync.Mutex
+	stopProcessing chan bool
 }
 
 func NewBatchAccumulator(config *ConsumerConfig) *BatchAccumulator {
@@ -53,43 +54,43 @@ func (ba *BatchAccumulator) String() string {
 
 func (ba *BatchAccumulator) processIncomingBlocks() {
 	Debug(ba, "Started processing blocks")
-	for !ba.closed {
-		var b *TopicPartitionData
+	for {
 		select {
-		case b = <-ba.InputChannel.chunks:
-		case <-time.After(1 * time.Second): {
-			Debugf(ba, "Timed out")
-		}
-		}
-		InLock(&ba.closeLock, func() {
-			Debugf(ba, "Acquired lock for BA close")
-			if ba.closed || b == nil {
-				Debugf(ba, "BA closed: %s", ba.closed)
-				return
-			}
-			Debugf(ba, "BA is not closed")
-			fetchResponseBlock := b.Data
-			topicPartition := b.TopicPartition
-			if fetchResponseBlock != nil {
-				for _, message := range fetchResponseBlock.MsgSet.Messages {
-					msg := &Message {
+		case b := <-ba.InputChannel.chunks: {
+			InLock(&ba.closeLock, func() {
+				Debugf(ba, "Acquired lock for BA close")
+				if ba.closed {
+					Debug(ba, "BA is closed")
+					return
+				}
+				Debugf(ba, "BA is not closed")
+				fetchResponseBlock := b.Data
+				topicPartition := b.TopicPartition
+				if fetchResponseBlock != nil {
+					for _, message := range fetchResponseBlock.MsgSet.Messages {
+						msg := &Message {
 						Key : message.Msg.Key,
 						Value : message.Msg.Value,
 						Topic : topicPartition.Topic,
 						Partition : topicPartition.Partition,
 						Offset : message.Offset,
 					}
-					buffer, exists := ba.MessageBuffers[topicPartition]
-					if !exists {
-						ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
-						buffer = ba.MessageBuffers[topicPartition]
+						buffer, exists := ba.MessageBuffers[topicPartition]
+						if !exists {
+							ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
+							buffer = ba.MessageBuffers[topicPartition]
+						}
+						buffer.Add(msg)
 					}
-					buffer.Add(msg)
 				}
-			}
-			Debugf(ba, "Released lock for BA close")
-		})
-		time.Sleep(1 * time.Second)
+				Debugf(ba, "Released lock for BA close")
+			})
+		}
+		case <-ba.stopProcessing: {
+			Debug(ba, "Stopped processing")
+			return
+		}
+		}
 	}
 
 	Debug(ba, "Exited BA processing loop")
@@ -107,6 +108,7 @@ func (ba *BatchAccumulator) Stop() chan bool {
 	Debugf(ba, "BA is closed = %b", ba.closed)
 	InLock(&ba.closeLock, func() {
 		ba.closed = true
+		ba.stopProcessing <- true
 	})
 	Debug(ba, "BA close flag set")
 
@@ -162,8 +164,8 @@ func (mb *MessageBuffer) Stop() {
 
 func (mb *MessageBuffer) Add(msg *Message) {
 	InLock(&mb.MessageLock, func() {
-		mb.Messages = append(mb.Messages, msg)
-	})
+			mb.Messages = append(mb.Messages, msg)
+		})
 	if len(mb.Messages) == mb.Config.FetchBatchSize {
 		Debug(mb, "Batch is ready. Flushing")
 		mb.Flush()

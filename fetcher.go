@@ -43,6 +43,7 @@ type consumerFetcherManager struct {
 	askNextFetchers map[TopicAndPartition]chan TopicAndPartition
 	stopLock                sync.Mutex
 	isReady                 bool
+	isReadyLock sync.RWMutex
 }
 
 func (m *consumerFetcherManager) String() string {
@@ -68,12 +69,23 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, askNext 
 	return manager
 }
 
+func (m *consumerFetcherManager) Ready() {
+	InWriteLock(&m.isReadyLock, func() {
+		m.isReady = true
+	})
+}
+
+func (m *consumerFetcherManager) NotReady() {
+	InWriteLock(&m.isReadyLock, func() {
+		m.isReady = false
+	})
+}
+
 func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo, numStreams int) {
 	Info(m, "Fetcher Manager started")
 	Debugf(m, "TopicInfos = %s", topicInfos)
 	m.numStreams = numStreams
-	m.isReady = true
-
+	m.Ready()
 	InLock(&m.partitionMapLock, func() {
 		newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
 		for _, info := range topicInfos {
@@ -109,7 +121,11 @@ func (m *consumerFetcherManager) WaitForNextRequests() {
 		select {
 		case <-m.stopWaitingNextRequests: return
 		case topicPartition := <-m.askNext: {
-			m.askNextFetchers[topicPartition] <- topicPartition
+			InReadLock(&m.isReadyLock, func() {
+				if m.isReady {
+					m.askNextFetchers[topicPartition] <- topicPartition
+				}
+			})
 		}
 		}
 	}
@@ -296,7 +312,7 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 
 func (m *consumerFetcherManager) CloseAllFetchers() {
 	Info(m, "Closing fetchers")
-	m.isReady = false
+	m.NotReady()
 	//	InLock(&m.mapLock, func() {
 	Debugf(m, "Trying to close %d fetchers", len(m.fetcherRoutineMap))
 	for _, fetcher := range m.fetcherRoutineMap {
@@ -371,28 +387,32 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 
 func (f *consumerFetcherRoutine) Start() {
 	Info(f, "Fetcher started")
-	for !f.manager.shuttingDown && f.manager.isReady {
-		nextTopicPartition := <-f.askNext
-		InLock(&f.manager.stopLock, func() {
-			if f.manager.shuttingDown { return }
-			Debug(f, "Next asked")
-			InLock(&f.partitionMapLock, func() {
-				Debugf(f, "Partition map: %v", f.partitionMap)
-				offset := f.partitionMap[nextTopicPartition]
-				f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
-			})
+	for !f.manager.shuttingDown {
+		InReadLock(&f.manager.isReadyLock, func() {
+			if !f.manager.isReady {
+				nextTopicPartition := <-f.askNext
+				InLock(&f.manager.stopLock, func() {
+						if f.manager.shuttingDown { return }
+						Debug(f, "Next asked")
+						InLock(&f.partitionMapLock, func() {
+								Debugf(f, "Partition map: %v", f.partitionMap)
+								offset := f.partitionMap[nextTopicPartition]
+								f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
+							})
 
-			config := f.manager.config
-			fetchRequest := new(sarama.FetchRequest)
-			fetchRequest.MinBytes = config.FetchMinBytes
-			fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
-			partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
-			Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-			fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+						config := f.manager.config
+						fetchRequest := new(sarama.FetchRequest)
+						fetchRequest.MinBytes = config.FetchMinBytes
+						fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
+						partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
+						Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+						fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 
-			Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
-			if len(f.fetchRequestBlockMap) > 0 {
-				f.processFetchRequest(fetchRequest)
+						Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
+						if len(f.fetchRequestBlockMap) > 0 {
+							f.processFetchRequest(fetchRequest)
+						}
+					})
 			}
 		})
 	}

@@ -72,17 +72,7 @@ func (wm *WorkerManager) Start() {
 			Debug(wm, "WorkerManager got batch processed")
 
 			for topicPartition, _ := range wm.LargestOffsets {
-				for {
-					Debug(wm, "Asking next")
-					select {
-					case wm.AskNext <- topicPartition:
-					case <-time.After(3 * time.Second): {
-						if !wm.fetcherManager.isReady {
-							return
-						}
-					}
-					}
-				}
+				wm.AskNext <- topicPartition
 			}
 			wm.LargestOffsets = make(map[TopicAndPartition]int64)
 		}
