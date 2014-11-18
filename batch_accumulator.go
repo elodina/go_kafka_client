@@ -104,6 +104,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 
 func (ba *BatchAccumulator) Stop() chan bool {
 	Debug(ba, "Trying to stop BA")
+	Debugf(ba, "BA is closed = %b", ba.closed)
 	InLock(&ba.closeLock, func() {
 		ba.closed = true
 	})
@@ -154,7 +155,9 @@ func (mb *MessageBuffer) Start() {
 }
 
 func (mb *MessageBuffer) Stop() {
+	Debug(mb, "Stopping message buffer")
 	mb.Close <- true
+	Debug(mb, "Stopped message buffer")
 }
 
 func (mb *MessageBuffer) Add(msg *Message) {

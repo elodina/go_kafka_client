@@ -371,35 +371,32 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 
 func (f *consumerFetcherRoutine) Start() {
 	Info(f, "Fetcher started")
-	for !f.manager.shuttingDown || !f.manager.isReady {
-		select {
-		case <-f.fetchStopper: return
-		case nextTopicPartition := <-f.askNext: {
-			InLock(&f.manager.stopLock, func() {
-				if f.manager.shuttingDown { return }
-				Debug(f, "Next asked")
-				InLock(&f.partitionMapLock, func() {
-					Debugf(f, "Partition map: %v", f.partitionMap)
-					offset := f.partitionMap[nextTopicPartition]
-					f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
-				})
-
-				config := f.manager.config
-				fetchRequest := new(sarama.FetchRequest)
-				fetchRequest.MinBytes = config.FetchMinBytes
-				fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
-				partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
-				Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-				fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-
-				Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
-				if len(f.fetchRequestBlockMap) > 0 {
-					f.processFetchRequest(fetchRequest)
-				}
+	for !f.manager.shuttingDown && f.manager.isReady {
+		nextTopicPartition := <-f.askNext
+		InLock(&f.manager.stopLock, func() {
+			if f.manager.shuttingDown { return }
+			Debug(f, "Next asked")
+			InLock(&f.partitionMapLock, func() {
+				Debugf(f, "Partition map: %v", f.partitionMap)
+				offset := f.partitionMap[nextTopicPartition]
+				f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
 			})
-		}
-		}
+
+			config := f.manager.config
+			fetchRequest := new(sarama.FetchRequest)
+			fetchRequest.MinBytes = config.FetchMinBytes
+			fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
+			partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
+			Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+			fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+
+			Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
+			if len(f.fetchRequestBlockMap) > 0 {
+				f.processFetchRequest(fetchRequest)
+			}
+		})
 	}
+	f.fetchStopper <- true
 	Debug(f, "Stopped fetcher")
 }
 
@@ -571,7 +568,7 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 func (f *consumerFetcherRoutine) Close() <-chan bool {
 	Info(f, "Closing fetcher")
 	go func() {
-		f.fetchStopper <- true
+		<-f.fetchStopper
 		for _, pti := range f.allPartitionMap {
 			Debugf(f, "Stopping %s", pti.Accumulator)
 			if !pti.Accumulator.closed {
