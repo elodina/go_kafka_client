@@ -42,6 +42,7 @@ func NewBatchAccumulator(config *ConsumerConfig) *BatchAccumulator {
 		OutputChannel : make(chan []*Message),
 		MessageBuffers : make(map[TopicAndPartition]*MessageBuffer),
 		closeFinished : make(chan bool),
+		stopProcessing : make(chan bool),
 	}
 
 	go ba.processIncomingBlocks()
@@ -85,22 +86,20 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 				}
 				Debugf(ba, "Released lock for BA close")
 			})
+			time.Sleep(300 * time.Millisecond)
 		}
 		case <-ba.stopProcessing: {
 			Debug(ba, "Stopped processing")
+			for _, buffer := range ba.MessageBuffers {
+				buffer.Stop()
+			}
+
+			Debug(ba, "Closed batch accumulator")
+			ba.closeFinished <- true
 			return
 		}
 		}
 	}
-
-	Debug(ba, "Exited BA processing loop")
-
-	for _, buffer := range ba.MessageBuffers {
-		buffer.Stop()
-	}
-
-	Debug(ba, "Closed batch accumulator")
-	ba.closeFinished <- true
 }
 
 func (ba *BatchAccumulator) Stop() chan bool {

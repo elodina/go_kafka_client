@@ -123,6 +123,7 @@ func (c *Consumer) startStreams() {
 			} else {
 				wm.InputChannel<-batch
 			}
+			Debugf(c, "Sent batch for processing: %s", batch)
 		}
 		}
 	}

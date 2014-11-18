@@ -70,14 +70,14 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, askNext 
 
 func (m *consumerFetcherManager) Ready() {
 	InWriteLock(&m.isReadyLock, func() {
-			m.isReady = true
-		})
+		m.isReady = true
+	})
 }
 
 func (m *consumerFetcherManager) NotReady() {
 	InWriteLock(&m.isReadyLock, func() {
-			m.isReady = false
-		})
+		m.isReady = false
+	})
 }
 
 func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo, numStreams int) {
@@ -85,6 +85,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 	Debugf(m, "TopicInfos = %s", topicInfos)
 	m.numStreams = numStreams
 	m.Ready()
+
 	InLock(&m.partitionMapLock, func() {
 			newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
 			for _, info := range topicInfos {
@@ -120,11 +121,13 @@ func (m *consumerFetcherManager) WaitForNextRequests() {
 		select {
 		case <-m.stopWaitingNextRequests: return
 		case topicPartition := <-m.askNext: {
+			Debug(m, "Got asknext")
 			InReadLock(&m.isReadyLock, func() {
-					if m.isReady {
-						m.askNextFetchers[topicPartition] <- topicPartition
-					}
-				})
+				if m.isReady {
+					Debug(m, "Manager ready, asking next")
+					m.askNextFetchers[topicPartition] <- topicPartition
+				}
+			})
 		}
 		}
 	}
@@ -391,28 +394,28 @@ func (f *consumerFetcherRoutine) Start() {
 		select {
 		case nextTopicPartition := <-f.askNext: {
 			InReadLock(&f.manager.isReadyLock, func() {
-					if f.manager.isReady {
-						Debug(f, "Next asked")
-						InLock(&f.partitionMapLock, func() {
-								Debugf(f, "Partition map: %v", f.partitionMap)
-								offset := f.partitionMap[nextTopicPartition]
-								f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
-							})
+				if f.manager.isReady {
+					Debug(f, "Next asked")
+					InLock(&f.partitionMapLock, func() {
+						Debugf(f, "Partition map: %v", f.partitionMap)
+						offset := f.partitionMap[nextTopicPartition]
+						f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
+					})
 
-						config := f.manager.config
-						fetchRequest := new(sarama.FetchRequest)
-						fetchRequest.MinBytes = config.FetchMinBytes
-						fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
-						partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
-						Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-						fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+					config := f.manager.config
+					fetchRequest := new(sarama.FetchRequest)
+					fetchRequest.MinBytes = config.FetchMinBytes
+					fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
+					partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
+					Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 
-						Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
-						if len(f.fetchRequestBlockMap) > 0 {
-							f.processFetchRequest(fetchRequest)
-						}
+					Debugf(f, "Request Block Map length: %d", len(f.fetchRequestBlockMap))
+					if len(f.fetchRequestBlockMap) > 0 {
+						f.processFetchRequest(fetchRequest)
 					}
-				})
+				}
+			})
 		}
 		case <-f.fetchStopper: {
 			Debug(f, "Stopped fetcher")
@@ -447,8 +450,8 @@ func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndP
 func (f *consumerFetcherRoutine) PartitionCount() int {
 	count := 0
 	InLock(&f.manager.fetcherRoutineMapLock, func() {
-			count = len(f.partitionMap)
-		})
+		count = len(f.partitionMap)
+	})
 	return count
 }
 
