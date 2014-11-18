@@ -287,6 +287,9 @@ func (c *Consumer) Close() <-chan bool {
 			panic("Graceful shutdown failed")
 		}
 
+		//Deregistering consumer
+		DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
+
 		Info(c, "Stopping offsets committer...")
 		c.offsetsCommitter.Stop()
 		Info(c, "Closing fetcher manager...")
