@@ -329,10 +329,6 @@ func (m *consumerFetcherManager) CloseAllFetchers() {
 	//		})
 }
 
-func (m *consumerFetcherManager) SwitchTopic(newTopic string) {
-	Infof(m.config.ConsumerId, "Stop all current fetchers and switch topic to %s\n", newTopic)
-}
-
 func (m *consumerFetcherManager) Close() <-chan bool {
 	Info(m, "Closing manager")
 	go func() {
@@ -415,6 +411,7 @@ func (f *consumerFetcherRoutine) Start() {
 					if len(f.fetchRequestBlockMap) > 0 {
 						hasMessages := f.processFetchRequest(fetchRequest)
 						if !hasMessages {
+							time.Sleep(config.RequeueAskNextBackoff)
 							go func() {
 								Debug(f, "Asknext received no messages, requeue request")
 								f.askNext <- nextTopicPartition

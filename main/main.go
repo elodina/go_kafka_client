@@ -42,7 +42,7 @@ func main() {
 				panic(err)
 			}
 			numMessage++
-			sleepTime := time.Duration(rand.Intn(1000) + 1) * time.Millisecond
+			sleepTime := time.Duration(rand.Intn(400) + 1) * time.Millisecond
 			time.Sleep(sleepTime)
 		}
 	}()
