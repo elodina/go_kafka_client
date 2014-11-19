@@ -60,10 +60,6 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 		case b := <-ba.InputChannel.chunks: {
 			InLock(&ba.closeLock, func() {
 				Debugf(ba, "Acquired lock for BA close")
-//				if ba.closed {
-//					Debug(ba, "BA is closed")
-//					return
-//				}
 				Debugf(ba, "BA is not closed")
 				fetchResponseBlock := b.Data
 				topicPartition := b.TopicPartition
@@ -106,8 +102,8 @@ func (ba *BatchAccumulator) Stop() chan bool {
 	Debugf(ba, "BA is closed = %b", ba.closed)
 	InLock(&ba.closeLock, func() {
 		ba.closed = true
-		ba.stopProcessing <- true
 	})
+	ba.stopProcessing <- true
 	Debug(ba, "BA close flag set")
 
 	return ba.closeFinished

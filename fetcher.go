@@ -244,34 +244,34 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 	Infof(m, "Adding fetcher for partitions %v", partitionAndOffsets)
 	InLock(&m.fetcherRoutineMapLock, func() {
 
-			partitionsPerFetcher := make(map[BrokerAndFetcherId]map[TopicAndPartition]*BrokerAndInitialOffset)
-			for topicAndPartition, brokerAndInitialOffset := range partitionAndOffsets {
-				brokerAndFetcher := BrokerAndFetcherId{brokerAndInitialOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
-				if partitionsPerFetcher[brokerAndFetcher] == nil {
-					partitionsPerFetcher[brokerAndFetcher] = make(map[TopicAndPartition]*BrokerAndInitialOffset)
-				}
-				partitionsPerFetcher[brokerAndFetcher][topicAndPartition] = brokerAndInitialOffset
-
-				Debugf(m, "partitionsPerFetcher: %v", partitionsPerFetcher)
-				for brokerAndFetcherId, partitionOffsets := range partitionsPerFetcher {
-					if m.fetcherRoutineMap[brokerAndFetcherId] == nil {
-						Debugf(m, "Starting new fetcher")
-						fetcherRoutine := newConsumerFetcher(m,
-							fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.ConsumerId, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
-							brokerAndFetcherId.Broker,
-							m.partitionMap)
-						m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
-						go fetcherRoutine.Start()
-					}
-
-					partitionToOffsetMap := make(map[TopicAndPartition]int64)
-					for tp, b := range partitionOffsets {
-						partitionToOffsetMap[tp] = b.InitOffset
-					}
-					m.fetcherRoutineMap[brokerAndFetcherId].AddPartitions(partitionToOffsetMap)
-				}
+		partitionsPerFetcher := make(map[BrokerAndFetcherId]map[TopicAndPartition]*BrokerAndInitialOffset)
+		for topicAndPartition, brokerAndInitialOffset := range partitionAndOffsets {
+			brokerAndFetcher := BrokerAndFetcherId{brokerAndInitialOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
+			if partitionsPerFetcher[brokerAndFetcher] == nil {
+				partitionsPerFetcher[brokerAndFetcher] = make(map[TopicAndPartition]*BrokerAndInitialOffset)
 			}
-		})
+			partitionsPerFetcher[brokerAndFetcher][topicAndPartition] = brokerAndInitialOffset
+		}
+		Debugf(m, "partitionsPerFetcher: %v", partitionsPerFetcher)
+		for brokerAndFetcherId, partitionOffsets := range partitionsPerFetcher {
+			if m.fetcherRoutineMap[brokerAndFetcherId] == nil {
+				Debugf(m, "Starting new fetcher")
+				fetcherRoutine := newConsumerFetcher(m,
+					fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.ConsumerId, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
+					brokerAndFetcherId.Broker,
+					m.partitionMap)
+				m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
+				go fetcherRoutine.Start()
+			}
+
+			partitionToOffsetMap := make(map[TopicAndPartition]int64)
+			for tp, b := range partitionOffsets {
+				partitionToOffsetMap[tp] = b.InitOffset
+			}
+			m.fetcherRoutineMap[brokerAndFetcherId].AddPartitions(partitionToOffsetMap)
+		}
+
+	})
 }
 
 func (m *consumerFetcherManager) addPartitionsWithError(partitions []TopicAndPartition) {
@@ -325,6 +325,10 @@ func (m *consumerFetcherManager) CloseAllFetchers() {
 
 	for key := range m.fetcherRoutineMap {
 		delete(m.fetcherRoutineMap, key)
+	}
+
+	for k := range m.partitionMap {
+		delete(m.partitionMap, k)
 	}
 	//		})
 }
@@ -446,7 +450,7 @@ func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndP
 			}
 		})
 	for topicAndPartition, askNext := range newPartitions {
-		Debugf(f, "Sending ask next to %s", f)
+		Debugf(f, "Sending ask next to %s for %s", f, topicAndPartition)
 		askNext <- topicAndPartition
 	}
 }

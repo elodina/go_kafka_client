@@ -136,7 +136,6 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 	}
 
 	c.RegisterInZK(topicCount)
-	c.ReinitializeAccumulatorsAndChannels(topicCount)
 	c.ReinitializeConsumer()
 }
 
@@ -160,7 +159,6 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 
 	c.RegisterInZK(topicCount)
-	c.ReinitializeAccumulatorsAndChannels(topicCount)
 	c.ReinitializeConsumer()
 
 	//TODO subscriptions?
@@ -182,7 +180,6 @@ func (c *Consumer) RegisterInZK(topicCount TopicsToNumStreams) {
 func (c *Consumer) ReinitializeConsumer() {
 	//TODO more subscriptions
 	c.rebalance()
-	c.initializeWorkerManagersAndOffsetsCommitter()
 	c.subscribeForChanges(c.config.Groupid)
 }
 
@@ -243,6 +240,7 @@ func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStr
 func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	workerChannels := make([]chan map[TopicAndPartition]int64, 0)
 	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
+	Debugf(c, "Initializing worker managers from topic registry: %s", c.TopicRegistry)
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			workerChannel := make(chan map[TopicAndPartition]int64)
@@ -323,7 +321,7 @@ func (c *Consumer) stopWorkerManagers() bool {
 }
 
 func (c *Consumer) updateFetcher(numStreams int) {
-	Debug(c, "Updating fetcher")
+	Debugf(c, "Updating fetcher with numStreams = %d", numStreams)
 	newAllStreams := make([]chan []*Message, 0)
 	allPartitionInfos := make([]*PartitionTopicInfo, 0)
 	Debugf(c, "Topic Registry = %s", c.TopicRegistry)
