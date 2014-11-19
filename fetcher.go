@@ -357,8 +357,6 @@ type consumerFetcherRoutine struct {
 	partitionMap map[TopicAndPartition]int64
 	partitionMapLock sync.Mutex
 	partitionCount   int
-	id               string
-	topic            string
 	closeFinished    chan bool
 	fetchRequestBlockMap map[TopicAndPartition]*PartitionFetchInfo
 	fetchStopper     chan bool
