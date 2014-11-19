@@ -32,17 +32,19 @@ type BatchAccumulator struct {
 	closed         bool
 	closeLock      sync.Mutex
 	stopProcessing chan bool
+	askNextBatch chan TopicAndPartition
 }
 
-func NewBatchAccumulator(config *ConsumerConfig) *BatchAccumulator {
+func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition) *BatchAccumulator {
 	blockChannel := &SharedBlockChannel{make(chan *TopicPartitionData, config.QueuedMaxMessages), false}
 	ba := &BatchAccumulator {
 		Config : config,
 		InputChannel : blockChannel,
-		OutputChannel : make(chan []*Message),
+		OutputChannel : make(chan []*Message, config.StepsAhead),
 		MessageBuffers : make(map[TopicAndPartition]*MessageBuffer),
 		closeFinished : make(chan bool),
 		stopProcessing : make(chan bool),
+		askNextBatch: askNextBatch,
 	}
 
 	go ba.processIncomingBlocks()
@@ -74,7 +76,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 						}
 						buffer, exists := ba.MessageBuffers[topicPartition]
 						if !exists {
-							ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
+							ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config, ba.askNextBatch)
 							buffer = ba.MessageBuffers[topicPartition]
 						}
 						buffer.Add(msg)
@@ -117,9 +119,10 @@ type MessageBuffer struct {
 	MessageLock   sync.Mutex
 	Close         chan bool
 	TopicPartition *TopicAndPartition
+	askNext chan TopicAndPartition
 }
 
-func NewMessageBuffer(topicPartition *TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig) *MessageBuffer {
+func NewMessageBuffer(topicPartition *TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig, askNext chan TopicAndPartition) *MessageBuffer {
 	buffer := &MessageBuffer{
 		OutputChannel : outputChannel,
 		Messages : make([]*Message, 0),
@@ -127,6 +130,7 @@ func NewMessageBuffer(topicPartition *TopicAndPartition, outputChannel chan []*M
 		Timer : time.NewTimer(config.FetchBatchTimeout),
 		Close : make(chan bool),
 		TopicPartition : topicPartition,
+		askNext : askNext,
 	}
 
 	go buffer.Start()
@@ -175,6 +179,7 @@ func (mb *MessageBuffer) Flush() {
 		mb.OutputChannel <- mb.Messages
 		Debug(mb, "Flushed")
 		mb.Messages = make([]*Message, 0)
+		mb.askNext <- *mb.TopicPartition
 	}
 	mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 }

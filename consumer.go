@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"reflect"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 var InvalidOffset int64 = -1
@@ -49,6 +50,7 @@ type Consumer struct {
 	workerManagers map[TopicAndPartition]*WorkerManager
 	askNextBatch           chan TopicAndPartition
 	stopStreams            chan bool
+	numWorkerManagersGauge metrics.Gauge
 }
 
 type Message struct {
@@ -190,14 +192,14 @@ func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStr
 			for _, threadIdSet := range tc.GetConsumerThreadIdsPerTopic() {
 				accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
 				for i := 0; i < len(accumulatorsForThread); i++ {
-					accumulatorsForThread[i] = NewBatchAccumulator(c.config)
+					accumulatorsForThread[i] = NewBatchAccumulator(c.config, c.askNextBatch)
 				}
 				accumulators = append(accumulators, accumulatorsForThread...)
 			}
 		}
 		case *WildcardTopicsToNumStreams: {
 			for i := 0; i < tc.NumStreams; i++ {
-				accumulators = append(accumulators, NewBatchAccumulator(c.config))
+				accumulators = append(accumulators, NewBatchAccumulator(c.config, c.askNextBatch))
 			}
 		}
 	}
@@ -244,7 +246,7 @@ func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			workerChannel := make(chan map[TopicAndPartition]int64)
-			manager := NewWorkerManager(c.config, workerChannel, c.askNextBatch)
+			manager := NewWorkerManager(c.config, workerChannel)
 			c.workerManagers[TopicAndPartition{topic, partition}] = manager
 			go manager.Start()
 			workerChannels = append(workerChannels, workerChannel)

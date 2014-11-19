@@ -22,6 +22,7 @@ import (
 	"math"
 	"fmt"
 	"sync"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 type WorkerManager struct {
@@ -35,12 +36,16 @@ type WorkerManager struct {
 	InputChannel      chan [] *Message
 	OutputChannel     chan map[TopicAndPartition]int64
 	LargestOffsets map[TopicAndPartition]int64
-	AskNext           chan TopicAndPartition
 	FailCounter *FailureCounter
 	batchProcessed    chan bool
 	stopLock          sync.Mutex
 	managerStop       chan bool
 	processingStop    chan bool
+
+	numActiveWorkersCounter metrics.Counter
+	pendingTasksCounter metrics.Counter
+	batchDurationTimer metrics.Timer
+	idleTimer metrics.Timer
 }
 
 func (wm *WorkerManager) String() string {
@@ -50,34 +55,40 @@ func (wm *WorkerManager) String() string {
 func (wm *WorkerManager) Start() {
 	go wm.processBatch()
 	for {
+		startIdle := time.Now()
 		select {
 		case batch := <-wm.InputChannel: {
+			wm.idleTimer.Update(time.Since(startIdle))
 			Debug(wm, "WorkerManager got batch")
-			InLock(&wm.stopLock, func() {
-				for _, message := range batch {
-					wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, message.Partition }, message.Offset }] = &Task{
-						Msg: message,
-					}
-				}
-
-				for _, task := range wm.CurrentBatch {
-					worker := <-wm.AvailableWorkers
-					worker.Start(task, wm.Strategy)
-				}
-
-				<-wm.batchProcessed
-				wm.OutputChannel <- wm.LargestOffsets
+			wm.batchDurationTimer.Time(func() {
+				wm.startBatch(batch)
 			})
 			Debug(wm, "WorkerManager got batch processed")
-
-			for topicPartition, _ := range wm.LargestOffsets {
-				wm.AskNext <- topicPartition
-			}
 			wm.LargestOffsets = make(map[TopicAndPartition]int64)
 		}
 		case <-wm.managerStop: return
 		}
 	}
+}
+
+func (wm *WorkerManager) startBatch(batch []*Message) {
+	InLock(&wm.stopLock, func() {
+			for _, message := range batch {
+				wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, message.Partition }, message.Offset }] = &Task{
+				Msg: message,
+			}
+			}
+			wm.pendingTasksCounter.Inc(int64(len(wm.CurrentBatch)))
+			for _, task := range wm.CurrentBatch {
+				worker := <-wm.AvailableWorkers
+				wm.numActiveWorkersCounter.Inc(1)
+				wm.pendingTasksCounter.Dec(1)
+				worker.Start(task, wm.Strategy)
+			}
+
+			<-wm.batchProcessed
+			wm.OutputChannel <- wm.LargestOffsets
+		})
 }
 
 func (wm *WorkerManager) Stop() chan bool {
@@ -188,10 +199,11 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	key := result.Id().TopicPartition
 	wm.LargestOffsets[key] = int64(math.Max(float64(wm.LargestOffsets[key]), float64(result.Id().Offset)))
 	wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
+	wm.numActiveWorkersCounter.Dec(1)
 	delete(wm.CurrentBatch, result.Id())
 }
 
-func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64, askNext chan TopicAndPartition) *WorkerManager {
+func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -214,11 +226,13 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 		OutputChannel: batchOutputChannel,
 		CurrentBatch: make(map[TaskId]*Task),
 		LargestOffsets: make(map[TopicAndPartition]int64),
-		AskNext: askNext,
 		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
 		batchProcessed: make(chan bool),
 		managerStop: make(chan bool),
 		processingStop: make(chan bool),
+		numActiveWorkersCounter: metrics.NewRegisteredCounter("WMActiveWorkers", metrics.DefaultRegistry),
+		batchDurationTimer: metrics.NewRegisteredTimer("WMBatchDuration", metrics.DefaultRegistry),
+		idleTimer: metrics.NewRegisteredTimer("WMIdleTime", metrics.DefaultRegistry),
 	}
 }
 

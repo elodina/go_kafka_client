@@ -134,6 +134,9 @@ type ConsumerConfig struct {
 
 	/* Backoff to requeue ask next if no messages were fetched */
 	RequeueAskNextBackoff time.Duration
+
+	/* Steps ahead for message fetcher */
+	StepsAhead int
 }
 
 func DefaultConsumerConfig() *ConsumerConfig {
