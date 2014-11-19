@@ -246,7 +246,7 @@ func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			workerChannel := make(chan map[TopicAndPartition]int64)
-			manager := NewWorkerManager(c.config, workerChannel, c.fetcher, c.askNextBatch)
+			manager := NewWorkerManager(c.config, workerChannel, c.askNextBatch)
 			c.workerManagers[TopicAndPartition{topic, partition}] = manager
 			go manager.Start()
 			workerChannels = append(workerChannels, workerChannel)
