@@ -43,12 +43,6 @@ type ConsumerConfig struct {
 	/** the number threads used to fetch data */
 	NumConsumerFetchers int
 
-	/** if true, periodically commit to zookeeper the offset of messages already fetched by the consumer */
-	AutoCommitEnable bool
-
-	/** the frequency in ms that the consumer offsets are committed to zookeeper */
-	AutoCommitIntervalMs int32
-
 	/** max number of message chunks buffered for consumption, each chunk can be up to fetch.message.max.bytes*/
 	QueuedMaxMessages int32
 
@@ -69,6 +63,7 @@ type ConsumerConfig struct {
 
 	/** backoff time to reconnect the offsets channel or to retry offset fetches/commits */
 	OffsetsChannelBackoffMs int32
+
 	/** socket timeout to use when reading responses for Offset Fetch/Commit requests. This timeout will also be used for
 	   *  the ConsumerMetdata requests that are used to query for the offset coordinator. */
 	OffsetsChannelSocketTimeoutMs int32
@@ -81,12 +76,6 @@ type ConsumerConfig struct {
 
 	/** Specify whether offsets should be committed to "zookeeper" (default) or "kafka" */
 	OffsetsStorage string
-
-	/** If you are using "kafka" as offsets.storage, you can dual commit offsets to ZooKeeper (in addition to Kafka). This
-		* is required during migration from zookeeper-based offset storage to kafka-based offset storage. With respect to any
-		* given consumer group, it is safe to turn this off after all instances within that group have been migrated to
-		* the new jar that commits offsets to the broker (instead of directly to ZooKeeper). */
-	DualCommitEnabled bool
 
 	/* what to do if an offset is out of range.
 		 smallest : automatically reset the offset to the smallest offset
@@ -167,8 +156,6 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.SocketReceiveBufferBytes = 64 * 1024
 	config.FetchMessageMaxBytes = 1024 * 1024
 	config.NumConsumerFetchers = 1
-	config.AutoCommitEnable = true
-	config.AutoCommitIntervalMs = 60 * 1000
 	config.QueuedMaxMessages = 2
 	config.RebalanceMaxRetries = 4
 	config.ConsumerTimeoutMs = -1
@@ -213,8 +200,6 @@ SocketTimeoutMs: %d
 SocketReceiveBufferBytes: %d
 FetchMessageMaxBytes: %d
 NumConsumerFetchers: %d
-AutoCommitEnable: %v
-AutoCommitIntervalMs: %d
 QueuedMaxMessages: %d
 RebalanceMaxRetries: %d
 ConsumerTimeoutMs: %d
@@ -247,8 +232,7 @@ Strategy %v
 FetchBatchSize %d
 FetchBatchTimeout %v
 `, c.Groupid, c.SocketTimeoutMs, c.SocketReceiveBufferBytes,
-   c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.AutoCommitEnable,
-   c.AutoCommitIntervalMs, c.QueuedMaxMessages, c.RebalanceMaxRetries,
+   c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.QueuedMaxMessages, c.RebalanceMaxRetries,
    c.ConsumerTimeoutMs, c.FetchMinBytes, c.FetchWaitMaxMs,
    c.RebalanceBackoff, c.RefreshLeaderBackoff, c.OffsetsChannelBackoffMs,
    c.OffsetsChannelSocketTimeoutMs, c.OffsetsCommitMaxRetries, c.OffsetsStorage,
