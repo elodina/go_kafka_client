@@ -114,13 +114,12 @@ type PartitionTopicInfo struct {
 	Accumulator *BatchAccumulator
 	ConsumedOffset int64
 	FetchedOffset int64
-	FetchSize int
 	ClientId string
 }
 
 func (p *PartitionTopicInfo) String() string {
-	return fmt.Sprintf("{Topic: %s, Partition: %d, ConsumedOffset: %d, FetchedOffset: %d, FetchSize: %d, ClientId: %s}",
-						p.Topic, p.Partition, p.ConsumedOffset, p.FetchedOffset, p.FetchSize, p.ClientId)
+	return fmt.Sprintf("{Topic: %s, Partition: %d, ConsumedOffset: %d, FetchedOffset: %d, ClientId: %s}",
+						p.Topic, p.Partition, p.ConsumedOffset, p.FetchedOffset, p.ClientId)
 }
 
 type BrokerAndInitialOffset struct {

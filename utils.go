@@ -27,6 +27,7 @@ import (
 	log "github.com/cihub/seelog"
 	"fmt"
 	"time"
+	"github.com/Shopify/sarama"
 )
 
 var Logger, _ = log.LoggerFromConfigAsFile("seelog.xml")
@@ -257,4 +258,12 @@ func RedirectChannelsToWithTimeout(inputChannels interface{}, outputChannel inte
 	}()
 
 	return killChannel, timeoutOutputChannel
+}
+
+func NewSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
+	brokerConfig := sarama.NewBrokerConfig()
+	brokerConfig.DialTimeout = config.SocketTimeout
+	brokerConfig.ReadTimeout = config.SocketTimeout
+	brokerConfig.WriteTimeout = config.SocketTimeout
+	return brokerConfig
 }

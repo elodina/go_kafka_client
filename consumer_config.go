@@ -32,10 +32,7 @@ type ConsumerConfig struct {
 	ConsumerId string
 
 	/** the socket timeout for network requests. Its value should be at least fetch.wait.max.ms. */
-	SocketTimeoutMs int32
-
-	/** the socket receive buffer for network requests */
-	SocketReceiveBufferBytes int32
+	SocketTimeout time.Duration
 
 	/** the number of byes of messages to attempt to fetch */
 	FetchMessageMaxBytes int32
@@ -61,13 +58,6 @@ type ConsumerConfig struct {
 	/** backoff time to refresh the leader of a partition after it loses the current leader */
 	RefreshLeaderBackoff time.Duration
 
-	/** backoff time to reconnect the offsets channel or to retry offset fetches/commits */
-	OffsetsChannelBackoffMs int32
-
-	/** socket timeout to use when reading responses for Offset Fetch/Commit requests. This timeout will also be used for
-	   *  the ConsumerMetdata requests that are used to query for the offset coordinator. */
-	OffsetsChannelSocketTimeoutMs int32
-
 	/** Retry the offset commit up to this many times on failure. This retry count only applies to offset commits during
 		* shut-down. It does not apply to commits from the auto-commit thread. It also does not apply to attempts to query
 		* for the offset coordinator before committing offsets. i.e., if a consumer metadata request fails for any reason,
@@ -82,9 +72,6 @@ type ConsumerConfig struct {
 		 largest : automatically reset the offset to the largest offset
 		 anything else: throw exception to the consumer */
 	AutoOffsetReset string
-
-	/** throw a timeout exception to the consumer if no message is available for consumption after the specified int32erval */
-	ConsumerTimeoutMs int32
 
 	/**
 	   * Client id is specified by the kafka consumer client, used to distinguish different clients
@@ -152,19 +139,15 @@ type ConsumerConfig struct {
 func DefaultConsumerConfig() *ConsumerConfig {
 	config := &ConsumerConfig{}
 	config.Groupid = "go-consumer-group"
-	config.SocketTimeoutMs = 30 * 1000
-	config.SocketReceiveBufferBytes = 64 * 1024
+	config.SocketTimeout = 30 * time.Second
 	config.FetchMessageMaxBytes = 1024 * 1024
 	config.NumConsumerFetchers = 1
 	config.QueuedMaxMessages = 2
 	config.RebalanceMaxRetries = 4
-	config.ConsumerTimeoutMs = -1
 	config.FetchMinBytes = 1
 	config.FetchWaitMaxMs = 100
 	config.RebalanceBackoff = 5 * time.Second
 	config.RefreshLeaderBackoff = 200 * time.Millisecond
-	config.OffsetsChannelBackoffMs = 1000
-	config.OffsetsChannelSocketTimeoutMs = 10000
 	config.OffsetsCommitMaxRetries = 5
 	config.OffsetsStorage = "zookeeper"
 
@@ -196,19 +179,15 @@ func DefaultConsumerConfig() *ConsumerConfig {
 func (c *ConsumerConfig) String() string {
 	return fmt.Sprintf(`
 GroupId: %s
-SocketTimeoutMs: %d
-SocketReceiveBufferBytes: %d
+SocketTimeoutMs: %s
 FetchMessageMaxBytes: %d
 NumConsumerFetchers: %d
 QueuedMaxMessages: %d
 RebalanceMaxRetries: %d
-ConsumerTimeoutMs: %d
 FetchMinBytes: %d
 FetchWaitMaxMs: %d
 RebalanceBackoffMs: %d
 RefreshLeaderBackoff: %d
-OffsetsChannelBackoffMs: %d
-OffsetsChannelSocketTimeoutMs: %d
 OffsetsCommitMaxRetries: %d
 OffsetsStorage: %s
 AutoOffsetReset: %s
@@ -231,11 +210,11 @@ WorkerBatchTimeout %v
 Strategy %v
 FetchBatchSize %d
 FetchBatchTimeout %v
-`, c.Groupid, c.SocketTimeoutMs, c.SocketReceiveBufferBytes,
+`, c.Groupid, c.SocketTimeout,
    c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.QueuedMaxMessages, c.RebalanceMaxRetries,
-   c.ConsumerTimeoutMs, c.FetchMinBytes, c.FetchWaitMaxMs,
-   c.RebalanceBackoff, c.RefreshLeaderBackoff, c.OffsetsChannelBackoffMs,
-   c.OffsetsChannelSocketTimeoutMs, c.OffsetsCommitMaxRetries, c.OffsetsStorage,
+   c.FetchMinBytes, c.FetchWaitMaxMs,
+   c.RebalanceBackoff, c.RefreshLeaderBackoff,
+   c.OffsetsCommitMaxRetries, c.OffsetsStorage,
    c.AutoOffsetReset, c.ClientId, c.ConsumerId,
    c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.ZookeeperConnect,
    c.ZookeeperTimeout, c.NumWorkers, c.MaxWorkerRetries, c.WorkerRetryThreshold,

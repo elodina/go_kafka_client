@@ -676,7 +676,6 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 		Accumulator: accumulator,
 		ConsumedOffset: offset,
 		FetchedOffset: offset,
-		FetchSize: int(c.config.FetchMessageMaxBytes),
 		ClientId: c.config.ConsumerId,
 	}
 

@@ -199,7 +199,7 @@ func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*
 	for i := 0; i < len(shuffledBrokers); i++ {
 		brokerAddr := fmt.Sprintf("%s:%d", shuffledBrokers[i].Host, shuffledBrokers[i].Port)
 		broker := sarama.NewBroker(brokerAddr)
-		err := broker.Open(nil)
+		err := broker.Open(NewSaramaBrokerConfig(m.config))
 		if err != nil {
 			Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
 			continue
@@ -467,7 +467,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	partitionsWithError := make(map[TopicAndPartition]bool)
 
 	saramaBroker := sarama.NewBroker(f.brokerAddr)
-	err := saramaBroker.Open(nil)
+	err := saramaBroker.Open(NewSaramaBrokerConfig(f.manager.config))
 	if err != nil {
 		f.handleFetchError(request, err, partitionsWithError)
 	}
