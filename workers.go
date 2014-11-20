@@ -26,6 +26,7 @@ import (
 )
 
 type WorkerManager struct {
+	Id string
 	Config *ConsumerConfig
 	Strategy          WorkerStrategy
 	FailureHook       FailedCallback
@@ -42,14 +43,14 @@ type WorkerManager struct {
 	managerStop       chan bool
 	processingStop    chan bool
 
-	numActiveWorkersCounter metrics.Counter
+	activeWorkersCounter metrics.Counter
 	pendingTasksCounter metrics.Counter
 	batchDurationTimer metrics.Timer
 	idleTimer metrics.Timer
 }
 
 func (wm *WorkerManager) String() string {
-	return fmt.Sprintf("%s-workerManager", wm.Config.ConsumerId)
+	return wm.Id
 }
 
 func (wm *WorkerManager) Start() {
@@ -81,7 +82,7 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			wm.pendingTasksCounter.Inc(int64(len(wm.CurrentBatch)))
 			for _, task := range wm.CurrentBatch {
 				worker := <-wm.AvailableWorkers
-				wm.numActiveWorkersCounter.Inc(1)
+				wm.activeWorkersCounter.Inc(1)
 				wm.pendingTasksCounter.Dec(1)
 				worker.Start(task, wm.Strategy)
 			}
@@ -199,11 +200,13 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	key := result.Id().TopicPartition
 	wm.LargestOffsets[key] = int64(math.Max(float64(wm.LargestOffsets[key]), float64(result.Id().Offset)))
 	wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
-	wm.numActiveWorkersCounter.Dec(1)
+	wm.activeWorkersCounter.Dec(1)
 	delete(wm.CurrentBatch, result.Id())
 }
 
-func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64) *WorkerManager {
+func NewWorkerManager(id string, config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64,
+					  wmsIdleTimer metrics.Timer, batchDurationTimer metrics.Timer, activeWorkersCounter metrics.Counter,
+					  pendingWMsTasksCounter metrics.Counter) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -216,6 +219,7 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 	}
 
 	return &WorkerManager {
+		Id: id,
 		Config: config,
 		Strategy: config.Strategy,
 		FailureHook: config.WorkerFailureCallback,
@@ -230,9 +234,10 @@ func NewWorkerManager(config *ConsumerConfig, batchOutputChannel chan map[TopicA
 		batchProcessed: make(chan bool),
 		managerStop: make(chan bool),
 		processingStop: make(chan bool),
-		numActiveWorkersCounter: metrics.NewRegisteredCounter("WMActiveWorkers", metrics.DefaultRegistry),
-		batchDurationTimer: metrics.NewRegisteredTimer("WMBatchDuration", metrics.DefaultRegistry),
-		idleTimer: metrics.NewRegisteredTimer("WMIdleTime", metrics.DefaultRegistry),
+		activeWorkersCounter: activeWorkersCounter,
+		pendingTasksCounter: pendingWMsTasksCounter,
+		batchDurationTimer: batchDurationTimer,
+		idleTimer: wmsIdleTimer,
 	}
 }
 

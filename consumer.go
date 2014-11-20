@@ -50,7 +50,13 @@ type Consumer struct {
 	workerManagers map[TopicAndPartition]*WorkerManager
 	askNextBatch           chan TopicAndPartition
 	stopStreams            chan bool
+
 	numWorkerManagersGauge metrics.Gauge
+	batchesSentToWorkerManagerCounter metrics.Counter
+	activeWorkersCounter metrics.Counter
+	pendingWMsTasksCounter metrics.Counter
+	wmsBatchDurationTimer metrics.Timer
+	wmsIdleTimer metrics.Timer
 }
 
 type Message struct {
@@ -80,6 +86,13 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 
 	c.connectToZookeeper()
 	c.fetcher = newConsumerFetcherManager(c.config, c.zkConn, c.askNextBatch)
+
+	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
+	c.batchesSentToWorkerManagerCounter = metrics.NewRegisteredCounter(fmt.Sprintf("BatchesSentToWM-%s", c.String()), metrics.DefaultRegistry)
+	c.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", c.String()), metrics.DefaultRegistry)
+	c.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", c.String()), metrics.DefaultRegistry)
+	c.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", c.String()), metrics.DefaultRegistry)
+	c.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", c.String()), metrics.DefaultRegistry)
 
 	return c
 }
@@ -124,6 +137,7 @@ func (c *Consumer) startStreams() {
 				panic(fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition) )
 			} else {
 				wm.InputChannel<-batch
+				c.batchesSentToWorkerManagerCounter.Inc(1)
 			}
 			Debugf(c, "Sent batch for processing: %s", batch)
 		}
@@ -246,13 +260,16 @@ func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			workerChannel := make(chan map[TopicAndPartition]int64)
-			manager := NewWorkerManager(c.config, workerChannel)
+			manager := NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, workerChannel, c.wmsIdleTimer,
+										c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
 			c.workerManagers[TopicAndPartition{topic, partition}] = manager
 			go manager.Start()
 			workerChannels = append(workerChannels, workerChannel)
 		}
 	}
-	c.offsetsCommitter = NewOffsetsCommiter(c.config, workerChannels, c.zkConn)
+	c.offsetsCommitter = NewOffsetsCommitter(c.config, workerChannels, c.zkConn)
+	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
+
 	go c.offsetsCommitter.Start()
 }
 
@@ -287,9 +304,6 @@ func (c *Consumer) Close() <-chan bool {
 		if !c.stopWorkerManagers() {
 			panic("Graceful shutdown failed")
 		}
-
-		//Deregistering consumer
-		DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
 
 		Info(c, "Stopping offsets committer...")
 		c.offsetsCommitter.Stop()
