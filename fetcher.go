@@ -113,9 +113,6 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 					m.noLeaderPartitions = append(m.noLeaderPartitions, topicAndPartition)
 				}
 			}
-			for k, _ := range m.partitionMap {
-				delete(m.partitionMap, k)
-			}
 			for k, v := range newPartitionMap {
 				m.partitionMap[k] = v
 			}
@@ -197,7 +194,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 		}
 		m.addFetcherForPartitions(partitionAndOffsets)
 
-		//		m.ShutdownIdleFetchers()
+		m.ShutdownIdleFetchers()
 		time.Sleep(m.config.RefreshLeaderBackoff)
 	}
 }
@@ -312,7 +309,7 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 	Debug(m, "Shutting down idle fetchers")
 	InLock(&m.fetcherRoutineMapLock, func() {
 			for key, fetcher := range m.fetcherRoutineMap {
-				if fetcher.PartitionCount() <= 0 {
+				if len(fetcher.partitionMap) <= 0 {
 					<-fetcher.Close()
 					delete(m.fetcherRoutineMap, key)
 				}
@@ -324,22 +321,22 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 func (m *consumerFetcherManager) CloseAllFetchers() {
 	Info(m, "Closing fetchers")
 	m.NotReady()
-	//	InLock(&m.mapLock, func() {
-	Debugf(m, "Trying to close %d fetchers", len(m.fetcherRoutineMap))
-	for _, fetcher := range m.fetcherRoutineMap {
-		Debugf(m, "Closing %s", fetcher)
-		<-fetcher.Close()
-		Debugf(m, "Closed %s", fetcher)
-	}
+	InLock(&m.partitionMapLock, func() {
+		Debugf(m, "Trying to close %d fetchers", len(m.fetcherRoutineMap))
+		for _, fetcher := range m.fetcherRoutineMap {
+			Debugf(m, "Closing %s", fetcher)
+			<-fetcher.Close()
+			Debugf(m, "Closed %s", fetcher)
+		}
 
-	for key := range m.fetcherRoutineMap {
-		delete(m.fetcherRoutineMap, key)
-	}
+		for key := range m.fetcherRoutineMap {
+			delete(m.fetcherRoutineMap, key)
+		}
 
-	for k := range m.partitionMap {
-		delete(m.partitionMap, k)
-	}
-	//		})
+		for k := range m.partitionMap {
+			delete(m.partitionMap, k)
+		}
+	})
 }
 
 func (m *consumerFetcherManager) Close() <-chan bool {
@@ -367,7 +364,6 @@ type consumerFetcherRoutine struct {
 	allPartitionMap map[TopicAndPartition]*PartitionTopicInfo
 	partitionMap map[TopicAndPartition]int64
 	partitionMapLock sync.Mutex
-	partitionCount   int
 	closeFinished    chan bool
 	fetchRequestBlockMap map[TopicAndPartition]*PartitionFetchInfo
 	fetchStopper     chan bool
@@ -465,14 +461,6 @@ func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndP
 	}
 }
 
-func (f *consumerFetcherRoutine) PartitionCount() int {
-	count := 0
-	InLock(&f.manager.fetcherRoutineMapLock, func() {
-		count = len(f.partitionMap)
-	})
-	return count
-}
-
 func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchRequest) bool {
 	Info(f, "Started processing fetch request")
 	hasMessages := false
@@ -548,15 +536,10 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {
 	Infof(f, "Error in fetch %v. Possible cause: %s\n", request, err)
 	InLock(&f.partitionMapLock, func() {
-			//		for k, _ := range f.partitionMap {
-			//			partitionsWithError[k] = true
-			//		}
-			//	})
-			//	Infof(f, "Error in fetch out of lock", request, err)
-			for k, _ := range f.partitionMap {
-				partitionsWithError[k] = true
-			}
-		})
+		for k, _ := range f.partitionMap {
+			partitionsWithError[k] = true
+		}
+	})
 }
 
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) int64 {

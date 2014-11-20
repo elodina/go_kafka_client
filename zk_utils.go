@@ -140,12 +140,12 @@ func GetConsumerGroupChangesWatcher(zkConnection *zk.Conn, group string) (<- cha
 	return watcher, nil
 }
 
-func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTopics bool) (map[string][]*ConsumerThreadId, error) {
+func GetConsumersPerTopic(zkConnection *zk.Conn, group string, excludeInternalTopics bool) (map[string][]ConsumerThreadId, error) {
 	consumers, err := GetConsumersInGroup(zkConnection, group)
 	if (err != nil) {
 		return nil, err
 	}
-	consumersPerTopicMap := make(map[string][]*ConsumerThreadId)
+	consumersPerTopicMap := make(map[string][]ConsumerThreadId)
 	for _, consumer := range consumers {
 		topicsToNumStreams, err := NewTopicsToNumStreams(group, consumer, zkConnection, excludeInternalTopics)
 		if (err != nil) {
@@ -314,7 +314,7 @@ func GetOffsetForTopicPartition(zkConnection *zk.Conn, group string, topicPartit
 	return int64(offsetNum), nil
 }
 
-func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int32, consumerThreadId *ConsumerThreadId) (bool, error) {
+func ClaimPartitionOwnership(zkConnection *zk.Conn, group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
 	dirs := NewZKGroupTopicDirs(group, topic)
 	CreateOrUpdatePathParentMayNotExist(zkConnection, dirs.ConsumerOwnerDir, make([]byte, 0))
 

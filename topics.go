@@ -76,15 +76,15 @@ func NewTopicsToNumStreams(group string, consumerId string, zkConnection *zk.Con
 	}
 }
 
-func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[string]int) map[string][]*ConsumerThreadId {
-	result := make(map[string][]*ConsumerThreadId)
+func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[string]int) map[string][]ConsumerThreadId {
+	result := make(map[string][]ConsumerThreadId)
 	for topic, numConsumers := range TopicsToNumStreamsMap {
-		consumers := make([]*ConsumerThreadId, numConsumers)
+		consumers := make([]ConsumerThreadId, numConsumers)
 		if (numConsumers < 1) {
 			panic("Number of consumers should be greater than 0")
 		}
 		for i := 0; i < numConsumers; i++ {
-			consumerThreadId := &ConsumerThreadId{consumerId, i}
+			consumerThreadId := ConsumerThreadId{consumerId, i}
 			exists := false
 			for i := 0; i < numConsumers; i++ {
 				if (consumers[i] == consumerThreadId) {
@@ -108,7 +108,7 @@ type StaticTopicsToNumStreams struct {
 	TopicsToNumStreamsMap map[string]int
 }
 
-func (tc *StaticTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId {
+func (tc *StaticTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
 	return makeConsumerThreadIdsPerTopic(tc.ConsumerId, tc.TopicsToNumStreamsMap)
 }
 
@@ -129,7 +129,7 @@ type WildcardTopicsToNumStreams struct {
 	ExcludeInternalTopics bool
 }
 
-func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId {
+func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
 	topicsToNumStreams := make(map[string]int)
 	topics, err := GetTopics(tc.ZkConnection)
 	if (err != nil) {
@@ -167,7 +167,7 @@ type TopicSwitch struct {
 	TopicsToNumStreamsMap map[string]int
 }
 
-func (tc *TopicSwitch) GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId {
+func (tc *TopicSwitch) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
 	return makeConsumerThreadIdsPerTopic(tc.ConsumerId, tc.TopicsToNumStreamsMap)
 }
 

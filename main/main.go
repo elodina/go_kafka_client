@@ -35,7 +35,7 @@ func main() {
 		panic(err)
 	}
 
-	go metrics.GraphiteWithConfig(GraphiteConfig{
+	go metrics.GraphiteWithConfig(metrics.GraphiteConfig{
 		Addr:          addr,
 		Registry:      metrics.DefaultRegistry,
 		FlushInterval: 10e9,
@@ -48,6 +48,7 @@ func main() {
 	numMessage := 0
 
 	go_kafka_client.CreateMultiplePartitionsTopic("192.168.86.5:2181", topic, 6)
+	time.Sleep(4 * time.Second)
 
 	p := producer.NewKafkaProducer(topic, []string{"192.168.86.10:9092"}, nil)
 	defer p.Close()

@@ -41,7 +41,6 @@ type Consumer struct {
 	isShuttingdown bool
 	topicThreadIdsAndAccumulators map[TopicAndThreadId]*BatchAccumulator
 	TopicRegistry map[string]map[int32]*PartitionTopicInfo
-	checkPointedZkOffsets map[*TopicAndPartition]int64
 	batchChannel chan []*Message
 	restartStreams chan []chan []*Message
 	offsetsCommitter *OffsetsCommitter
@@ -73,7 +72,6 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		closeFinished : make(chan bool),
 		topicThreadIdsAndAccumulators : make(map[TopicAndThreadId]*BatchAccumulator),
 		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
-		checkPointedZkOffsets: make(map[*TopicAndPartition]int64),
 		restartStreams: make(chan []chan []*Message),
 		workerManagers: make(map[TopicAndPartition]*WorkerManager),
 		askNextBatch: make(chan TopicAndPartition),
@@ -654,7 +652,7 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 
 func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int32]*PartitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
-	consumerThreadId *ConsumerThreadId) {
+	consumerThreadId ConsumerThreadId) {
 	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
 	if (!exists) {
 		partTopicInfoMap = make(map[int32]*PartitionTopicInfo)
@@ -679,10 +677,9 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 	}
 
 	partTopicInfoMap[topicPartition.Partition] = partTopicInfo
-	c.checkPointedZkOffsets[topicPartition] = offset
 }
 
-func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]*ConsumerThreadId) bool {
+func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]ConsumerThreadId) bool {
 	Infof(c, "Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, consumerThreadId := range partitionOwnershipDecision {

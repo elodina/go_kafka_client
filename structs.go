@@ -67,7 +67,7 @@ func (t *TopicInfo) String() string {
 
 type TopicsToNumStreams interface {
 	GetTopicsToNumStreamsMap() map[string]int
-	GetConsumerThreadIdsPerTopic() map[string][]*ConsumerThreadId
+	GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId
 	Pattern() string
 }
 
@@ -76,7 +76,7 @@ type ConsumerThreadId struct {
 	ThreadId int
 }
 
-type ByName []*ConsumerThreadId
+type ByName []ConsumerThreadId
 
 func (a ByName) Len() int { return len(a) }
 func (a ByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
@@ -118,8 +118,8 @@ type PartitionTopicInfo struct {
 }
 
 func (p *PartitionTopicInfo) String() string {
-	return fmt.Sprintf("{Topic: %s, Partition: %d, ConsumedOffset: %d, FetchedOffset: %d, ClientId: %s}",
-						p.Topic, p.Partition, p.ConsumedOffset, p.FetchedOffset, p.ClientId)
+	return fmt.Sprintf("{Topic: %s, Partition: %d, ConsumedOffset: %d, FetchedOffset: %d, ClientId: %s, Accumulator: %s}",
+						p.Topic, p.Partition, p.ConsumedOffset, p.FetchedOffset, p.ClientId, p.Accumulator)
 }
 
 type BrokerAndInitialOffset struct {
@@ -142,7 +142,7 @@ func (b *BrokerAndFetcherId) String() string {
 
 type TopicAndThreadId struct {
 	Topic string
-	ThreadId *ConsumerThreadId
+	ThreadId ConsumerThreadId
 }
 
 func (tt *TopicAndThreadId) String() string {

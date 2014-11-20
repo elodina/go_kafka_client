@@ -23,16 +23,16 @@ import (
 
 var (
 	consumers = []string { "consumerid1", "consumerid2" }
-	consumerThreadIds = []*ConsumerThreadId {
-		&ConsumerThreadId{"consumerid1", 0},
-		&ConsumerThreadId{"consumerid1", 1},
-		&ConsumerThreadId{"consumerid2", 0},
-		&ConsumerThreadId{"consumerid2", 1},
+	consumerThreadIds = []ConsumerThreadId {
+		ConsumerThreadId{"consumerid1", 0},
+		ConsumerThreadId{"consumerid1", 1},
+		ConsumerThreadId{"consumerid2", 0},
+		ConsumerThreadId{"consumerid2", 1},
 	}
 	partitionsForTopic = map[string][]int32 {
 		"topic1": []int32{0, 1, 2 ,3, 4},
 	}
-	consumersForTopic = map[string][]*ConsumerThreadId {
+	consumersForTopic = map[string][]ConsumerThreadId {
 		"topic1": consumerThreadIds,
 	}
 	totalPartitions = 5
@@ -51,10 +51,10 @@ func TestRoundRobinAssignor(t *testing.T) {
 	var totalDecisions = 0
 	for _, consumer := range consumers {
 		context.ConsumerId = consumer
-		context.MyTopicThreadIds = map[string][]*ConsumerThreadId {
-			"topic1": []*ConsumerThreadId {
-				&ConsumerThreadId{consumer, 0},
-				&ConsumerThreadId{consumer, 1}, },
+		context.MyTopicThreadIds = map[string][]ConsumerThreadId {
+			"topic1": []ConsumerThreadId {
+				ConsumerThreadId{consumer, 0},
+				ConsumerThreadId{consumer, 1}, },
 		}
 		ownershipDecision := assignor(context)
 		decisionsNum := len(ownershipDecision)
@@ -78,17 +78,17 @@ func TestRoundRobinAssignor(t *testing.T) {
 	}()
 
 	context.ConsumerId = "consumerid1"
-	context.MyTopicThreadIds = map[string][]*ConsumerThreadId {
-		"topic1": []*ConsumerThreadId {
-			&ConsumerThreadId{"consumerid1", 0},
-			&ConsumerThreadId{"consumerid1", 1}, },
+	context.MyTopicThreadIds = map[string][]ConsumerThreadId {
+		"topic1": []ConsumerThreadId {
+			ConsumerThreadId{"consumerid1", 0},
+			ConsumerThreadId{"consumerid1", 1}, },
 	}
-	context.ConsumersForTopic = map[string][]*ConsumerThreadId {
+	context.ConsumersForTopic = map[string][]ConsumerThreadId {
 		"topic1": consumerThreadIds,
-		"topic2": []*ConsumerThreadId {
-			&ConsumerThreadId{"consumerid1", 0},
-			&ConsumerThreadId{"consumerid1", 1},
-			&ConsumerThreadId{"consumerid2", 0},
+		"topic2": []ConsumerThreadId {
+			ConsumerThreadId{"consumerid1", 0},
+			ConsumerThreadId{"consumerid1", 1},
+			ConsumerThreadId{"consumerid2", 0},
 		},
 	}
 	assignor(context)
@@ -110,10 +110,10 @@ func TestRangeAssignor(t *testing.T) {
 	var totalDecisions = 0
 	for _, consumer := range consumers {
 		context.ConsumerId = consumer
-		context.MyTopicThreadIds = map[string][]*ConsumerThreadId {
-			"topic1": []*ConsumerThreadId {
-				&ConsumerThreadId{consumer, 0},
-				&ConsumerThreadId{consumer, 1}, },
+		context.MyTopicThreadIds = map[string][]ConsumerThreadId {
+			"topic1": []ConsumerThreadId {
+				ConsumerThreadId{consumer, 0},
+				ConsumerThreadId{consumer, 1}, },
 		}
 		ownershipDecision := assignor(context)
 		decisionsNum := len(ownershipDecision)
