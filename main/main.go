@@ -34,7 +34,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	go metrics.Graphite(metrics.DefaultRegistry, 10e9, "metrics", addr)
+
+	go metrics.GraphiteWithConfig(GraphiteConfig{
+		Addr:          addr,
+		Registry:      metrics.DefaultRegistry,
+		FlushInterval: 10e9,
+		DurationUnit:  time.Second,
+		Prefix:        "metrics",
+		Percentiles:   []float64{0.5, 0.75, 0.95, 0.99, 0.999},
+	})
 
 	topic := fmt.Sprintf("go-kafka-topic-%d", time.Now().Unix())
 	numMessage := 0
@@ -76,19 +84,19 @@ func startNewConsumer(topic string, consumerIndex int) *go_kafka_client.Consumer
 	return consumer
 }
 
-func createConsumer(consumerid string) *go_kafka_client.Consumer{
+func createConsumer(consumerid string) *go_kafka_client.Consumer {
 	config := go_kafka_client.DefaultConsumerConfig()
 	config.ZookeeperConnect = []string{"192.168.86.5:2181"}
 	config.ConsumerId = consumerid
 	config.AutoOffsetReset = "smallest"
 	config.FetchBatchSize = 20
-	config.FetchBatchTimeout = 3 * time.Second
-	config.WorkerTaskTimeout = 10 * time.Second
+	config.FetchBatchTimeout = 3*time.Second
+	config.WorkerTaskTimeout = 10*time.Second
 	config.Strategy = Strategy
 	config.WorkerRetryThreshold = 100
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
-	config.WorkerCloseTimeout = 1 * time.Second
+	config.WorkerCloseTimeout = 1*time.Second
 
 	consumer := go_kafka_client.NewConsumer(config)
 	return consumer
@@ -96,8 +104,8 @@ func createConsumer(consumerid string) *go_kafka_client.Consumer{
 
 func Strategy(worker *go_kafka_client.Worker, msg *go_kafka_client.Message, id go_kafka_client.TaskId) go_kafka_client.WorkerResult {
 	go_kafka_client.Infof("main", "Got a message: %s", string(msg.Value))
-//	sleepTime := time.Duration(rand.Intn(2) + 1) * time.Second
-//	time.Sleep(sleepTime)
+	//	sleepTime := time.Duration(rand.Intn(2) + 1) * time.Second
+	//	time.Sleep(sleepTime)
 
 	return go_kafka_client.NewSuccessfulResult(id)
 }
