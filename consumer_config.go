@@ -176,6 +176,8 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.RequeueAskNextBackoff = 1 * time.Second
 
+	config.StepsAhead = 3
+
 	return config
 }
 

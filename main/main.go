@@ -25,14 +25,21 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"net"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 func main() {
+	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:2003")
+	if err != nil {
+		panic(err)
+	}
+	go metrics.Graphite(metrics.DefaultRegistry, 10e9, "metrics", addr)
+
 	topic := fmt.Sprintf("go-kafka-topic-%d", time.Now().Unix())
 	numMessage := 0
 
 	go_kafka_client.CreateMultiplePartitionsTopic("192.168.86.5:2181", topic, 6)
-	time.Sleep(5 * time.Second)
 
 	p := producer.NewKafkaProducer(topic, []string{"192.168.86.10:9092"}, nil)
 	defer p.Close()
@@ -42,26 +49,37 @@ func main() {
 				panic(err)
 			}
 			numMessage++
-			sleepTime := time.Duration(rand.Intn(400) + 1) * time.Millisecond
+			sleepTime := time.Duration(rand.Intn(50) + 1) * time.Millisecond
 			time.Sleep(sleepTime)
 		}
 	}()
 
-	time.Sleep(3 * time.Second)
-	go startConsumer1(topic)
+	ctrlc := make(chan os.Signal, 1)
+	signal.Notify(ctrlc, os.Interrupt)
+	consumer1 := startNewConsumer(topic, 1)
 	time.Sleep(10 * time.Second)
-	fmt.Printf("Starting consumer 2!\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
-	go startConsumer2(topic)
-
-	s := make(chan os.Signal, 1)
-	signal.Notify(s, os.Interrupt)
-	<-s
-	fmt.Println("Leaving main")
+	consumer2 := startNewConsumer(topic, 2)
+	<-ctrlc
+	fmt.Println("Shutdown triggered, closing all alive consumers")
+	<-consumer1.Close()
+	<-consumer2.Close()
+	fmt.Println("Successfully shut down all consumers")
 }
 
-func startConsumer1(topic string) {
+func startNewConsumer(topic string, consumerIndex int) *go_kafka_client.Consumer {
+	consumerId := fmt.Sprintf("consumer%d", consumerIndex)
+	consumer := createConsumer(consumerId)
+	topics := map[string]int {topic : 3}
+	go func() {
+		consumer.StartStatic(topics)
+	}()
+	return consumer
+}
+
+func createConsumer(consumerid string) *go_kafka_client.Consumer{
 	config := go_kafka_client.DefaultConsumerConfig()
 	config.ZookeeperConnect = []string{"192.168.86.5:2181"}
+	config.ConsumerId = consumerid
 	config.AutoOffsetReset = "smallest"
 	config.FetchBatchSize = 20
 	config.FetchBatchTimeout = 3 * time.Second
@@ -73,33 +91,13 @@ func startConsumer1(topic string) {
 	config.WorkerCloseTimeout = 1 * time.Second
 
 	consumer := go_kafka_client.NewConsumer(config)
-	topics := map[string]int {topic : 3}
-	consumer.StartStatic(topics)
-}
-
-func startConsumer2(topic string) {
-	config := go_kafka_client.DefaultConsumerConfig()
-	config.ConsumerId = "consumer2"
-	config.ZookeeperConnect = []string{"192.168.86.5:2181"}
-	config.AutoOffsetReset = "smallest"
-	config.FetchBatchSize = 20
-	config.FetchBatchTimeout = 3 * time.Second
-	config.WorkerTaskTimeout = 10 * time.Second
-	config.Strategy = Strategy
-	config.WorkerRetryThreshold = 100
-	config.WorkerFailureCallback = FailedCallback
-	config.WorkerFailedAttemptCallback = FailedAttemptCallback
-	config.WorkerCloseTimeout = 1 * time.Second
-
-	consumer := go_kafka_client.NewConsumer(config)
-	topics := map[string]int {topic : 3}
-	consumer.StartStatic(topics)
+	return consumer
 }
 
 func Strategy(worker *go_kafka_client.Worker, msg *go_kafka_client.Message, id go_kafka_client.TaskId) go_kafka_client.WorkerResult {
 	go_kafka_client.Infof("main", "Got a message: %s", string(msg.Value))
-	sleepTime := time.Duration(rand.Intn(2) + 1) * time.Second
-	time.Sleep(sleepTime)
+//	sleepTime := time.Duration(rand.Intn(2) + 1) * time.Second
+//	time.Sleep(sleepTime)
 
 	return go_kafka_client.NewSuccessfulResult(id)
 }

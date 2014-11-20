@@ -20,8 +20,6 @@ package go_kafka_client
 import (
 	"time"
 	"github.com/samuel/go-zookeeper/zk"
-	"os"
-	"os/signal"
 	"sync"
 	"fmt"
 	"github.com/Shopify/sarama"
