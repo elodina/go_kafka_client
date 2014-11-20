@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"reflect"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 var InvalidOffset int64 = -1
@@ -49,6 +50,13 @@ type Consumer struct {
 	workerManagers map[TopicAndPartition]*WorkerManager
 	askNextBatch           chan TopicAndPartition
 	stopStreams            chan bool
+
+	numWorkerManagersGauge metrics.Gauge
+	batchesSentToWorkerManagerCounter metrics.Counter
+	activeWorkersCounter metrics.Counter
+	pendingWMsTasksCounter metrics.Counter
+	wmsBatchDurationTimer metrics.Timer
+	wmsIdleTimer metrics.Timer
 }
 
 type Message struct {
@@ -76,6 +84,13 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 
 	c.connectToZookeeper()
 	c.fetcher = newConsumerFetcherManager(c.config, c.zkConn, c.askNextBatch)
+
+	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
+	c.batchesSentToWorkerManagerCounter = metrics.NewRegisteredCounter(fmt.Sprintf("BatchesSentToWM-%s", c.String()), metrics.DefaultRegistry)
+	c.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", c.String()), metrics.DefaultRegistry)
+	c.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", c.String()), metrics.DefaultRegistry)
+	c.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", c.String()), metrics.DefaultRegistry)
+	c.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", c.String()), metrics.DefaultRegistry)
 
 	return c
 }
@@ -120,6 +135,7 @@ func (c *Consumer) startStreams() {
 				panic(fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition) )
 			} else {
 				wm.InputChannel<-batch
+				c.batchesSentToWorkerManagerCounter.Inc(1)
 			}
 			Debugf(c, "Sent batch for processing: %s", batch)
 		}
@@ -188,14 +204,14 @@ func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStr
 			for _, threadIdSet := range tc.GetConsumerThreadIdsPerTopic() {
 				accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
 				for i := 0; i < len(accumulatorsForThread); i++ {
-					accumulatorsForThread[i] = NewBatchAccumulator(c.config)
+					accumulatorsForThread[i] = NewBatchAccumulator(c.config, c.askNextBatch)
 				}
 				accumulators = append(accumulators, accumulatorsForThread...)
 			}
 		}
 		case *WildcardTopicsToNumStreams: {
 			for i := 0; i < tc.NumStreams; i++ {
-				accumulators = append(accumulators, NewBatchAccumulator(c.config))
+				accumulators = append(accumulators, NewBatchAccumulator(c.config, c.askNextBatch))
 			}
 		}
 	}
@@ -242,13 +258,16 @@ func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			workerChannel := make(chan map[TopicAndPartition]int64)
-			manager := NewWorkerManager(c.config, workerChannel, c.askNextBatch)
+			manager := NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, workerChannel, c.wmsIdleTimer,
+										c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
 			c.workerManagers[TopicAndPartition{topic, partition}] = manager
 			go manager.Start()
 			workerChannels = append(workerChannels, workerChannel)
 		}
 	}
-	c.offsetsCommitter = NewOffsetsCommiter(c.config, workerChannels, c.zkConn)
+	c.offsetsCommitter = NewOffsetsCommitter(c.config, workerChannels, c.zkConn)
+	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
+
 	go c.offsetsCommitter.Start()
 }
 

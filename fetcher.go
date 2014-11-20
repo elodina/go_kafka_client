@@ -24,6 +24,7 @@ import (
 	"sync"
 	"github.com/Shopify/sarama"
 	"math"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 type consumerFetcherManager struct {
@@ -43,6 +44,10 @@ type consumerFetcherManager struct {
 	askNextFetchers map[TopicAndPartition]chan TopicAndPartition
 	isReady                 bool
 	isReadyLock             sync.RWMutex
+
+	numFetchRoutinesCounter metrics.Counter
+	idleTimer metrics.Timer
+	fetchDurationTimer metrics.Timer
 }
 
 func (m *consumerFetcherManager) String() string {
@@ -62,6 +67,10 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, askNext 
 		askNextFetchers : make(map[TopicAndPartition]chan TopicAndPartition),
 	}
 	manager.leaderCond = sync.NewCond(&manager.partitionMapLock)
+	manager.numFetchRoutinesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("NumFetchRoutines-%s", manager.String()), metrics.DefaultRegistry)
+	manager.idleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchersIdleTime-%s", manager.String()), metrics.DefaultRegistry)
+	manager.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchDuration-%s", manager.String()), metrics.DefaultRegistry)
+
 	go manager.FindLeaders()
 	go manager.WaitForNextRequests()
 
@@ -388,8 +397,10 @@ func (f *consumerFetcherRoutine) Start() {
 	Info(f, "Fetcher started")
 	for {
 		Debug(f, "Waiting for asknext or die")
+		ts := time.Now()
 		select {
 		case nextTopicPartition := <-f.askNext: {
+			f.manager.idleTimer.Update(time.Since(ts))
 			Debug(f, "Received asknext")
 			InReadLock(&f.manager.isReadyLock, func() {
 				if f.manager.isReady {
@@ -409,7 +420,8 @@ func (f *consumerFetcherRoutine) Start() {
 					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 
 					if len(f.fetchRequestBlockMap) > 0 {
-						hasMessages := f.processFetchRequest(fetchRequest)
+						var hasMessages bool
+						f.manager.fetchDurationTimer.Time(func() { hasMessages = f.processFetchRequest(fetchRequest) })
 						if !hasMessages {
 							time.Sleep(config.RequeueAskNextBackoff)
 							go func() {

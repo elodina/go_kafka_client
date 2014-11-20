@@ -33,7 +33,7 @@ func (oc *OffsetsCommitter) String() string {
 	return fmt.Sprintf("%s-offsetsCommitter", oc.Config.ConsumerId)
 }
 
-func NewOffsetsCommiter(config *ConsumerConfig, workerAcks []chan map[TopicAndPartition]int64, zkConn *zk.Conn) *OffsetsCommitter {
+func NewOffsetsCommitter(config *ConsumerConfig, workerAcks []chan map[TopicAndPartition]int64, zkConn *zk.Conn) *OffsetsCommitter {
 	return &OffsetsCommitter{
 		Config: config,
 		WorkerAcks: workerAcks,
