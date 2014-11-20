@@ -74,8 +74,6 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		stopStreams: make(chan bool),
 	}
 
-	c.addShutdownHook()
-
 	c.connectToZookeeper()
 	c.fetcher = newConsumerFetcherManager(c.config, c.zkConn, c.askNextBatch)
 
@@ -281,18 +279,15 @@ func (c *Consumer) Close() <-chan bool {
 	go func() {
 		c.unsubscribe <- true
 
+		Info(c, "Closing fetcher manager...")
+		<-c.fetcher.Close()
 		Info(c, "Stopping worker manager...")
 		if !c.stopWorkerManagers() {
 			panic("Graceful shutdown failed")
 		}
 
-		//Deregistering consumer
-		DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
-
 		Info(c, "Stopping offsets committer...")
 		c.offsetsCommitter.Stop()
-		Info(c, "Closing fetcher manager...")
-		<-c.fetcher.Close()
 		c.stopStreams <- true
 		c.closeFinished <- true
 	}()
@@ -342,17 +337,6 @@ func (c *Consumer) updateFetcher(numStreams int) {
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
 	Infof(c, "Acking offset %d for topic %s and partition %d", offset, topic, partition)
 	return nil
-}
-
-func (c *Consumer) addShutdownHook() {
-	s := make(chan os.Signal, 1)
-	signal.Notify(s, os.Interrupt)
-	go func() {
-		<-s
-		Info(c, "Got a shutdown event")
-		<-c.Close()
-		Info(c, "Successfully closed a consumer!")
-	}()
 }
 
 func (c *Consumer) connectToZookeeper() {

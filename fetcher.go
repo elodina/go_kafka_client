@@ -336,17 +336,15 @@ func (m *consumerFetcherManager) CloseAllFetchers() {
 func (m *consumerFetcherManager) Close() <-chan bool {
 	Info(m, "Closing manager")
 	go func() {
-		InWriteLock(&m.isReadyLock, func() {
-				Info(m, "Stopping find leader")
-				m.NotReady()
-				m.shuttingDown = true
-				m.stopWaitingNextRequests <- true
-				m.leaderCond.Broadcast()
-				m.CloseAllFetchers()
-				m.partitionMap = nil
-				m.noLeaderPartitions = nil
-				m.closeFinished <- true
-			})
+		Info(m, "Stopping find leader")
+		m.NotReady()
+		m.shuttingDown = true
+		m.stopWaitingNextRequests <- true
+		m.leaderCond.Broadcast()
+		m.CloseAllFetchers()
+		m.partitionMap = nil
+		m.noLeaderPartitions = nil
+		m.closeFinished <- true
 	}()
 
 	return m.closeFinished

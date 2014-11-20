@@ -101,8 +101,8 @@ func RegisterConsumer(zkConnection *zk.Conn, group string, consumerId string, co
 }
 
 func DeregisterConsumer(zkConnection *zk.Conn, group string, consumerId string) error {
-	Debugf("zk", "Trying to deregister consumer %s from group %s", consumerId, group)
 	pathToConsumer := fmt.Sprintf("%s/%s", NewZKGroupDirs(group).ConsumerRegistryDir, consumerId)
+	Debugf("zk", "Trying to deregister consumer at path: %s", pathToConsumer)
 	_, stat, err := zkConnection.Get(pathToConsumer)
 	if (err != nil) {
 		return err
