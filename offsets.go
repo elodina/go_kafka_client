@@ -27,6 +27,7 @@ type OffsetsCommitter struct {
 	WorkerAcks []chan map[TopicAndPartition]int64
 	zkConn *zk.Conn
 	close chan bool
+	closed bool
 }
 
 func (oc *OffsetsCommitter) String() string {
@@ -62,7 +63,10 @@ func (oc *OffsetsCommitter) Start() {
 
 func (oc *OffsetsCommitter) Stop() {
 	Debugf(oc, "Closing %s", oc)
-	oc.close <- true
+	if !oc.closed {
+		oc.closed = true
+		oc.close <- true
+	}
 	Debug(oc, "Successfully stopped")
 }
 

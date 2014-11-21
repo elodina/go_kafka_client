@@ -35,6 +35,7 @@ type Consumer struct {
 	config        *ConsumerConfig
 	fetcher         *consumerFetcherManager
 	unsubscribe    chan bool
+	unsubscribeFinished chan bool
 	closeFinished  chan bool
 	zkConn          *zk.Conn
 	rebalanceLock  sync.Mutex
@@ -69,6 +70,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	c := &Consumer{
 		config : config,
 		unsubscribe : make(chan bool),
+		unsubscribeFinished : make(chan bool),
 		closeFinished : make(chan bool),
 		topicThreadIdsAndAccumulators : make(map[TopicAndThreadId]*BatchAccumulator),
 		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
@@ -293,6 +295,7 @@ func (c *Consumer) Close() <-chan bool {
 	c.isShuttingdown = true
 	go func() {
 		c.unsubscribe <- true
+		<-c.unsubscribeFinished
 
 		Info(c, "Closing fetcher manager...")
 		<-c.fetcher.Close()
@@ -310,23 +313,28 @@ func (c *Consumer) Close() <-chan bool {
 }
 
 func (c *Consumer) stopWorkerManagers() bool {
-	wmsAreStopped := make(chan bool)
-	wmStopChannels := make([]chan bool, 0)
-	for _, wm := range c.workerManagers {
-		wmStopChannels = append(wmStopChannels, wm.Stop())
-	}
-	Debugf(c, "Worker channels length: %d", len(wmStopChannels))
-	NotifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
-	select {
-	case <-wmsAreStopped: {
-		Info(c, "All workers have been gracefully stopped")
-		c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
+	if len(c.workerManagers) > 0 {
+		wmsAreStopped := make(chan bool)
+		wmStopChannels := make([]chan bool, 0)
+		for _, wm := range c.workerManagers {
+			wmStopChannels = append(wmStopChannels, wm.Stop())
+		}
+		Debugf(c, "Worker channels length: %d", len(wmStopChannels))
+		NotifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
+		select {
+		case <-wmsAreStopped: {
+			Info(c, "All workers have been gracefully stopped")
+			c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
+			return true
+		}
+		case <-time.After(c.config.WorkerManagersStopTimeout): {
+			Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
+			return false
+		}
+		}
+	} else {
+		Debug(c, "No worker managers to close")
 		return true
-	}
-	case <-time.After(c.config.WorkerManagersStopTimeout): {
-		Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
-		return false
-	}
 	}
 }
 
@@ -454,7 +462,8 @@ func (c *Consumer) subscribeForChanges(group string) {
 				if err != nil {
 					panic(err)
 				}
-				break
+				c.unsubscribeFinished <- true
+				return
 			}
 			}
 		}
