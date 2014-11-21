@@ -108,8 +108,8 @@ func main() {
 
 	consumers := make([]*kafkaClient.Consumer, numConsumers)
 	for i := 0; i < numConsumers; i++ {
-		consumers[i] = startNewConsumer(config, topic, consumerIdPattern, i)
-		time.Sleep(5 * time.Second)
+		consumers[i] = startNewConsumer(*config, topic, consumerIdPattern, i)
+		time.Sleep(10 * time.Second)
 	}
 
 	<-ctrlc
@@ -126,21 +126,21 @@ func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
 		panic(err)
 	}
 	go metrics.GraphiteWithConfig(metrics.GraphiteConfig{
-	Addr:          addr,
-	Registry:      metrics.DefaultRegistry,
-	FlushInterval: graphiteFlushInterval,
-	DurationUnit:  time.Second,
-	Prefix:        "metrics",
-	Percentiles:   []float64{0.5, 0.75, 0.95, 0.99, 0.999},
-})
+		Addr:          addr,
+		Registry:      metrics.DefaultRegistry,
+		FlushInterval: graphiteFlushInterval,
+		DurationUnit:  time.Second,
+		Prefix:        "metrics",
+		Percentiles:   []float64{0.5, 0.75, 0.95, 0.99, 0.999},
+	})
 }
 
-func startNewConsumer(config *kafkaClient.ConsumerConfig, topic string, consumerIdPattern string, consumerIndex int) *kafkaClient.Consumer {
+func startNewConsumer(config kafkaClient.ConsumerConfig, topic string, consumerIdPattern string, consumerIndex int) *kafkaClient.Consumer {
 	config.ConsumerId = fmt.Sprintf(consumerIdPattern, consumerIndex)
 	config.Strategy = Strategy
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
-	consumer := kafkaClient.NewConsumer(config)
+	consumer := kafkaClient.NewConsumer(&config)
 	topics := map[string]int {topic : config.NumConsumerFetchers}
 	go func() {
 		consumer.StartStatic(topics)
