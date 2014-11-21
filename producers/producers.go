@@ -15,5 +15,53 @@
  * limitations under the License.
  */
 
-package producers
+package main
 
+import (
+	kafkaClient "github.com/stealthly/go_kafka_client"
+	"time"
+	"github.com/stealthly/go-kafka/producer"
+	"fmt"
+	"strconv"
+	"os"
+	"os/signal"
+)
+
+func resolveConfig() (string, string, string, int, time.Duration) {
+	rawConfig, err := kafkaClient.LoadConfiguration("producers.properties")
+	if err != nil {
+		panic(err)
+	}
+
+	zkConnect := rawConfig["zookeeper_connect"]
+	brokerConnect := rawConfig["broker_connect"]
+	topic := rawConfig["topic"]
+	numPartitions, _ := strconv.Atoi(rawConfig["num_partitions"])
+	sleepTime, _ := time.ParseDuration(rawConfig["sleep_time"])
+
+	return zkConnect, brokerConnect, topic, numPartitions, sleepTime
+}
+
+func main() {
+	numMessage := 0
+
+	zkConnect, brokerConnect, topic, numPartitions, sleepTime := resolveConfig()
+
+	kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
+
+	p := producer.NewKafkaProducer(topic, []string{brokerConnect}, nil)
+	defer p.Close()
+	go func() {
+		for {
+			if err := p.Send(fmt.Sprintf("message %d!", numMessage)); err != nil {
+				panic(err)
+			}
+			numMessage++
+			time.Sleep(sleepTime)
+		}
+	}()
+
+	ctrlc := make(chan os.Signal, 1)
+	signal.Notify(ctrlc, os.Interrupt)
+	<-ctrlc
+}
