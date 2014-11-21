@@ -33,42 +33,42 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 	if err != nil {
 		panic("Failed to load configuration file")
 	}
-	numConsumers, _ := strconv.Atoi(rawConfig["numconsumers"])
-	zkTimeout, _ := time.ParseDuration(rawConfig["zookeepertimeout"])
+	numConsumers, _ := strconv.Atoi(rawConfig["num_consumers"])
+	zkTimeout, _ := time.ParseDuration(rawConfig["zookeeper_timeout"])
 
-	numWorkers, _ := strconv.Atoi(rawConfig["numworkers"])
-	maxWorkerRetries, _ := strconv.Atoi(rawConfig["maxworkerretries"])
-	workerBackoff, _ := time.ParseDuration(rawConfig["workerbackoff"])
-	workerRetryThreshold, _ := strconv.Atoi(rawConfig["workerretrythreshold"])
-	workerConsideredFailedTimeWindow, _ := time.ParseDuration(rawConfig["workerconsideredfailedtimewindow"])
-	workerBatchTimeout, _ := time.ParseDuration(rawConfig["workerbatchtimeout"])
-	workerTaskTimeout, _ := time.ParseDuration(rawConfig["workertasktimeout"])
-	workerManagersStopTimeout, _ := time.ParseDuration(rawConfig["workermanagersstoptimeout"])
+	numWorkers, _ := strconv.Atoi(rawConfig["num_workers"])
+	maxWorkerRetries, _ := strconv.Atoi(rawConfig["max_worker_retries"])
+	workerBackoff, _ := time.ParseDuration(rawConfig["worker_backoff"])
+	workerRetryThreshold, _ := strconv.Atoi(rawConfig["worker_retry_threshold"])
+	workerConsideredFailedTimeWindow, _ := time.ParseDuration(rawConfig["worker_considered_failed_time_window"])
+	workerBatchTimeout, _ := time.ParseDuration(rawConfig["worker_batch_timeout"])
+	workerTaskTimeout, _ := time.ParseDuration(rawConfig["worker_task_timeout"])
+	workerManagersStopTimeout, _ := time.ParseDuration(rawConfig["worker_managers_stop_timeout"])
 
-	rebalanceMaxRetries, _ := strconv.Atoi(rawConfig["rebalancemaxretries"])
-	rebalanceBackoff, _ := time.ParseDuration(rawConfig["rebalancebackoff"])
-	partitionAssignmentStrategy, _ := rawConfig["partitionassignmentstrategy"]
-	excludeInternalTopics, _ := strconv.ParseBool(rawConfig["excludeinternaltopics"])
+	rebalanceMaxRetries, _ := strconv.Atoi(rawConfig["rebalance_max_retries"])
+	rebalanceBackoff, _ := time.ParseDuration(rawConfig["rebalance_backoff"])
+	partitionAssignmentStrategy, _ := rawConfig["partition_assignment_strategy"]
+	excludeInternalTopics, _ := strconv.ParseBool(rawConfig["exclude_internal_topics"])
 
-	numConsumerFetchers, _ := strconv.Atoi(rawConfig["numconsumerfetchers"])
-	fetchBatchSize, _ := strconv.Atoi(rawConfig["fetchbatchsize"])
-	fetchMessageMaxBytes, _ := strconv.Atoi(rawConfig["fetchmessagemaxbytes"])
-	fetchMinBytes, _ := strconv.Atoi(rawConfig["fetchminbytes"])
-	fetchBatchTimeout, _ := time.ParseDuration(rawConfig["fetchbatchtimeout"])
-	requeueAskNextBackoff, _ := time.ParseDuration(rawConfig["requeueasknextbackoff"])
-	fetchWaitMaxMs, _ := strconv.Atoi(rawConfig["fetchwaitmaxms"])
-	socketTimeout, _ := time.ParseDuration(rawConfig["sockettimeout"])
-	queuedMaxMessages, _ := strconv.Atoi(rawConfig["queuedmaxmessages"])
-	refreshLeaderBackoff, _ := time.ParseDuration(rawConfig["refreshleaderbackoff"])
-	stepsAhead, _ := strconv.Atoi(rawConfig["stepsahead"])
+	numConsumerFetchers, _ := strconv.Atoi(rawConfig["num_consumer_fetchers"])
+	fetchBatchSize, _ := strconv.Atoi(rawConfig["fetch_batch_size"])
+	fetchMessageMaxBytes, _ := strconv.Atoi(rawConfig["fetch_message_max_bytes"])
+	fetchMinBytes, _ := strconv.Atoi(rawConfig["fetch_min_bytes"])
+	fetchBatchTimeout, _ := time.ParseDuration(rawConfig["fetch_batch_timeout"])
+	requeueAskNextBackoff, _ := time.ParseDuration(rawConfig["requeue_ask_next_backoff"])
+	fetchWaitMaxMs, _ := strconv.Atoi(rawConfig["fetch_wait_max_ms"])
+	socketTimeout, _ := time.ParseDuration(rawConfig["socket_timeout"])
+	queuedMaxMessages, _ := strconv.Atoi(rawConfig["queued_max_messages"])
+	refreshLeaderBackoff, _ := time.ParseDuration(rawConfig["refresh_leader_backoff"])
+	stepsAhead, _ := strconv.Atoi(rawConfig["steps_ahead"])
 
-	offsetsCommitMaxRetries, _ := strconv.Atoi(rawConfig["offsetscommitmaxretries"])
+	offsetsCommitMaxRetries, _ := strconv.Atoi(rawConfig["offsets_commit_max_retries"])
 
-	flushInterval, _ := time.ParseDuration(rawConfig["flushinterval"])
+	flushInterval, _ := time.ParseDuration(rawConfig["flush_interval"])
 	return &kafkaClient.ConsumerConfig{
-		ClientId: rawConfig["clientid"],
-		Groupid: rawConfig["groupid"],
-		ZookeeperConnect: []string{rawConfig["zookeeperconnect"]},
+		ClientId: rawConfig["client_id"],
+		Groupid: rawConfig["group_id"],
+		ZookeeperConnect: []string{rawConfig["zookeeper_connect"]},
 		ZookeeperTimeout: zkTimeout,
 		NumWorkers: numWorkers,
 		MaxWorkerRetries: maxWorkerRetries,
@@ -93,10 +93,10 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 		QueuedMaxMessages: int32(queuedMaxMessages),
 		RefreshLeaderBackoff: refreshLeaderBackoff,
 		StepsAhead: stepsAhead,
-		OffsetsStorage: rawConfig["offsetsstorage"],
-		AutoOffsetReset: rawConfig["autooffsetreset"],
+		OffsetsStorage: rawConfig["offsets_storage"],
+		AutoOffsetReset: rawConfig["auto_offset_reset"],
 		OffsetsCommitMaxRetries: int32(offsetsCommitMaxRetries),
-	}, rawConfig["consumeridpattern"], rawConfig["topic"], numConsumers, rawConfig["graphiteconnect"], flushInterval
+	}, rawConfig["consumer_id_pattern"], rawConfig["topic"], numConsumers, rawConfig["graphite_connect"], flushInterval
 }
 
 func main() {
