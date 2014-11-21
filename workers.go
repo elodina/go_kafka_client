@@ -212,7 +212,6 @@ func NewWorkerManager(id string, config *ConsumerConfig, batchOutputChannel chan
 	for i := 0; i < config.NumWorkers; i++ {
 		workers[i] = &Worker{
 			OutputChannel: make(chan WorkerResult),
-			CloseTimeout: config.WorkerCloseTimeout,
 			TaskTimeout: config.WorkerTaskTimeout,
 		}
 		availableWorkers <- workers[i]
@@ -243,7 +242,6 @@ func NewWorkerManager(id string, config *ConsumerConfig, batchOutputChannel chan
 
 type Worker struct {
 	OutputChannel chan WorkerResult
-	CloseTimeout  time.Duration
 	TaskTimeout   time.Duration
 	Closed        bool
 }

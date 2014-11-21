@@ -108,9 +108,6 @@ type ConsumerConfig struct {
 	/* Callback executed when Worker failed to process the message after MaxWorkerRetries and WorkerRetryThreshold is not hit */
 	WorkerFailedAttemptCallback FailedAttemptCallback
 
-	/* Timeout to close the worker */
-	WorkerCloseTimeout time.Duration
-
 	/* Task timeout */
 	WorkerTaskTimeout time.Duration
 
@@ -134,6 +131,9 @@ type ConsumerConfig struct {
 
 	/* Backoff to requeue ask next if no messages were fetched */
 	RequeueAskNextBackoff time.Duration
+
+	/* Fetch max retries */
+	FetchMaxRetries int
 
 	/* Steps ahead for message fetcher */
 	StepsAhead int
@@ -168,12 +168,12 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.WorkerBackoff = 500 * time.Millisecond
 	config.WorkerBatchTimeout = 5 * time.Minute
 	config.WorkerTaskTimeout = 1 * time.Minute
-	config.WorkerCloseTimeout = 4 * time.Second
 	config.WorkerManagersStopTimeout = 1 * time.Minute
 
 	config.FetchBatchSize = 100
 	config.FetchBatchTimeout = 5 * time.Second
 
+	config.FetchMaxRetries = 5
 	config.RequeueAskNextBackoff = 1 * time.Second
 
 	config.StepsAhead = 3
@@ -208,7 +208,6 @@ WorkerRetryThreshold %d
 WorkerConsideredFailedTimeWindow %v
 WorkerFailureCallback %v
 WorkerFailedAttemptCallback %v
-WorkerCloseTimeout %v
 WorkerTaskTimeout %v
 WorkerBackoff %v
 WorkerBatchTimeout %v
@@ -224,6 +223,6 @@ FetchBatchTimeout %v
    c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.ZookeeperConnect,
    c.ZookeeperTimeout, c.NumWorkers, c.MaxWorkerRetries, c.WorkerRetryThreshold,
    c.WorkerConsideredFailedTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
-   c.WorkerCloseTimeout, c.WorkerTaskTimeout, c.WorkerBackoff, c.WorkerBatchTimeout,
+   c.WorkerTaskTimeout, c.WorkerBackoff, c.WorkerBatchTimeout,
    c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)
 }
