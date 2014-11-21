@@ -529,6 +529,7 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 	Info(f, "Processing partition data")
 
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
+
 	partitionTopicInfo.Accumulator.InputChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
 	Info(f, "Sent partition data")
 }
@@ -600,9 +601,7 @@ func (f *consumerFetcherRoutine) Close() <-chan bool {
 		f.fetchStopper <- true
 		for _, pti := range f.allPartitionMap {
 			Debugf(f, "Stopping %s", pti.Accumulator)
-			if !pti.Accumulator.closed {
-				<-pti.Accumulator.Stop()
-			}
+			pti.Accumulator.Stop()
 			Debugf(f, "Stopped %s", pti.Accumulator)
 		}
 		f.removeAllPartitions()
