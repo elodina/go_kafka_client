@@ -20,17 +20,15 @@ package consumers
 import (
 	"time"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/signal"
 	"net"
 	"strconv"
-	"github.com/stealthly/go-kafka/producer"
 	kafkaClient "github.com/stealthly/go_kafka_client"
 	metrics "github.com/rcrowley/go-metrics"
 )
 
-func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, int) {
+func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, time.Duration) {
 	rawConfig, _ := kafkaClient.LoadConfiguration("consumers.properties")
 	numConsumers, _ := strconv.Atoi(rawConfig["NumConsumers"])
 	zkTimeout, _ := time.ParseDuration(rawConfig["ZookeeperTimeout"])
@@ -63,7 +61,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, int) {
 
 	offsetsCommitMaxRetries, _ := strconv.Atoi(rawConfig["OffsetsCommitMaxRetries"])
 
-	flushInterval, _ := strconv.Atoi(rawConfig["FlushInterval"])
+	flushInterval, _ := time.ParseDuration(rawConfig["FlushInterval"])
 	return &kafkaClient.ConsumerConfig{
 		ClientId: rawConfig["ClientId"],
 		Groupid: rawConfig["GroupId"],
@@ -95,80 +93,55 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, int) {
 		OffsetsStorage: rawConfig["OffsetsStorage"],
 		AutoOffsetReset: rawConfig["AutoOffsetReset"],
 		OffsetsCommitMaxRetries: int32(offsetsCommitMaxRetries),
-	}, rawConfig["ConsumerIdPattern"], numConsumers, rawConfig["GraphiteConnect"], flushInterval
+	}, rawConfig["ConsumerIdPattern"], rawConfig["Topic"], numConsumers, rawConfig["GraphiteConnect"], flushInterval
 }
 
 func main() {
-	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:2003")
+	config, consumerIdPattern, topic, numConsumers, graphiteConnect, graphiteFlushInterval := resolveConfig()
+	startMetrics(graphiteConnect, graphiteFlushInterval)
+
+	ctrlc := make(chan os.Signal, 1)
+	signal.Notify(ctrlc, os.Interrupt)
+
+	consumers := make([]*kafkaClient.Consumer, numConsumers)
+	for i := 0; i < numConsumers; i++ {
+		consumers[i] = startNewConsumer(config, topic, consumerIdPattern, i)
+		time.Sleep(5 * time.Second)
+	}
+
+	<-ctrlc
+	fmt.Println("Shutdown triggered, closing all alive consumers")
+	for _, consumer := range consumers {
+		<-consumer.Close()
+	}
+	fmt.Println("Successfully shut down all consumers")
+}
+
+func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
+	addr, err := net.ResolveTCPAddr("tcp", graphiteConnect)
 	if err != nil {
 		panic(err)
 	}
-
 	go metrics.GraphiteWithConfig(metrics.GraphiteConfig{
 	Addr:          addr,
 	Registry:      metrics.DefaultRegistry,
-	FlushInterval: 10e9,
+	FlushInterval: graphiteFlushInterval,
 	DurationUnit:  time.Second,
 	Prefix:        "metrics",
 	Percentiles:   []float64{0.5, 0.75, 0.95, 0.99, 0.999},
 })
-
-	topic := fmt.Sprintf("go-kafka-topic-%d", time.Now().Unix())
-	numMessage := 0
-
-	kafkaClient.CreateMultiplePartitionsTopic("192.168.86.5:2181", topic, 6)
-	time.Sleep(4 * time.Second)
-
-	p := producer.NewKafkaProducer(topic, []string{"192.168.86.10:9092"}, nil)
-	defer p.Close()
-	go func() {
-		for {
-			if err := p.Send(fmt.Sprintf("message %d!", numMessage)); err != nil {
-				panic(err)
-			}
-			numMessage++
-			sleepTime := time.Duration(rand.Intn(50) + 1) * time.Millisecond
-			time.Sleep(sleepTime)
-		}
-	}()
-
-	ctrlc := make(chan os.Signal, 1)
-	signal.Notify(ctrlc, os.Interrupt)
-	consumer1 := startNewConsumer(topic, 1)
-	time.Sleep(10 * time.Second)
-	consumer2 := startNewConsumer(topic, 2)
-	<-ctrlc
-	fmt.Println("Shutdown triggered, closing all alive consumers")
-	<-consumer1.Close()
-	<-consumer2.Close()
-	fmt.Println("Successfully shut down all consumers")
 }
 
-func startNewConsumer(topic string, consumerIndex int) *kafkaClient.Consumer {
-	consumerId := fmt.Sprintf("consumer%d", consumerIndex)
-	consumer := createConsumer(consumerId)
-	topics := map[string]int {topic : 3}
+func startNewConsumer(config *kafkaClient.ConsumerConfig, topic string, consumerIdPattern string, consumerIndex int) *kafkaClient.Consumer {
+	config.ConsumerId = fmt.Sprintf(consumerIdPattern, consumerIndex)
+	config.Strategy = Strategy
+	config.WorkerFailureCallback = FailedCallback
+	config.WorkerFailedAttemptCallback = FailedAttemptCallback
+	consumer := kafkaClient.NewConsumer(config)
+	topics := map[string]int {topic : config.NumConsumerFetchers}
 	go func() {
 		consumer.StartStatic(topics)
 	}()
-	return consumer
-}
-
-func createConsumer(consumerid string) *kafkaClient.Consumer {
-	config := kafkaClient.DefaultConsumerConfig()
-	config.ZookeeperConnect = []string{"192.168.86.5:2181"}
-	config.ConsumerId = consumerid
-	config.AutoOffsetReset = "smallest"
-	config.FetchBatchSize = 20
-	config.FetchBatchTimeout = 3*time.Second
-	config.WorkerTaskTimeout = 10*time.Second
-	config.Strategy = Strategy
-	config.WorkerRetryThreshold = 100
-	config.WorkerFailureCallback = FailedCallback
-	config.WorkerFailedAttemptCallback = FailedAttemptCallback
-	config.WorkerCloseTimeout = 1*time.Second
-
-	consumer := kafkaClient.NewConsumer(config)
 	return consumer
 }
 
