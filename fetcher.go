@@ -31,7 +31,6 @@ type consumerFetcherManager struct {
 	config *ConsumerConfig
 	zkConn *zk.Conn
 	numStreams              int
-	stopWaitingNextRequests chan bool
 	closeFinished           chan bool
 	partitionMapLock        sync.Mutex
 	fetcherRoutineMapLock   sync.Mutex
@@ -58,7 +57,6 @@ func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, askNext 
 	manager := &consumerFetcherManager{
 		config : config,
 		zkConn : zkConn,
-		stopWaitingNextRequests : make(chan bool),
 		closeFinished : make(chan bool),
 		partitionMap : make(map[TopicAndPartition]*PartitionTopicInfo),
 		fetcherRoutineMap : make(map[BrokerAndFetcherId]*consumerFetcherRoutine),
@@ -123,19 +121,14 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 }
 
 func (m *consumerFetcherManager) WaitForNextRequests() {
-	for {
-		select {
-		case <-m.stopWaitingNextRequests: return
-		case topicPartition := <-m.askNext: {
-			Debug(m, "Got asknext")
-			InReadLock(&m.isReadyLock, func() {
-				if m.isReady {
-					Debugf(m, "Manager ready, asking next for %s", topicPartition)
-					m.askNextFetchers[topicPartition] <- topicPartition
-				}
-			})
-		}
-		}
+	for topicPartition := range m.askNext {
+		Debug(m, "Got asknext")
+		InReadLock(&m.isReadyLock, func() {
+			if m.isReady {
+				Debugf(m, "Manager ready, asking next for %s", topicPartition)
+				m.askNextFetchers[topicPartition] <- topicPartition
+			}
+		})
 	}
 }
 
@@ -345,7 +338,7 @@ func (m *consumerFetcherManager) Close() <-chan bool {
 		Info(m, "Stopping find leader")
 		m.NotReady()
 		m.shuttingDown = true
-		m.stopWaitingNextRequests <- true
+		close(m.askNext)
 		m.leaderCond.Broadcast()
 		m.CloseAllFetchers()
 		m.partitionMap = nil
