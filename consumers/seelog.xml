@@ -1,0 +1,9 @@
+<seelog minlevel="info">
+    <outputs formatid="main">
+        <console />
+    </outputs>
+
+    <formats>
+        <format id="main" format="%Date/%Time [%LEVEL] %Msg%n"/>
+    </formats>
+</seelog>
