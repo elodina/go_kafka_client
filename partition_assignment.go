@@ -208,3 +208,17 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 		InTopicSwitch: inTopicSwitch,
 	}, nil
 }
+
+func NewStaticAssignmentContext(group string, consumerId string, topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *AssignmentContext {
+	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
+
+	return &AssignmentContext{
+		ConsumerId: consumerId,
+		Group: group,
+		MyTopicThreadIds: myTopicThreadIds,
+		MyTopicToNumStreams: topicCount,
+		PartitionsForTopic: topicPartitionMap,
+		ConsumersForTopic: myTopicThreadIds,
+		Consumers: []string{consumerId},
+	}
+}

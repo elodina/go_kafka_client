@@ -108,6 +108,52 @@ func (c *Consumer) StartWildcard(topicFilter TopicFilter, numStreams int) {
 	c.startStreams()
 }
 
+func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
+	topicsToNumStreamsMap := make(map[string]int)
+	for topic := range topicPartitionMap {
+		topicsToNumStreamsMap[topic] = c.config.NumConsumerFetchers
+	}
+
+	topicCount := &StaticTopicsToNumStreams {
+		ConsumerId : c.config.ConsumerId,
+		TopicsToNumStreamsMap : topicsToNumStreamsMap,
+	}
+
+	c.RegisterInZK(topicCount)
+	assignmentContext := NewStaticAssignmentContext(c.config.Groupid, c.config.ConsumerId, topicCount, topicPartitionMap)
+	partitionOwnershipDecision := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
+
+	topicPartitions := make([]*TopicAndPartition, 0)
+	for topicPartition, _ := range partitionOwnershipDecision {
+		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
+	}
+
+	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	if (err != nil) {
+		panic(fmt.Sprintf("Failed to fetch offsets during rebalance: %s", err))
+	}
+	c.ReinitializeAccumulatorsAndChannels(topicCount)
+	for _, topicPartition := range topicPartitions {
+		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+		threadId := partitionOwnershipDecision[*topicPartition]
+		c.addPartitionTopicInfo(c.TopicRegistry, topicPartition, offset, threadId)
+	}
+
+	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
+		c.initializeWorkerManagersAndOffsetsCommitter()
+		go c.updateFetcher(c.config.NumConsumerFetchers)
+	} else {
+		panic("Could not reflect partition ownership")
+	}
+
+	go func() {
+		<-c.unsubscribe
+		c.Unsubscribe()
+	}()
+
+	c.startStreams()
+}
+
 func (c *Consumer) startStreams() {
 	c.batchChannel = make(chan []*Message)
 	stopRedirectingChannels := RedirectChannelsTo(make([]<-chan []*Message, 0), c.batchChannel)
@@ -456,18 +502,22 @@ func (c *Consumer) subscribeForChanges(group string) {
 				}
 			}
 			case <-c.unsubscribe: {
-				Info(c, "Unsubscribing from Zookeeper changes...")
-				c.releasePartitionOwnership(c.TopicRegistry)
-				err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
-				if err != nil {
-					panic(err)
-				}
-				c.unsubscribeFinished <- true
+				c.Unsubscribe()
 				return
 			}
 			}
 		}
 	}()
+}
+
+func (c *Consumer) Unsubscribe() {
+	Info(c, "Unsubscribing from Zookeeper changes...")
+	c.releasePartitionOwnership(c.TopicRegistry)
+	err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
+	if err != nil {
+		panic(err)
+	}
+	c.unsubscribeFinished <- true
 }
 
 func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
