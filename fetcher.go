@@ -90,8 +90,8 @@ func (m *consumerFetcherManager) NotReady() {
 func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo, numStreams int) {
 	Info(m, "Fetcher Manager started")
 	Debugf(m, "TopicInfos = %s", topicInfos)
+	m.NotReady()
 	m.numStreams = numStreams
-	m.Ready()
 
 	InLock(&m.partitionMapLock, func() {
 			newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
@@ -111,10 +111,31 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 					m.noLeaderPartitions = append(m.noLeaderPartitions, topicAndPartition)
 				}
 			}
+
+			//receive obsolete partitions map
+			for k := range newPartitionMap {
+				delete(m.partitionMap, k)
+			}
+			//receive unnecessary partitions list for fetcher cleanup
+			topicPartitionsToRemove := make([]TopicAndPartition, 0)
+			for tp := range m.partitionMap {
+				topicPartitionsToRemove = append(topicPartitionsToRemove, tp)
+				m.partitionMap[tp].Accumulator.MessageBuffers[tp].Stop()
+				delete(m.partitionMap, tp)
+				delete(m.askNextFetchers, tp)
+			}
+			//removing unnecessary partition-fetchRoutine bindings
+			InLock(&m.fetcherRoutineMapLock, func() {
+				for _, fetcher := range m.fetcherRoutineMap {
+					fetcher.removePartitions(topicPartitionsToRemove)
+				}
+			})
+			//updating partitions map with requested partitions
 			for k, v := range newPartitionMap {
 				m.partitionMap[k] = v
 			}
 		})
+	m.Ready()
 
 	Debug(m, "Broadcasting")
 	m.leaderCond.Broadcast()
@@ -126,7 +147,9 @@ func (m *consumerFetcherManager) WaitForNextRequests() {
 		InReadLock(&m.isReadyLock, func() {
 			if m.isReady {
 				Debugf(m, "Manager ready, asking next for %s", topicPartition)
-				m.askNextFetchers[topicPartition] <- topicPartition
+				if nextChannel, exists := m.askNextFetchers[topicPartition]; exists {
+					nextChannel <- topicPartition
+				}
 			}
 		})
 	}
@@ -409,7 +432,20 @@ func (f *consumerFetcherRoutine) Start() {
 					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 
 					if len(f.fetchRequestBlockMap) > 0 {
-						f.manager.fetchDurationTimer.Time(func() { f.processFetchRequest(fetchRequest) })
+						var hasMessages bool
+						f.manager.fetchDurationTimer.Time(func() {
+							hasMessages = f.processFetchRequest(fetchRequest)
+							for i := 0; i < config.FetchMaxRetries && !hasMessages; i++ {
+								time.Sleep(config.RequeueAskNextBackoff)
+								Debug(f, "Asknext received no messages, requeue request")
+								hasMessages = f.processFetchRequest(fetchRequest)
+								Debug(f, "Requeued request")
+							}
+						})
+
+						if !hasMessages {
+							delete(f.partitionMap, nextTopicPartition)
+						}
 					}
 				}
 			})
@@ -513,9 +549,12 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 	Info(f, "Processing partition data")
 
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
-
-	partitionTopicInfo.Accumulator.InputChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
-	Info(f, "Sent partition data")
+	if len(partitionData.MsgSet.Messages) > 0 {
+		partitionTopicInfo.Accumulator.InputChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
+		Info(f, "Sent partition data")
+	} else {
+		Debug(f, "Got empty message. Ignoring...")
+	}
 }
 
 func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, err error, partitionsWithError map[TopicAndPartition]bool) {

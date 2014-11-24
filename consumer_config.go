@@ -129,6 +129,9 @@ type ConsumerConfig struct {
 	/* Timeout to accumulate messages */
 	FetchBatchTimeout time.Duration
 
+	/* Backoff to requeue ask next if no messages were fetched */
+	RequeueAskNextBackoff time.Duration
+
 	/* Fetch max retries */
 	FetchMaxRetries int
 }
@@ -168,6 +171,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchBatchTimeout = 5 * time.Second
 
 	config.FetchMaxRetries = 5
+	config.RequeueAskNextBackoff = 1 * time.Second
 
 	return config
 }

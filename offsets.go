@@ -25,9 +25,11 @@ import (
 type OffsetsCommitter struct {
 	Config *ConsumerConfig
 	WorkerAcks []chan map[TopicAndPartition]int64
+	UpdateWorkerAcks chan []chan map[TopicAndPartition]int64
 	zkConn *zk.Conn
 	close chan bool
 	closed bool
+	started bool
 }
 
 func (oc *OffsetsCommitter) String() string {
@@ -38,12 +40,14 @@ func NewOffsetsCommitter(config *ConsumerConfig, workerAcks []chan map[TopicAndP
 	return &OffsetsCommitter{
 		Config: config,
 		WorkerAcks: workerAcks,
+		UpdateWorkerAcks: make(chan []chan map[TopicAndPartition]int64),
 		zkConn: zkConn,
 		close: make(chan bool),
 	}
 }
 
 func (oc *OffsetsCommitter) Start() {
+	oc.started = true
 	acksChannel := make(chan map[TopicAndPartition]int64)
 	kill := RedirectChannelsTo(oc.WorkerAcks, acksChannel)
 	for {
@@ -52,6 +56,12 @@ func (oc *OffsetsCommitter) Start() {
 			Debugf(oc, "Closing %s", oc)
 			kill <- true
 			return
+		}
+		case newChannels := <-oc.UpdateWorkerAcks: {
+			Debugf(oc, "Updating workerAck channels")
+			kill <-true
+			oc.WorkerAcks = newChannels
+			kill = RedirectChannelsTo(oc.WorkerAcks, acksChannel)
 		}
 		case ack := <-acksChannel: {
 			Debugf(oc, "Committing offsets: %+v", ack)

@@ -174,8 +174,7 @@ func (c *Consumer) startStreams() {
 			Debugf(c, "Got batch of length %d", len(batch))
 			Debug(c, c.workerManagers)
 			topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
-			wm, ok := c.workerManagers[topicPartition]
-			if !ok {
+			if wm, ok := c.workerManagers[topicPartition]; !ok {
 				panic(fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition) )
 			} else {
 				wm.InputChannel<-batch
@@ -287,32 +286,64 @@ func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStr
 	}
 	threadAccumulatorPairs := make(map[TopicAndThreadId]*BatchAccumulator)
 	for i := 0; i < len(topicThreadIds); i++ {
-		threadAccumulatorPairs[topicThreadIds[i]] = allAccumulators[i]
+		if _, exists := c.topicThreadIdsAndAccumulators[topicThreadIds[i]]; !exists {
+			threadAccumulatorPairs[topicThreadIds[i]] = allAccumulators[i]
+		} else {
+			threadAccumulatorPairs[topicThreadIds[i]] = c.topicThreadIdsAndAccumulators[topicThreadIds[i]]
+		}
 	}
 
-	for topicThread, accumulator := range threadAccumulatorPairs {
-		c.topicThreadIdsAndAccumulators[topicThread] = accumulator
-	}
+	c.topicThreadIdsAndAccumulators = threadAccumulatorPairs
 }
 
 func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 	workerChannels := make([]chan map[TopicAndPartition]int64, 0)
-	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	Debugf(c, "Initializing worker managers from topic registry: %s", c.TopicRegistry)
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
-			workerChannel := make(chan map[TopicAndPartition]int64)
-			manager := NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, workerChannel, c.wmsIdleTimer,
-										c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
-			c.workerManagers[TopicAndPartition{topic, partition}] = manager
-			go manager.Start()
-			workerChannels = append(workerChannels, workerChannel)
+			topicPartition := TopicAndPartition{topic, partition}
+			workerManager, exists := c.workerManagers[topicPartition]
+			if !exists {
+				workerChannel := make(chan map[TopicAndPartition]int64)
+				workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, workerChannel, c.wmsIdleTimer,
+												c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
+				c.workerManagers[topicPartition] = workerManager
+			}
+			go workerManager.Start()
+			workerChannels = append(workerChannels, workerManager.OutputChannel)
 		}
 	}
-	c.offsetsCommitter = NewOffsetsCommitter(c.config, workerChannels, c.zkConn)
+
+	if c.offsetsCommitter.started {
+		c.offsetsCommitter.UpdateWorkerAcks <- workerChannels
+	} else {
+		go c.offsetsCommitter.Start()
+	}
+	c.removeObsoleteWorkerManagers()
 	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
 
-	go c.offsetsCommitter.Start()
+}
+
+func (c *Consumer) removeObsoleteWorkerManagers() {
+	//safely copy current workerManagers map to temp map
+	obsoleteWms := make(map[TopicAndPartition]*WorkerManager)
+	for tp, wm := range c.workerManagers {
+		obsoleteWms[tp] = wm
+	}
+	//remove all valid partitions from temp map, so only obsolete left after
+	for topic, partitions := range c.TopicRegistry {
+		for partition := range partitions {
+			delete(obsoleteWms, TopicAndPartition{topic, partition})
+		}
+	}
+	//stopping and removing obsolete worker managers from consumer registry
+	for tp := range obsoleteWms {
+		select {
+		case <-c.workerManagers[tp].Stop():
+		case <-time.After(5 * time.Second):
+		}
+		delete(c.workerManagers, tp)
+	}
 }
 
 func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
@@ -356,6 +387,18 @@ func (c *Consumer) Close() <-chan bool {
 		c.closeFinished <- true
 	}()
 	return c.closeFinished
+}
+
+func (c *Consumer) Idle() {
+	c.fetcher.CloseAllFetchers()
+	Debug(c, "About to stop worker managers")
+	if len(c.workerManagers) > 0 {
+		c.stopWorkerManagers()
+		c.offsetsCommitter.Stop()
+	}
+	Debug(c, "Successfully stopped worker managers")
+	Debug(c, c.TopicRegistry)
+	c.releasePartitionOwnership(c.TopicRegistry)
 }
 
 func (c *Consumer) stopWorkerManagers() bool {
@@ -567,66 +610,10 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	}
 	Infof(c, "%v\n", brokers)
 
-	c.fetcher.CloseAllFetchers()
-	Debug(c, "About to stop worker managers")
-	if len(c.workerManagers) > 0 {
-		c.stopWorkerManagers()
-		c.offsetsCommitter.Stop()
-	}
-	Debug(c, "Successfully stopped worker managers")
-	Debug(c, c.TopicRegistry)
-	c.releasePartitionOwnership(c.TopicRegistry)
-
 	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
 		return false
-	}
-	if assignmentContext.State.IsGroupTopicSwitchInProgress {
-		Info(c, "Consumer group is in process of switching to new topics")
-		if !assignmentContext.InTopicSwitch {
-			c.SwitchTopic(assignmentContext.State.DesiredTopicCountMap, assignmentContext.State.DesiredPattern)
-			return true
-		}
-
-		if !assignmentContext.State.IsGroupTopicSwitchInSync {
-			zkGroupInSync, err := IsConsumerGroupInSync(c.zkConn, c.config.Groupid)
-			if err != nil {
-				Error(c, "Failed to get group sync state")
-				return false
-			}
-			if !zkGroupInSync {
-				Infof(c, "Group is not sync yet. Waiting...")
-				return true
-			}
-		} else {
-			err = CreateConsumerGroupSync(c.zkConn, c.config.Groupid)
-			if err != nil {
-				Error(c, "Failed to initialize assignment context")
-				return false
-			}
-		}
-
-		RegisterConsumer(c.zkConn, assignmentContext.Group, assignmentContext.ConsumerId, &ConsumerInfo{
-			Version : int16(1),
-			Subscription : assignmentContext.State.DesiredTopicCountMap,
-			Pattern : assignmentContext.State.DesiredPattern,
-			Timestamp : time.Now().Unix(),
-		})
-		err = NotifyConsumerGroup(c.zkConn, c.config.Groupid, c.config.ConsumerId)
-		if (err != nil) {
-			Errorf(c, "Failed to notify consumer group: %s", err)
-			return false
-		}
-	} else {
-		err = DeleteConsumerGroupSync(c.zkConn, c.config.Groupid)
-		if err != nil {
-			Errorf(c, "Failed to delete consumer group sync: %s", err)
-		}
-		err = PurgeObsoleteConsumerGroupNotifications(c.zkConn, c.config.Groupid)
-		if err != nil {
-			Errorf(c, "Failed to delete obsolete notifications for consumer group: %s", err)
-		}
 	}
 
 	partitionOwnershipDecision := partitionAssignor(assignmentContext)
