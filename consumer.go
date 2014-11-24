@@ -314,9 +314,10 @@ func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
 		}
 	}
 
-	if c.offsetsCommitter.started {
+	if c.offsetsCommitter != nil {
 		c.offsetsCommitter.UpdateWorkerAcks <- workerChannels
 	} else {
+		c.offsetsCommitter = NewOffsetsCommitter(c.config, workerChannels, c.zkConn)
 		go c.offsetsCommitter.Start()
 	}
 	c.removeObsoleteWorkerManagers()
@@ -609,6 +610,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		return false
 	}
 	Infof(c, "%v\n", brokers)
+	c.releasePartitionOwnership(c.TopicRegistry)
 
 	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
 	if err != nil {

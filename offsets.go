@@ -29,7 +29,6 @@ type OffsetsCommitter struct {
 	zkConn *zk.Conn
 	close chan bool
 	closed bool
-	started bool
 }
 
 func (oc *OffsetsCommitter) String() string {
@@ -47,7 +46,6 @@ func NewOffsetsCommitter(config *ConsumerConfig, workerAcks []chan map[TopicAndP
 }
 
 func (oc *OffsetsCommitter) Start() {
-	oc.started = true
 	acksChannel := make(chan map[TopicAndPartition]int64)
 	kill := RedirectChannelsTo(oc.WorkerAcks, acksChannel)
 	for {

@@ -29,7 +29,7 @@ type BatchAccumulator struct {
 	OutputChannel  chan []*Message
 	MessageBuffers map[TopicAndPartition]*MessageBuffer
 	closeFinished  chan bool
-	askNextBatch chan TopicAndPartition
+	askNextBatch   chan TopicAndPartition
 }
 
 func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition) *BatchAccumulator {
@@ -57,21 +57,20 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 	for b := range ba.InputChannel.chunks {
 		fetchResponseBlock := b.Data
 		topicPartition := b.TopicPartition
+		buffer, exists := ba.MessageBuffers[topicPartition]
+		if !exists {
+			ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
+			buffer = ba.MessageBuffers[topicPartition]
+		}
 		if fetchResponseBlock != nil {
 			for _, message := range fetchResponseBlock.MsgSet.Messages {
-				msg := &Message {
+				buffer.Add(&Message {
 					Key : message.Msg.Key,
 					Value : message.Msg.Value,
 					Topic : topicPartition.Topic,
 					Partition : topicPartition.Partition,
 					Offset : message.Offset,
-				}
-				buffer, exists := ba.MessageBuffers[topicPartition]
-				if !exists {
-					ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
-					buffer = ba.MessageBuffers[topicPartition]
-				}
-				buffer.Add(msg)
+				})
 			}
 		}
 		ba.askNextBatch <- topicPartition

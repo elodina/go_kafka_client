@@ -413,7 +413,7 @@ func (f *consumerFetcherRoutine) Start() {
 		select {
 		case nextTopicPartition := <-f.askNext: {
 			f.manager.idleTimer.Update(time.Since(ts))
-			Debug(f, "Received asknext")
+			Debugf(f, "Received asknext for %s", &nextTopicPartition)
 			InReadLock(&f.manager.isReadyLock, func() {
 				if f.manager.isReady {
 					Debug(f, "Next asked")
@@ -515,7 +515,9 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 								newOffset = messages[len(messages)-1].Offset+1
 							}
 							f.partitionMap[topicAndPartition] = newOffset
-							f.processPartitionData(topicAndPartition, currentOffset, data)
+							//TODO not sure if we need to do this in separate routine but the faster we're able to listen to "ask next" the better
+							//TODO this caused deadlocks sometimes when one routine is responsible for more than 1 partition
+							go f.processPartitionData(topicAndPartition, currentOffset, data)
 						}
 						case sarama.OffsetOutOfRange: {
 							newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
