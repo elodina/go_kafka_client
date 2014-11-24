@@ -28,16 +28,14 @@ func TestMessageBuffer(t *testing.T) {
 	config.FetchBatchTimeout = 3*time.Second
 
 	out := make(chan []*Message)
-	askNext := make(chan TopicAndPartition)
 	topicPartition := &TopicAndPartition{"fakeTopic", 0}
-	buffer := NewMessageBuffer(topicPartition, out, config, askNext)
+	buffer := NewMessageBuffer(topicPartition, out, config)
 
 	ReceiveNoMessages(t, 4*time.Second, out)
 
 	buffer.Add(&Message{})
 
 	ReceiveN(t, 1, 4*time.Second, out)
-	expectAskNext(t, 1*time.Second, askNext)
 
 	go func() {
 		for i := 0; i < config.FetchBatchSize; i++ {
@@ -46,12 +44,4 @@ func TestMessageBuffer(t *testing.T) {
 	}()
 
 	ReceiveN(t, config.FetchBatchSize, 4*time.Second, out)
-	expectAskNext(t, 1*time.Second, askNext)
-}
-
-func expectAskNext(t *testing.T, duration time.Duration, askNext chan TopicAndPartition) {
-	select {
-	case <-askNext:
-	case <-time.After(duration): t.Error("Batch accumulator did not send a 'ask next' request")
-	}
 }

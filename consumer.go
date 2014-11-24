@@ -171,7 +171,7 @@ func (c *Consumer) startStreams() {
 			stopRedirectingChannels = RedirectChannelsTo(newAllStreams, c.batchChannel)
 		}
 		case batch := <-c.batchChannel: {
-			Debugf(c, "Got batch: %s", batch)
+			Debugf(c, "Got batch of length %d", len(batch))
 			Debug(c, c.workerManagers)
 			topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
 			wm, ok := c.workerManagers[topicPartition]
@@ -181,7 +181,7 @@ func (c *Consumer) startStreams() {
 				wm.InputChannel<-batch
 				c.batchesSentToWorkerManagerCounter.Inc(1)
 			}
-			Debugf(c, "Sent batch for processing: %s", batch)
+			Tracef(c, "Sent batch for processing: %s", batch)
 		}
 		}
 	}

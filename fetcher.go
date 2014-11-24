@@ -409,16 +409,7 @@ func (f *consumerFetcherRoutine) Start() {
 					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
 
 					if len(f.fetchRequestBlockMap) > 0 {
-						var hasMessages bool
-						f.manager.fetchDurationTimer.Time(func() { hasMessages = f.processFetchRequest(fetchRequest) })
-						if !hasMessages {
-							time.Sleep(config.RequeueAskNextBackoff)
-							go func() {
-								Debug(f, "Asknext received no messages, requeue request")
-								f.askNext <- nextTopicPartition
-								Debug(f, "Requeued request")
-							}()
-						}
+						f.manager.fetchDurationTimer.Time(func() { f.processFetchRequest(fetchRequest) })
 					}
 				}
 			})

@@ -129,14 +129,8 @@ type ConsumerConfig struct {
 	/* Timeout to accumulate messages */
 	FetchBatchTimeout time.Duration
 
-	/* Backoff to requeue ask next if no messages were fetched */
-	RequeueAskNextBackoff time.Duration
-
 	/* Fetch max retries */
 	FetchMaxRetries int
-
-	/* Steps ahead for message fetcher */
-	StepsAhead int
 }
 
 func DefaultConsumerConfig() *ConsumerConfig {
@@ -145,7 +139,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.SocketTimeout = 30 * time.Second
 	config.FetchMessageMaxBytes = 1024 * 1024
 	config.NumConsumerFetchers = 1
-	config.QueuedMaxMessages = 2
+	config.QueuedMaxMessages = 3
 	config.RebalanceMaxRetries = 4
 	config.FetchMinBytes = 1
 	config.FetchWaitMaxMs = 100
@@ -174,9 +168,6 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchBatchTimeout = 5 * time.Second
 
 	config.FetchMaxRetries = 5
-	config.RequeueAskNextBackoff = 1 * time.Second
-
-	config.StepsAhead = 3
 
 	return config
 }

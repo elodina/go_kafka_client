@@ -37,7 +37,7 @@ func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndParti
 	ba := &BatchAccumulator {
 		Config : config,
 		InputChannel : blockChannel,
-		OutputChannel : make(chan []*Message, config.StepsAhead),
+		OutputChannel : make(chan []*Message, config.QueuedMaxMessages),
 		MessageBuffers : make(map[TopicAndPartition]*MessageBuffer),
 		closeFinished : make(chan bool),
 		askNextBatch: askNextBatch,
@@ -68,12 +68,13 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 				}
 				buffer, exists := ba.MessageBuffers[topicPartition]
 				if !exists {
-					ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config, ba.askNextBatch)
+					ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
 					buffer = ba.MessageBuffers[topicPartition]
 				}
 				buffer.Add(msg)
 			}
 		}
+		ba.askNextBatch <- topicPartition
 	}
 
 	Debug(ba, "Stopped processing")
@@ -102,10 +103,9 @@ type MessageBuffer struct {
 	MessageLock   sync.Mutex
 	Close         chan bool
 	TopicPartition *TopicAndPartition
-	askNext chan TopicAndPartition
 }
 
-func NewMessageBuffer(topicPartition *TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig, askNext chan TopicAndPartition) *MessageBuffer {
+func NewMessageBuffer(topicPartition *TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig) *MessageBuffer {
 	buffer := &MessageBuffer{
 		OutputChannel : outputChannel,
 		Messages : make([]*Message, 0),
@@ -113,7 +113,6 @@ func NewMessageBuffer(topicPartition *TopicAndPartition, outputChannel chan []*M
 		Timer : time.NewTimer(config.FetchBatchTimeout),
 		Close : make(chan bool),
 		TopicPartition : topicPartition,
-		askNext : askNext,
 	}
 
 	go buffer.Start()
@@ -162,7 +161,6 @@ func (mb *MessageBuffer) Flush() {
 		mb.OutputChannel <- mb.Messages
 		Debug(mb, "Flushed")
 		mb.Messages = make([]*Message, 0)
-		mb.askNext <- *mb.TopicPartition
 	}
 	mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 }

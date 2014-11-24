@@ -33,7 +33,7 @@ type WorkerManager struct {
 	FailedAttemptHook FailedAttemptCallback
 	Workers           []*Worker
 	AvailableWorkers  chan *Worker
-	CurrentBatch map[TaskId]*Task
+	CurrentBatch map[TaskId]*Task //TODO inspect for race conditions
 	InputChannel      chan [] *Message
 	OutputChannel     chan map[TopicAndPartition]int64
 	LargestOffsets map[TopicAndPartition]int64
