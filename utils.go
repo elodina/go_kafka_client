@@ -198,6 +198,10 @@ func RedirectChannelsTo(inputChannels interface{}, outputChannel interface{}) ch
 	return killChannel
 }
 
+func Pipe(from interface {}, to interface {}) chan bool {
+	return RedirectChannelsTo([]interface {} {from}, to)
+}
+
 func RedirectChannelsToWithTimeout(inputChannels interface{}, outputChannel interface{}, timeout time.Duration) (chan bool, <-chan time.Time) {
 	input := reflect.ValueOf(inputChannels)
 	var timeoutInputChannel <-chan time.Time

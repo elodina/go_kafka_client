@@ -43,7 +43,7 @@ type Consumer struct {
 	topicThreadIdsAndAccumulators map[TopicAndThreadId]*BatchAccumulator
 	TopicRegistry map[string]map[int32]*PartitionTopicInfo
 	batchChannel chan []*Message
-	restartStreams chan []chan []*Message
+	reconnectChannels chan bool
 	workerManagers map[TopicAndPartition]*WorkerManager
 	workerManagersLock sync.Mutex
 	askNextBatch           chan TopicAndPartition
@@ -74,7 +74,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		closeFinished : make(chan bool),
 		topicThreadIdsAndAccumulators : make(map[TopicAndThreadId]*BatchAccumulator),
 		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
-		restartStreams: make(chan []chan []*Message),
+		reconnectChannels: make(chan bool),
 		workerManagers: make(map[TopicAndPartition]*WorkerManager),
 		askNextBatch: make(chan TopicAndPartition),
 		stopStreams: make(chan bool),
@@ -155,36 +155,49 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 }
 
 func (c *Consumer) startStreams() {
-	c.batchChannel = make(chan []*Message)
-	stopRedirectingChannels := RedirectChannelsTo(make([]<-chan []*Message, 0), c.batchChannel)
+	stopRedirects := make(map[TopicAndPartition]chan bool)
 	for {
 		Debug(c, "Inside select")
 		select {
 		case <-c.stopStreams: {
 			Debug(c, "Stop streams")
-			stopRedirectingChannels <- true
+			c.disconnectChannels(stopRedirects)
 			return
 		}
-		case newAllStreams := <-c.restartStreams: {
+		case <-c.reconnectChannels: {
 			Debug(c, "Restart streams")
-			stopRedirectingChannels <- true
-			stopRedirectingChannels = RedirectChannelsTo(newAllStreams, c.batchChannel)
+			c.disconnectChannels(stopRedirects)
+			c.connectChannels(stopRedirects)
 		}
-		case batch := <-c.batchChannel: {
-			Debugf(c, "Got batch of length %d", len(batch))
-			topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
-			InLock(&c.workerManagersLock, func(){
-				Debug(c, c.workerManagers)
-				if wm, ok := c.workerManagers[topicPartition]; !ok {
-					Warnf(c, "Failed to get wm for %s", topicPartition)
-				} else {
-					wm.InputChannel<-batch
-					c.batchesSentToWorkerManagerCounter.Inc(1)
+		}
+	}
+}
+
+func (c *Consumer) connectChannels(stopRedirects map[TopicAndPartition]chan bool) {
+	InLock(&c.workerManagersLock, func(){
+		for topic, partitions := range c.TopicRegistry {
+			for partition, info := range partitions {
+				topicPartition := TopicAndPartition{topic, partition}
+				from, exists := info.Accumulator.MessageBuffers[topicPartition]
+				if !exists {
+					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					continue
 				}
-				Tracef(c, "Sent batch for processing: %s", batch)
-			})
+				to, exists := c.workerManagers[topicPartition]
+				if !exists {
+					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					continue
+				}
+				stopRedirects[topicPartition] = Pipe(from.OutputChannel, to.InputChannel)
+			}
 		}
-		}
+	})
+}
+
+func (c *Consumer) disconnectChannels(stopRedirects map[TopicAndPartition]chan bool) {
+	for tp, stopRedirect := range stopRedirects {
+		stopRedirect <- true
+		delete(stopRedirects, tp)
 	}
 }
 
@@ -427,21 +440,19 @@ func (c *Consumer) stopWorkerManagers() bool {
 
 func (c *Consumer) updateFetcher(numStreams int) {
 	Debugf(c, "Updating fetcher with numStreams = %d", numStreams)
-	newAllStreams := make([]chan []*Message, 0)
 	allPartitionInfos := make([]*PartitionTopicInfo, 0)
 	Debugf(c, "Topic Registry = %s", c.TopicRegistry)
 	for _, partitionAndInfo := range c.TopicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
-			newAllStreams = append(newAllStreams, partitionInfo.Accumulator.OutputChannel)
 			allPartitionInfos = append(allPartitionInfos, partitionInfo)
 		}
 	}
 
-	Debug(c, "Restarting streams")
-	c.restartStreams <- newAllStreams
 	Debug(c, "Restarted streams")
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
 	Debug(c, "Updated fetcher")
+	Debug(c, "Restarting streams")
+	c.reconnectChannels <- true
 }
 
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {

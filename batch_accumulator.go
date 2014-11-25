@@ -26,7 +26,6 @@ import (
 type BatchAccumulator struct {
 	Config *ConsumerConfig
 	InputChannel *SharedBlockChannel
-	OutputChannel  chan []*Message
 	MessageBuffers map[TopicAndPartition]*MessageBuffer
 	MessageBuffersLock sync.Mutex
 	closeFinished  chan bool
@@ -38,7 +37,6 @@ func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndParti
 	ba := &BatchAccumulator {
 		Config : config,
 		InputChannel : blockChannel,
-		OutputChannel : make(chan []*Message, config.QueuedMaxMessages),
 		MessageBuffers : make(map[TopicAndPartition]*MessageBuffer),
 		closeFinished : make(chan bool),
 		askNextBatch: askNextBatch,
@@ -68,7 +66,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 			topicPartition := b.TopicPartition
 			buffer, exists := ba.MessageBuffers[topicPartition]
 			if !exists {
-				ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
+				ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, make(chan []*Message, ba.Config.QueuedMaxMessages), ba.Config)
 				buffer = ba.MessageBuffers[topicPartition]
 			}
 			if fetchResponseBlock != nil {
