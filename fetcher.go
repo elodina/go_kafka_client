@@ -87,10 +87,10 @@ func (m *consumerFetcherManager) NotReady() {
 func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo, numStreams int) {
 	Info(m, "Fetcher Manager started")
 	Debugf(m, "TopicInfos = %s", topicInfos)
-	m.NotReady()
 	m.numStreams = numStreams
 
 	InLock(&m.partitionMapLock, func() {
+		InWriteLock(&m.isReadyLock, func(){
 			newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
 			for _, info := range topicInfos {
 				topicAndPartition := TopicAndPartition{info.Topic, info.Partition}
@@ -137,8 +137,9 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 				m.partitionMap[k] = v
 			}
 			Tracef(m, "Applied new partition map %v", m.partitionMap)
+			m.isReady = true
 		})
-	m.Ready()
+	})
 
 	Debug(m, "Broadcasting")
 	m.leaderCond.Broadcast()
