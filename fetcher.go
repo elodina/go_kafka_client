@@ -98,8 +98,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 
 				exists := false
 				for _, noLeader := range m.noLeaderPartitions {
-					_, isAlreadyUp := m.askNextFetchers[topicAndPartition]
-					if topicAndPartition == noLeader || isAlreadyUp {
+					if topicAndPartition == noLeader {
 						exists = true
 						break
 					}
@@ -115,7 +114,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 			for k := range newPartitionMap {
 				delete(m.partitionMap, k)
 			}
-			//receive unnecessary partitions list for fetcher cleanup, stopping obsolete message buffers
+			//receive unnecessary partitions list, stopping obsolete message buffers
 			topicPartitionsToRemove := make([]TopicAndPartition, 0)
 			for tp := range m.partitionMap {
 				topicPartitionsToRemove = append(topicPartitionsToRemove, tp)
@@ -127,9 +126,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 			//removing unnecessary partition-fetchRoutine bindings
 			InLock(&m.fetcherRoutineMapLock, func() {
 				for _, fetcher := range m.fetcherRoutineMap {
-					Tracef(m, "Fetcher %s parition map before obsolete partitions removal", fetcher, fetcher.partitionMap)
-					fetcher.removePartitions(topicPartitionsToRemove)
-					Tracef(m, "Fetcher %s parition map after obsolete partitions removal", fetcher, fetcher.partitionMap)
+					fetcher.removeAllPartitions()
 				}
 			})
 			//updating partitions map with requested partitions
