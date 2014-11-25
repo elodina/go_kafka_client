@@ -335,7 +335,7 @@ func (zc *ZookeeperCoordinator) ensureZkPathsExist(group string) {
 }
 
 func (zc *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<- chan zk.Event, error) {
-	Debug("zk", "Subscribing for events from broker registry")
+	Debug(zc, "Subscribing for events from broker registry")
 	_, _, watcher, err := zc.zkConn.ChildrenW(brokerIdsPath)
 	if (err != nil) {
 		return nil, err
@@ -345,7 +345,7 @@ func (zc *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<- chan zk.Even
 }
 
 func (zc *ZookeeperCoordinator) getConsumersInGroupWatcher(group string) (<- chan zk.Event, error) {
-	Debugf("zk", "Getting consumer watcher for group %s", group)
+	Debugf(zc, "Getting consumer watcher for group %s", group)
 	_, _, watcher, err := zc.zkConn.ChildrenW(newZKGroupDirs(group).ConsumerRegistryDir)
 	if (err != nil) {
 		return nil, err
@@ -355,7 +355,7 @@ func (zc *ZookeeperCoordinator) getConsumersInGroupWatcher(group string) (<- cha
 }
 
 func (zc *ZookeeperCoordinator) getConsumerGroupChangesWatcher(group string) (<- chan zk.Event, error) {
-	Debugf("zk", "Getting watcher for consumer group '%s' changes", group)
+	Debugf(zc, "Getting watcher for consumer group '%s' changes", group)
 	_, _, watcher, err := zc.zkConn.ChildrenW(newZKGroupDirs(group).ConsumerChangesDir)
 	if (err != nil) {
 		return nil, err
@@ -370,7 +370,7 @@ func (zc *ZookeeperCoordinator) getTopicsWatcher() (watcher <- chan zk.Event, er
 }
 
 func (zc *ZookeeperCoordinator) getBrokerInfo(brokerId int32) (*BrokerInfo, error) {
-	Debugf("zk", "Getting info for broker %d", brokerId)
+	Debugf(zc, "Getting info for broker %d", brokerId)
 	pathToBroker := fmt.Sprintf("%s/%d", brokerIdsPath, brokerId)
 	data, _, zkError := zc.zkConn.Get(pathToBroker)
 	if (zkError != nil) {
@@ -384,7 +384,7 @@ func (zc *ZookeeperCoordinator) getBrokerInfo(brokerId int32) (*BrokerInfo, erro
 }
 
 func (zc *ZookeeperCoordinator) getPartitionAssignmentsForTopics(topics []string) (map[string]map[int32][]int32, error) {
-	Debugf("zk", "Trying to get partition assignments for topics %v", topics)
+	Debugf(zc, "Trying to get partition assignments for topics %v", topics)
 	result := make(map[string]map[int32][]int32)
 	for _, topic := range topics {
 		topicInfo, err := zc.getTopicInfo(topic)
@@ -419,12 +419,12 @@ func (zc *ZookeeperCoordinator) getTopicInfo(topic string) (*TopicInfo, error) {
 }
 
 func (zc *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCreate string, data []byte) error {
-	Debugf("zk", "Trying to create path %s in Zookeeper", pathToCreate)
+	Debugf(zc, "Trying to create path %s in Zookeeper", pathToCreate)
 	_, err := zc.zkConn.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 	if (err != nil) {
 		if (zk.ErrNodeExists == err) {
 			if (len(data) > 0) {
-				Debugf("zk", "Trying to update existing node %s", pathToCreate)
+				Debugf(zc, "Trying to update existing node %s", pathToCreate)
 				return zc.updateRecord(pathToCreate, data)
 			} else {
 				return nil
@@ -433,13 +433,13 @@ func (zc *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCreate
 			parent, _ := path.Split(pathToCreate)
 			err = zc.createOrUpdatePathParentMayNotExist(parent[:len(parent)-1], make([]byte, 0))
 			if (err != nil) {
-				Error("zk", err.Error())
+				Error(zc, err.Error())
 				return err
 			} else {
-				Debugf("zk", "Successfully created path %s", parent[:len(parent)-1])
+				Debugf(zc, "Successfully created path %s", parent[:len(parent)-1])
 			}
 
-			Debugf("zk", "Trying again to create path %s in Zookeeper", pathToCreate)
+			Debugf(zc, "Trying again to create path %s in Zookeeper", pathToCreate)
 			_, err = zc.zkConn.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 		}
 	}
@@ -462,7 +462,7 @@ func (zc *ZookeeperCoordinator) deletePartitionOwnership(group string, topic str
 }
 
 func (zc *ZookeeperCoordinator) updateRecord(pathToCreate string, dataToWrite []byte) error {
-	Debugf("zk", "Trying to update path %s", pathToCreate)
+	Debugf(zc, "Trying to update path %s", pathToCreate)
 	_, stat, _ := zc.zkConn.Get(pathToCreate)
 	_, err := zc.zkConn.Set(pathToCreate, dataToWrite, stat.Version)
 

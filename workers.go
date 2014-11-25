@@ -166,6 +166,7 @@ func (wm *WorkerManager) commitBatch() {
 }
 
 func (wm *WorkerManager) commitOffset() {
+	Tracef(wm, "Inside commit offset with largest %d and last %d", wm.LargestOffset, wm.lastCommittedOffset)
 	if wm.LargestOffset <= wm.lastCommittedOffset { return }
 
 	success := false
@@ -274,6 +275,7 @@ func (wm *WorkerManager) stopBatch() {
 }
 
 func (wm *WorkerManager) taskIsDone(result WorkerResult) {
+	Tracef(wm, "Task is done: %d", result.Id().Offset)
 	wm.LargestOffset = int64(math.Max(float64(wm.LargestOffset), float64(result.Id().Offset)))
 	wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
 	wm.activeWorkersCounter.Dec(1)
