@@ -30,9 +30,10 @@ type BatchAccumulator struct {
 	MessageBuffersLock sync.Mutex
 	closeFinished  chan bool
 	askNextBatch   chan TopicAndPartition
+	reconnectChannels chan bool
 }
 
-func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition) *BatchAccumulator {
+func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition, reconnectChannels chan bool) *BatchAccumulator {
 	blockChannel := &SharedBlockChannel{make(chan *TopicPartitionData, config.QueuedMaxMessages), false}
 	ba := &BatchAccumulator {
 		Config : config,
@@ -40,6 +41,7 @@ func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndParti
 		MessageBuffers : make(map[TopicAndPartition]*MessageBuffer),
 		closeFinished : make(chan bool),
 		askNextBatch: askNextBatch,
+		reconnectChannels: reconnectChannels,
 	}
 
 	go ba.processIncomingBlocks()
@@ -68,6 +70,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 			if !exists {
 				ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, make(chan []*Message, ba.Config.QueuedMaxMessages), ba.Config)
 				buffer = ba.MessageBuffers[topicPartition]
+				ba.reconnectChannels <-true
 			}
 			if fetchResponseBlock != nil {
 				for _, message := range fetchResponseBlock.MsgSet.Messages {

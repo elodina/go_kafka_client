@@ -246,14 +246,14 @@ func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStr
 			for _, threadIdSet := range tc.GetConsumerThreadIdsPerTopic() {
 				accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
 				for i := 0; i < len(accumulatorsForThread); i++ {
-					accumulatorsForThread[i] = NewBatchAccumulator(c.config, c.askNextBatch)
+					accumulatorsForThread[i] = NewBatchAccumulator(c.config, c.askNextBatch, c.reconnectChannels)
 				}
 				accumulators = append(accumulators, accumulatorsForThread...)
 			}
 		}
 		case *WildcardTopicsToNumStreams: {
 			for i := 0; i < tc.NumStreams; i++ {
-				accumulators = append(accumulators, NewBatchAccumulator(c.config, c.askNextBatch))
+				accumulators = append(accumulators, NewBatchAccumulator(c.config, c.askNextBatch, c.reconnectChannels))
 			}
 		}
 	}
