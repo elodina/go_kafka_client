@@ -28,8 +28,10 @@ type BatchAccumulator struct {
 	InputChannel *SharedBlockChannel
 	OutputChannel  chan []*Message
 	MessageBuffers map[TopicAndPartition]*MessageBuffer
+	MessageBuffersLock sync.Mutex
 	closeFinished  chan bool
 	askNextBatch   chan TopicAndPartition
+	removeBuffer chan TopicAndPartition
 }
 
 func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition) *BatchAccumulator {
@@ -51,29 +53,38 @@ func (ba *BatchAccumulator) String() string {
 	return fmt.Sprintf("%s-batchAccumulator", ba.Config.ConsumerId)
 }
 
+func (ba *BatchAccumulator) RemoveBuffer(topicPartition TopicAndPartition) {
+	InLock(&ba.MessageBuffersLock, func() {
+		ba.MessageBuffers[topicPartition].Stop()
+		delete(ba.MessageBuffers, topicPartition)
+	})
+}
+
 func (ba *BatchAccumulator) processIncomingBlocks() {
 	Debug(ba, "Started processing blocks")
 
 	for b := range ba.InputChannel.chunks {
-		fetchResponseBlock := b.Data
-		topicPartition := b.TopicPartition
-		buffer, exists := ba.MessageBuffers[topicPartition]
-		if !exists {
-			ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
-			buffer = ba.MessageBuffers[topicPartition]
-		}
-		if fetchResponseBlock != nil {
-			for _, message := range fetchResponseBlock.MsgSet.Messages {
-				buffer.Add(&Message {
-					Key : message.Msg.Key,
-					Value : message.Msg.Value,
-					Topic : topicPartition.Topic,
-					Partition : topicPartition.Partition,
-					Offset : message.Offset,
-				})
+		InLock(&ba.MessageBuffersLock, func() {
+			fetchResponseBlock := b.Data
+			topicPartition := b.TopicPartition
+			buffer, exists := ba.MessageBuffers[topicPartition]
+			if !exists {
+				ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, ba.OutputChannel, ba.Config)
+				buffer = ba.MessageBuffers[topicPartition]
 			}
-		}
-		ba.askNextBatch <- topicPartition
+			if fetchResponseBlock != nil {
+				for _, message := range fetchResponseBlock.MsgSet.Messages {
+					buffer.Add(&Message {
+						Key : message.Msg.Key,
+						Value : message.Msg.Value,
+						Topic : topicPartition.Topic,
+						Partition : topicPartition.Partition,
+						Offset : message.Offset,
+					})
+				}
+			}
+			ba.askNextBatch <- topicPartition
+		})
 	}
 
 	Debug(ba, "Stopped processing")
