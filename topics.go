@@ -18,13 +18,12 @@
 package go_kafka_client
 
 import (
-	"github.com/samuel/go-zookeeper/zk"
 	"fmt"
 	"strings"
 )
 
-func NewTopicsToNumStreams(group string, consumerId string, zkConnection *zk.Conn, excludeInternalTopics bool) (TopicsToNumStreams, error) {
-	consumerInfo, err := GetConsumer(zkConnection, group, consumerId)
+func NewTopicsToNumStreams(group string, consumerId string, coordinator ConsumerCoordinator, excludeInternalTopics bool) (TopicsToNumStreams, error) {
+	consumerInfo, err := coordinator.GetConsumerInfo(consumerId, group)
 	if (err != nil) {
 		return nil, err
 	}
@@ -67,7 +66,7 @@ func NewTopicsToNumStreams(group string, consumerId string, zkConnection *zk.Con
 		}
 
 		return &WildcardTopicsToNumStreams{
-			ZkConnection: zkConnection,
+			Coordinator: coordinator,
 			ConsumerId: consumerId,
 			TopicFilter: filter,
 			NumStreams: numStreams,
@@ -120,9 +119,8 @@ func (tc *StaticTopicsToNumStreams) Pattern() string {
 	return StaticPattern
 }
 
-
 type WildcardTopicsToNumStreams struct {
-	ZkConnection *zk.Conn
+	Coordinator           ConsumerCoordinator
 	ConsumerId            string
 	TopicFilter           TopicFilter
 	NumStreams            int
@@ -131,7 +129,7 @@ type WildcardTopicsToNumStreams struct {
 
 func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
 	topicsToNumStreams := make(map[string]int)
-	topics, err := GetTopics(tc.ZkConnection)
+	topics, err := tc.Coordinator.GetAllTopics()
 	if (err != nil) {
 		panic(err)
 	}

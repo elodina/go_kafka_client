@@ -87,12 +87,6 @@ type ConsumerConfig struct {
 	/** Select a strategy for assigning partitions to consumer streams. Possible values: range, roundrobin */
 	PartitionAssignmentStrategy string
 
-	/* Zookeeper hosts */
-	ZookeeperConnect []string
-
-	/** Zookeeper read timeout */
-	ZookeeperTimeout time.Duration
-
 	/* Amount of workers */
 	NumWorkers int
 
@@ -137,6 +131,9 @@ type ConsumerConfig struct {
 
 	/* Fetch max retries */
 	FetchMaxRetries int
+
+	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
+	Coordinator ConsumerCoordinator
 }
 
 func DefaultConsumerConfig() *ConsumerConfig {
@@ -160,8 +157,6 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.ConsumerId = "consumer1"
 	config.ExcludeInternalTopics = true
 	config.PartitionAssignmentStrategy = "range"/* select between "range", and "roundrobin" */
-	config.ZookeeperConnect = []string{"localhost"}
-	config.ZookeeperTimeout = 1 * time.Second
 
 	config.NumWorkers = 10
 	config.MaxWorkerRetries = 3
@@ -176,6 +171,8 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.FetchMaxRetries = 5
 	config.RequeueAskNextBackoff = 1 * time.Second
+
+	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 
 	return config
 }
@@ -199,8 +196,6 @@ ClientId: %s
 ConsumerId: %s
 ExcludeInternalTopics: %v
 PartitionAssignmentStrategy: %s
-ZookeeperConnect: %s
-ZookeeperTimeout: %d
 NumWorkers: %d
 MaxWorkerRetries: %d
 WorkerRetryThreshold %d
@@ -219,8 +214,8 @@ FetchBatchTimeout %v
    c.RebalanceBackoff, c.RefreshLeaderBackoff,
    c.OffsetsCommitMaxRetries, c.OffsetsStorage,
    c.AutoOffsetReset, c.ClientId, c.ConsumerId,
-   c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.ZookeeperConnect,
-   c.ZookeeperTimeout, c.NumWorkers, c.MaxWorkerRetries, c.WorkerRetryThreshold,
+   c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.NumWorkers,
+   c.MaxWorkerRetries, c.WorkerRetryThreshold,
    c.WorkerConsideredFailedTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
    c.WorkerTaskTimeout, c.WorkerBackoff, c.WorkerBatchTimeout,
    c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)

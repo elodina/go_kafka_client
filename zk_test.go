@@ -26,6 +26,7 @@ import (
 )
 
 var (
+	coordinator *ZookeeperCoordinator = nil
 	zkConnection *zk.Conn   = nil
 	consumerGroup           = "testGroup"
 	consumerIdPattern       = "go-consumer-%d"
@@ -39,13 +40,13 @@ var (
 
 func TestZkAPI(t *testing.T) {
 	WithZookeeper(t, func(zkServer *zk.TestServer) {
-		conn, _, err := zk.Connect([]string{fmt.Sprintf("127.0.0.1:%d", zkServer.Port)}, time.Second*30000)
-		if (err != nil) {
-			t.Fatal(err)
-		}
-		zkConnection = conn
-		testCreatePathParentMayNotExist(t, BrokerIdsPath)
-		testCreatePathParentMayNotExist(t, BrokerTopicsPath)
+		coordinatorConfig := NewZookeeperConfig()
+		coordinatorConfig.ZookeeperConnect = []string{fmt.Sprintf("127.0.0.1:%d", zkServer.Port)}
+		coordinator = NewZookeeperCoordinator(coordinatorConfig)
+		coordinator.Connect()
+		zkConnection = coordinator.zkConn
+		testCreatePathParentMayNotExist(t, brokerIdsPath)
+		testCreatePathParentMayNotExist(t, brokerTopicsPath)
 		testGetBrokerInfo(t)
 		testGetAllBrokersInCluster(t)
 		testRegisterConsumer(t)
@@ -55,7 +56,7 @@ func TestZkAPI(t *testing.T) {
 }
 
 func testCreatePathParentMayNotExist(t * testing.T, pathToCreate string) {
-	err := CreateOrUpdatePathParentMayNotExist(zkConnection, pathToCreate, make([]byte, 0))
+	err := coordinator.createOrUpdatePathParentMayNotExist(pathToCreate, make([]byte, 0))
 	if (err != nil) {
 		t.Fatal(err)
 	}
@@ -72,8 +73,8 @@ func testCreatePathParentMayNotExist(t * testing.T, pathToCreate string) {
 
 func testGetBrokerInfo(t *testing.T) {
 	jsonBroker, _ := json.Marshal(broker)
-	CreateOrUpdatePathParentMayNotExist(zkConnection, fmt.Sprintf("%s/%d", BrokerIdsPath, broker.Id), []byte(jsonBroker))
-	brokerInfo, err := GetBrokerInfo(zkConnection, broker.Id)
+	coordinator.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", brokerIdsPath, broker.Id), []byte(jsonBroker))
+	brokerInfo, err := coordinator.getBrokerInfo(broker.Id)
 	if (err != nil) {
 		t.Error(err)
 	}
@@ -81,7 +82,7 @@ func testGetBrokerInfo(t *testing.T) {
 }
 
 func testGetAllBrokersInCluster(t *testing.T) {
-	brokers, err := GetAllBrokersInCluster(zkConnection)
+	brokers, err := coordinator.GetAllBrokers()
 
 	Assert(t, err, nil)
 	Assert(t, len(brokers), 1)
@@ -97,17 +98,26 @@ func testRegisterConsumer(t *testing.T) {
 		Pattern : WhiteListPattern,
 		Timestamp : time.Now().Unix(),
 	}
-	err := RegisterConsumer(zkConnection, consumerGroup, fmt.Sprintf(consumerIdPattern, 0), consumerInfo)
+
+	topicCount := &WildcardTopicsToNumStreams{
+		Coordinator : coordinator,
+		ConsumerId : fmt.Sprintf(consumerIdPattern, 0),
+		TopicFilter : NewWhiteList("topic1"),
+		NumStreams : 1,
+		ExcludeInternalTopics : true,
+	}
+
+	err := coordinator.RegisterConsumer(fmt.Sprintf(consumerIdPattern, 0), consumerGroup, topicCount)
 	if (err != nil) {
 		t.Error(err)
 	}
-	actualConsumerInfo, err := GetConsumer(zkConnection, consumerGroup, fmt.Sprintf(consumerIdPattern, 0))
+	actualConsumerInfo, err := coordinator.GetConsumerInfo(fmt.Sprintf(consumerIdPattern, 0), consumerGroup)
 
 	Assert(t, *actualConsumerInfo, *consumerInfo)
 }
 
 func testGetConsumersInGroup(t *testing.T) {
-	consumers, err := GetConsumersInGroup(zkConnection, consumerGroup)
+	consumers, err := coordinator.GetConsumersInGroup(consumerGroup)
 	if (err != nil) {
 		t.Error(err)
 	}
@@ -116,8 +126,8 @@ func testGetConsumersInGroup(t *testing.T) {
 
 func testDeregisterConsumer(t *testing.T) {
 	consumerId := fmt.Sprintf(consumerIdPattern, 0)
-	DeregisterConsumer(zkConnection, consumerGroup, consumerId)
-	exists, _, err := zkConnection.Exists(fmt.Sprintf("%s/%s", NewZKGroupDirs(consumerGroup).ConsumerRegistryDir, consumerId))
+	coordinator.DeregisterConsumer(consumerId, consumerGroup)
+	exists, _, err := zkConnection.Exists(fmt.Sprintf("%s/%s", newZKGroupDirs(consumerGroup).ConsumerRegistryDir, consumerId))
 	if (err != nil) {
 		t.Error(err)
 	}

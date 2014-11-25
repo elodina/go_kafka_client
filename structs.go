@@ -172,3 +172,22 @@ type intArray []int32
 func (s intArray) Len() int { return len(s) }
 func (s intArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s intArray) Less(i, j int) bool { return s[i] < s[j] }
+
+type ConsumerCoordinator interface {
+	Connect() error
+	RegisterConsumer(consumerid string, group string, topicCount TopicsToNumStreams) error
+	DeregisterConsumer(consumerid string, group string) error
+	GetConsumerInfo(consumerid string, group string) (*ConsumerInfo, error)
+	GetConsumersPerTopic(group string, excludeInternalTopics bool) (map[string][]ConsumerThreadId, error)
+	GetConsumersInGroup(group string) ([]string, error)
+	GetAllTopics() ([]string, error)
+	GetPartitionsForTopics(topics []string) (map[string][]int32, error)
+	GetAllBrokers() ([]*BrokerInfo, error)
+	GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error)
+	NotifyConsumerGroup(group string, consumerId string) error
+	SubscribeForChanges(group string) (<-chan bool, error)
+	Unsubscribe()
+	ClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error)
+	ReleasePartitionOwnership(group string, topic string, partition int32) error
+	CommitOffset(group string, topicPartition *TopicAndPartition, offset int64) error
+}

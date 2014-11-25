@@ -22,7 +22,7 @@ import (
 	"github.com/stealthly/go_kafka_client"
 	"time"
 	"fmt"
-	"math/rand"
+//	"math/rand"
 	"os"
 	"os/signal"
 	"net"
@@ -58,11 +58,12 @@ func main() {
 				panic(err)
 			}
 			numMessage++
-			sleepTime := time.Duration(rand.Intn(50) + 1) * time.Millisecond
-			time.Sleep(sleepTime)
+//			sleepTime := time.Duration(rand.Intn(100) + 1) * time.Millisecond
+//			time.Sleep(sleepTime)
 		}
 	}()
 
+	time.Sleep(10 * time.Second)
 	ctrlc := make(chan os.Signal, 1)
 	signal.Notify(ctrlc, os.Interrupt)
 	consumer1 := startNewConsumer(topic, 1)
@@ -87,27 +88,27 @@ func startNewConsumer(topic string, consumerIndex int) *go_kafka_client.Consumer
 
 func createConsumer(consumerid string) *go_kafka_client.Consumer {
 	config := go_kafka_client.DefaultConsumerConfig()
-	config.ZookeeperConnect = []string{"192.168.86.5:2181"}
+	coordinatorConfig := go_kafka_client.NewZookeeperConfig()
+	coordinatorConfig.ZookeeperConnect = []string{"192.168.86.5:2181"}
+	coordinator := go_kafka_client.NewZookeeperCoordinator(coordinatorConfig)
+	config.Coordinator = coordinator
 	config.ConsumerId = consumerid
 	config.AutoOffsetReset = "smallest"
-	config.FetchBatchSize = 20
+	config.FetchBatchSize = 2000
 	config.FetchBatchTimeout = 3*time.Second
+	config.FetchMessageMaxBytes = 1024 * 1024 * 4
 	config.WorkerTaskTimeout = 10*time.Second
+	config.NumWorkers = 2
 	config.Strategy = Strategy
 	config.WorkerRetryThreshold = 100
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
-	config.WorkerCloseTimeout = 1*time.Second
 
 	consumer := go_kafka_client.NewConsumer(config)
 	return consumer
 }
 
 func Strategy(worker *go_kafka_client.Worker, msg *go_kafka_client.Message, id go_kafka_client.TaskId) go_kafka_client.WorkerResult {
-	go_kafka_client.Infof("main", "Got a message: %s", string(msg.Value))
-	//	sleepTime := time.Duration(rand.Intn(2) + 1) * time.Second
-	//	time.Sleep(sleepTime)
-
 	return go_kafka_client.NewSuccessfulResult(id)
 }
 

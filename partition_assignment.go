@@ -18,7 +18,6 @@
 package go_kafka_client
 
 import (
-	"github.com/samuel/go-zookeeper/zk"
 	"reflect"
 	"fmt"
 	"math"
@@ -160,24 +159,24 @@ type AssignmentContext struct {
 	State *ConsumerGroupContextState
 }
 
-func NewAssignmentContext(group string, consumerId string, excludeInternalTopics bool, zkConnection *zk.Conn) (*AssignmentContext, error) {
-	topicCount, _ := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
+func NewAssignmentContext(group string, consumerId string, excludeInternalTopics bool, coordinator ConsumerCoordinator) (*AssignmentContext, error) {
+	topicCount, _ := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
 	_, inTopicSwitch := topicCount.(*TopicSwitch)
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 	topics := make([]string, 0)
 	for topic, _ := range myTopicThreadIds {
 		topics = append(topics, topic)
 	}
-	partitionsForTopic, _ := GetPartitionsForTopics(zkConnection, topics)
-	consumersForTopic, _ := GetConsumersPerTopic(zkConnection, group, excludeInternalTopics)
-	consumers, _ := GetConsumersInGroup(zkConnection, group)
+	partitionsForTopic, _ := coordinator.GetPartitionsForTopics(topics)
+	consumersForTopic, _ := coordinator.GetConsumersPerTopic(group, excludeInternalTopics)
+	consumers, _ := coordinator.GetConsumersInGroup(group)
 
 	isGroupTopicSwitchInProgress := false
 	isGroupTopicSwitchInSync := true
 	desiredPattern := ""
 	desiredTopicCountMap := make(map[string]int)
 	for _, consumerId := range consumers {
-		tc, err := NewTopicsToNumStreams(group, consumerId, zkConnection, excludeInternalTopics)
+		tc, err := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
 		topicSwitch, inTopicSwitch := tc.(*TopicSwitch)
 		if (err != nil) {
 			return nil, err

@@ -19,7 +19,6 @@ package go_kafka_client
 
 import (
 	"time"
-	"github.com/samuel/go-zookeeper/zk"
 	"sync"
 	"fmt"
 	"github.com/Shopify/sarama"
@@ -37,7 +36,6 @@ type Consumer struct {
 	unsubscribe    chan bool
 	unsubscribeFinished chan bool
 	closeFinished  chan bool
-	zkConn          *zk.Conn
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
 	topicThreadIdsAndAccumulators map[TopicAndThreadId]*BatchAccumulator
@@ -79,8 +77,8 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		stopStreams: make(chan bool),
 	}
 
-	c.connectToZookeeper()
-	c.fetcher = newConsumerFetcherManager(c.config, c.zkConn, c.askNextBatch)
+	c.config.Coordinator.Connect()
+	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
 
 	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
 	c.batchesSentToWorkerManagerCounter = metrics.NewRegisteredCounter(fmt.Sprintf("BatchesSentToWM-%s", c.String()), metrics.DefaultRegistry)
@@ -118,7 +116,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 		TopicsToNumStreamsMap : topicsToNumStreamsMap,
 	}
 
-	c.RegisterInZK(topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, topicCount)
 	assignmentContext := NewStaticAssignmentContext(c.config.Groupid, c.config.ConsumerId, topicCount, topicPartitionMap)
 	partitionOwnershipDecision := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
@@ -145,11 +143,6 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 		panic("Could not reflect partition ownership")
 	}
 
-	go func() {
-		<-c.unsubscribe
-		c.Unsubscribe()
-	}()
-
 	c.startStreams()
 }
 
@@ -174,7 +167,8 @@ func (c *Consumer) startStreams() {
 			Debug(c, c.workerManagers)
 			topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
 			if wm, ok := c.workerManagers[topicPartition]; !ok {
-				panic(fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition) )
+				Warn(c, fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition))
+//				panic(fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition) )
 			} else {
 				wm.InputChannel<-batch
 				c.batchesSentToWorkerManagerCounter.Inc(1)
@@ -191,12 +185,12 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 		TopicsToNumStreamsMap : topicCountMap,
 	}
 
-	c.RegisterInZK(topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, topicCount)
 	c.ReinitializeConsumer()
 }
 
 func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) {
-	allTopics, err := GetTopics(c.zkConn)
+	allTopics, err := c.config.Coordinator.GetAllTopics()
 	if err != nil {
 		panic(err)
 	}
@@ -207,14 +201,14 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 		}
 	}
 	topicCount := &WildcardTopicsToNumStreams{
-		ZkConnection : c.zkConn,
+		Coordinator : c.config.Coordinator,
 		ConsumerId : c.config.ConsumerId,
 		TopicFilter : topicFilter,
 		NumStreams : numStreams,
 		ExcludeInternalTopics : c.config.ExcludeInternalTopics,
 	}
 
-	c.RegisterInZK(topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, topicCount)
 	c.ReinitializeConsumer()
 
 	//TODO subscriptions?
@@ -222,15 +216,6 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 
 func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) {
 	c.createMessageStreamsByFilterN(topicFilter, c.config.NumConsumerFetchers)
-}
-
-func (c *Consumer) RegisterInZK(topicCount TopicsToNumStreams) {
-	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
-			Version : int16(1),
-			Subscription : topicCount.GetTopicsToNumStreamsMap(),
-			Pattern : topicCount.Pattern(),
-			Timestamp : time.Now().Unix(),
-		})
 }
 
 func (c *Consumer) ReinitializeConsumer() {
@@ -302,7 +287,7 @@ func (c *Consumer) initializeWorkerManagers() {
 			topicPartition := TopicAndPartition{topic, partition}
 			workerManager, exists := c.workerManagers[topicPartition]
 			if !exists {
-				workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.zkConn, c.wmsIdleTimer,
+				workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.wmsIdleTimer,
 												c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
 				c.workerManagers[topicPartition] = workerManager
 			}
@@ -340,19 +325,15 @@ func (c *Consumer) removeObsoleteWorkerManagers() {
 func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 	Infof(c, "Switching to %s with pattern '%s'", topicCountMap, pattern)
 	//TODO: whitelist/blacklist pattern handling
-	staticTopicCount := &TopicSwitch {
+	switchTopicCount := &TopicSwitch {
 		ConsumerId : c.config.ConsumerId,
 		TopicsToNumStreamsMap : topicCountMap,
-		DesiredPattern: pattern,
+		DesiredPattern: fmt.Sprintf("%s%s", SwitchToPatternPrefix, pattern),
 	}
 
-	RegisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId, &ConsumerInfo{
-		Version : int16(1),
-		Subscription : staticTopicCount.GetTopicsToNumStreamsMap(),
-		Pattern : fmt.Sprintf("%s%s", SwitchToPatternPrefix, staticTopicCount.Pattern()),
-		Timestamp : time.Now().Unix(),
-	})
-	err := NotifyConsumerGroup(c.zkConn, c.config.Groupid, c.config.ConsumerId)
+	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, switchTopicCount)
+
+	err := c.config.Coordinator.NotifyConsumerGroup(c.config.Groupid, c.config.ConsumerId)
 	if err != nil {
 		panic(err)
 	}
@@ -362,8 +343,7 @@ func (c *Consumer) Close() <-chan bool {
 	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true
 	go func() {
-		c.unsubscribe <- true
-		<-c.unsubscribeFinished
+		c.Unsubscribe()
 
 		Info(c, "Closing fetcher manager...")
 		<-c.fetcher.Close()
@@ -440,40 +420,8 @@ func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
 	return nil
 }
 
-func (c *Consumer) connectToZookeeper() {
-	Infof(c, "Connecting to ZK at %s\n", c.config.ZookeeperConnect)
-	if conn, _, err := zk.Connect(c.config.ZookeeperConnect, c.config.ZookeeperTimeout); err != nil {
-		panic(err)
-	} else {
-		c.zkConn = conn
-	}
-}
-
-func (c *Consumer)ensureZkPathsExist(group string) {
-	dirs := NewZKGroupDirs(group)
-	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerDir, make([]byte, 0))
-	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerGroupDir, make([]byte, 0))
-	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerRegistryDir, make([]byte, 0))
-	CreateOrUpdatePathParentMayNotExist(c.zkConn, dirs.ConsumerChangesDir, make([]byte, 0))
-}
-
 func (c *Consumer) subscribeForChanges(group string) {
-	c.ensureZkPathsExist(group)
-	Infof(c, "Subscribing for changes for %s", group)
-
-	consumersWatcher, err := GetConsumersInGroupWatcher(c.zkConn, group)
-	if err != nil {
-		panic(err)
-	}
-	consumerGroupChangesWatcher, err := GetConsumerGroupChangesWatcher(c.zkConn, group)
-	if err != nil {
-		panic(err)
-	}
-	topicsWatcher, err := GetTopicsWatcher(c.zkConn)
-	if err != nil {
-		panic(err)
-	}
-	brokersWatcher, err := GetAllBrokersInClusterWatcher(c.zkConn)
+	changes, err := c.config.Coordinator.SubscribeForChanges(group)
 	if err != nil {
 		panic(err)
 	}
@@ -481,84 +429,23 @@ func (c *Consumer) subscribeForChanges(group string) {
 	go func() {
 		for {
 			select {
-			case e := <-topicsWatcher: {
-				Trace(c, e)
-				if e.State == zk.StateDisconnected {
-					Debug(c, "Topic registry watcher session ended, reconnecting...")
-					watcher, err := GetTopicsWatcher(c.zkConn)
-					if err != nil {
-						panic(err)
-					}
-					topicsWatcher = watcher
-				} else {
-					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				case <-changes: {
+					InLock(&c.rebalanceLock, func() { c.rebalance() })
 				}
-			}
-			case e := <-consumersWatcher: {
-				Trace(c, e)
-				if e.State == zk.StateDisconnected {
-					Debug(c, "Consumer registry watcher session ended, reconnecting...")
-					watcher, err := GetConsumersInGroupWatcher(c.zkConn, group)
-					if err != nil {
-						panic(err)
-					}
-					consumersWatcher = watcher
-				} else {
-					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
+				case <-c.unsubscribe: {
+					return
 				}
-			}
-			case e := <-brokersWatcher: {
-				Trace(c, e)
-				if e.State == zk.StateDisconnected {
-					Debug(c, "Broker registry watcher session ended, reconnecting...")
-					watcher, err := GetAllBrokersInClusterWatcher(c.zkConn)
-					if err != nil {
-						panic(err)
-					}
-					brokersWatcher = watcher
-				} else {
-					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
-				}
-			}
-			case e := <-consumerGroupChangesWatcher: {
-				Trace(c, e)
-				if e.State == zk.StateDisconnected {
-					Debug(c, "Consumer changes watcher session ended, reconnecting...")
-					watcher, err := GetConsumerGroupChangesWatcher(c.zkConn, group)
-					if err != nil {
-						panic(err)
-					}
-					consumerGroupChangesWatcher = watcher
-				} else {
-					InLock(&c.rebalanceLock, func() { triggerRebalanceIfNeeded(e, c) })
-				}
-			}
-			case <-c.unsubscribe: {
-				c.Unsubscribe()
-				return
-			}
 			}
 		}
 	}()
 }
 
 func (c *Consumer) Unsubscribe() {
-	Info(c, "Unsubscribing from Zookeeper changes...")
+	c.unsubscribe <- true
+	coordinator := c.config.Coordinator
+	coordinator.Unsubscribe()
 	c.releasePartitionOwnership(c.TopicRegistry)
-	err := DeregisterConsumer(c.zkConn, c.config.Groupid, c.config.ConsumerId)
-	if err != nil {
-		panic(err)
-	}
-	c.unsubscribeFinished <- true
-}
-
-func triggerRebalanceIfNeeded(e zk.Event, c *Consumer) {
-	emptyEvent := zk.Event{}
-	if e != emptyEvent {
-		c.rebalance()
-	} else {
-		time.Sleep(2 * time.Second)
-	}
+	coordinator.DeregisterConsumer(c.config.ConsumerId, c.config.Groupid)
 }
 
 func (c *Consumer) rebalance() {
@@ -585,14 +472,14 @@ func (c *Consumer) rebalance() {
 
 func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	//Don't hurry to delete it, we need it for closing the fetchers
-	topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.ConsumerId, c.zkConn, c.config.ExcludeInternalTopics)
+	topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.ConsumerId, c.config.Coordinator, c.config.ExcludeInternalTopics)
 	if (err != nil) {
 		Errorf(c, "Failed to get topic count map: %s", err)
 		return false
 	}
 	Infof(c, "%v\n", topicPerThreadIdsMap)
 
-	brokers, err := GetAllBrokersInCluster(c.zkConn)
+	brokers, err := c.config.Coordinator.GetAllBrokers()
 	if (err != nil) {
 		Errorf(c, "Failed to get broker list: %s", err)
 		return false
@@ -600,7 +487,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	Infof(c, "%v\n", brokers)
 	c.releasePartitionOwnership(c.TopicRegistry)
 
-	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.zkConn)
+	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
 		return false
@@ -663,7 +550,7 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 		blocks := make(map[string]map[int32]*sarama.OffsetFetchResponseBlock)
 		if (c.config.OffsetsStorage == "zookeeper") {
 			for _, topicPartition := range topicPartitions {
-				offset, err := GetOffsetForTopicPartition(c.zkConn, c.config.Groupid, topicPartition)
+				offset, err := c.config.Coordinator.GetOffsetForTopicPartition(c.config.Groupid, topicPartition)
 				_, exists := blocks[topicPartition.Topic]
 				if (!exists) {
 					blocks[topicPartition.Topic] = make(map[int32]*sarama.OffsetFetchResponseBlock)
@@ -719,7 +606,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	Infof(c, "Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, consumerThreadId := range partitionOwnershipDecision {
-		success, err := ClaimPartitionOwnership(c.zkConn, c.config.Groupid, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
+		success, err := c.config.Coordinator.ClaimPartitionOwnership(c.config.Groupid, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
 		if (err != nil) {
 			panic(err)
 		}
@@ -734,7 +621,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	if (len(partitionOwnershipDecision) > len(successfullyOwnedPartitions)) {
 		Warnf(c, "Consumer %s failed to reflect all partitions %d of %d", c.config.ConsumerId, len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
 		for _, topicPartition := range successfullyOwnedPartitions {
-			DeletePartitionOwnership(c.zkConn, c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
+			c.config.Coordinator.ReleasePartitionOwnership(c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
 		}
 		return false
 	}
@@ -746,13 +633,8 @@ func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[i
 	Info(c, "Releasing partition ownership")
 	for topic, partitionInfos := range localTopicRegistry {
 		for partition, _ := range partitionInfos {
-			err := DeletePartitionOwnership(c.zkConn, c.config.Groupid, topic, partition)
-			if (err != nil) {
-				if err == zk.ErrNoNode {
-					Warn(c, err)
-				} else {
-					panic(err)
-				}
+			if err := c.config.Coordinator.ReleasePartitionOwnership(c.config.Groupid, topic, partition); err != nil {
+				panic(err)
 			}
 		}
 		delete(localTopicRegistry, topic)

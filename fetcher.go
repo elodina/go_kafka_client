@@ -18,7 +18,6 @@
 package go_kafka_client
 
 import (
-	"github.com/samuel/go-zookeeper/zk"
 	"fmt"
 	"time"
 	"sync"
@@ -29,7 +28,6 @@ import (
 
 type consumerFetcherManager struct {
 	config *ConsumerConfig
-	zkConn *zk.Conn
 	numStreams              int
 	closeFinished           chan bool
 	partitionMapLock        sync.Mutex
@@ -53,10 +51,9 @@ func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.ConsumerId)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, zkConn *zk.Conn, askNext chan TopicAndPartition) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPartition) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config : config,
-		zkConn : zkConn,
 		closeFinished : make(chan bool),
 		partitionMap : make(map[TopicAndPartition]*PartitionTopicInfo),
 		fetcherRoutineMap : make(map[BrokerAndFetcherId]*consumerFetcherRoutine),
@@ -171,7 +168,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 				}
 
 				Infof(m, "Partitions without leader %v\n", m.noLeaderPartitions)
-				brokers, err := GetAllBrokersInCluster(m.zkConn)
+				brokers, err := m.config.Coordinator.GetAllBrokers()
 				if err != nil {
 					panic(err)
 				}

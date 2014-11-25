@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"sync"
 	metrics "github.com/rcrowley/go-metrics"
-	"github.com/samuel/go-zookeeper/zk"
 )
 
 type WorkerManager struct {
@@ -45,7 +44,6 @@ type WorkerManager struct {
 	managerStop       chan bool
 	processingStop    chan bool
 	commitStop 		chan bool
-	zkConn *zk.Conn
 
 	activeWorkersCounter metrics.Counter
 	pendingTasksCounter metrics.Counter
@@ -53,7 +51,7 @@ type WorkerManager struct {
 	idleTimer metrics.Timer
 }
 
-func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, zkConn *zk.Conn,
+func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition,
 					wmsIdleTimer metrics.Timer, batchDurationTimer metrics.Timer, activeWorkersCounter metrics.Counter,
 					pendingWMsTasksCounter metrics.Counter) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
@@ -78,7 +76,6 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		CurrentBatch: make(map[TaskId]*Task),
 		TopicPartition: topicPartition,
 		LargestOffset: 0,
-		zkConn: zkConn,
 		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
 		batchProcessed: make(chan bool),
 		managerStop: make(chan bool),
@@ -174,7 +171,7 @@ func (wm *WorkerManager) commitOffset() {
 
 	success := false
 	for i := 0; i < int(wm.Config.OffsetsCommitMaxRetries); i++ {
-		err := CommitOffset(wm.zkConn, wm.Config.Groupid, &wm.TopicPartition, wm.LargestOffset)
+		err := wm.Config.Coordinator.CommitOffset(wm.Config.Groupid, &wm.TopicPartition, wm.LargestOffset)
 		if err == nil {
 			success = true
 			Debugf(wm, "Successfully committed offset %d for %s", wm.LargestOffset, wm.TopicPartition)
