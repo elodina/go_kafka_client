@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"sync"
 	metrics "github.com/rcrowley/go-metrics"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 type WorkerManager struct {
@@ -35,18 +36,59 @@ type WorkerManager struct {
 	AvailableWorkers  chan *Worker
 	CurrentBatch map[TaskId]*Task //TODO inspect for race conditions
 	InputChannel      chan [] *Message
-	OutputChannel     chan map[TopicAndPartition]int64
-	LargestOffsets map[TopicAndPartition]int64
+	TopicPartition TopicAndPartition
+	LargestOffset int64
+	lastCommittedOffset int64
 	FailCounter *FailureCounter
 	batchProcessed    chan bool
 	stopLock          sync.Mutex
 	managerStop       chan bool
 	processingStop    chan bool
+	commitStop 		chan bool
+	zkConn *zk.Conn
 
 	activeWorkersCounter metrics.Counter
 	pendingTasksCounter metrics.Counter
 	batchDurationTimer metrics.Timer
 	idleTimer metrics.Timer
+}
+
+func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, zkConn *zk.Conn,
+					wmsIdleTimer metrics.Timer, batchDurationTimer metrics.Timer, activeWorkersCounter metrics.Counter,
+					pendingWMsTasksCounter metrics.Counter) *WorkerManager {
+	workers := make([]*Worker, config.NumWorkers)
+	availableWorkers := make(chan *Worker, config.NumWorkers)
+	for i := 0; i < config.NumWorkers; i++ {
+		workers[i] = &Worker{
+			OutputChannel: make(chan WorkerResult),
+			TaskTimeout: config.WorkerTaskTimeout,
+		}
+		availableWorkers <- workers[i]
+	}
+
+	return &WorkerManager {
+		Id: id,
+		Config: config,
+		Strategy: config.Strategy,
+		FailureHook: config.WorkerFailureCallback,
+		FailedAttemptHook: config.WorkerFailedAttemptCallback,
+		AvailableWorkers: availableWorkers,
+		Workers: workers,
+		InputChannel: make(chan [] *Message),
+		CurrentBatch: make(map[TaskId]*Task),
+		TopicPartition: topicPartition,
+		LargestOffset: 0,
+		zkConn: zkConn,
+		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
+		batchProcessed: make(chan bool),
+		managerStop: make(chan bool),
+		processingStop: make(chan bool),
+		commitStop: make(chan bool),
+		activeWorkersCounter: activeWorkersCounter,
+		pendingTasksCounter: pendingWMsTasksCounter,
+		batchDurationTimer: batchDurationTimer,
+		idleTimer: wmsIdleTimer,
+	}
 }
 
 func (wm *WorkerManager) String() string {
@@ -55,6 +97,7 @@ func (wm *WorkerManager) String() string {
 
 func (wm *WorkerManager) Start() {
 	go wm.processBatch()
+	go wm.commitBatch()
 	for {
 		startIdle := time.Now()
 		select {
@@ -65,11 +108,32 @@ func (wm *WorkerManager) Start() {
 				wm.startBatch(batch)
 			})
 			Debug(wm, "WorkerManager got batch processed")
-			wm.LargestOffsets = make(map[TopicAndPartition]int64)
 		}
 		case <-wm.managerStop: return
 		}
 	}
+}
+
+func (wm *WorkerManager) Stop() chan bool {
+	finished := make(chan bool)
+	go func() {
+		Debugf(wm, "Trying to stop workerManager")
+		InLock(&wm.stopLock, func() {
+				Debug(wm, "Stopping manager")
+				wm.managerStop <- true
+				Debug(wm, "Stopping processor")
+				wm.processingStop <- true
+				Debug(wm, "Successful manager stop")
+				Debug(wm, "Stopping committer")
+				wm.commitStop <- true
+				Debug(wm, "Successful committer stop")
+				finished <- true
+				Debug(wm, "Leaving manager stop")
+			})
+		Debugf(wm, "Stopped workerManager")
+	}()
+
+	return finished
 }
 
 func (wm *WorkerManager) startBatch(batch []*Message) {
@@ -88,27 +152,44 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			}
 
 			<-wm.batchProcessed
-			wm.OutputChannel <- wm.LargestOffsets
 		})
 }
 
-func (wm *WorkerManager) Stop() chan bool {
-	finished := make(chan bool)
-	go func() {
-		Debugf(wm, "Trying to stop workerManager")
-		InLock(&wm.stopLock, func() {
-			Debug(wm, "Stopping manager")
-			wm.managerStop <- true
-			Debug(wm, "Stopping processor")
-			wm.processingStop <- true
-			Debug(wm, "Successful manager stop")
-			finished <- true
-			Debug(wm, "Leaving manager stop")
-		})
-		Debugf(wm, "Stopped workerManager")
-	}()
+func (wm *WorkerManager) commitBatch() {
+	for {
+		select {
+		case <-wm.commitStop: {
+			wm.commitOffset()
+			return
+		}
+		case <-time.After(wm.Config.OffsetCommitInterval): {
+			wm.commitOffset()
+		}
+		}
+	}
+}
 
-	return finished
+func (wm *WorkerManager) commitOffset() {
+	if wm.LargestOffset <= wm.lastCommittedOffset { return }
+
+	success := false
+	for i := 0; i < int(wm.Config.OffsetsCommitMaxRetries); i++ {
+		err := CommitOffset(wm.zkConn, wm.Config.Groupid, &wm.TopicPartition, wm.LargestOffset)
+		if err == nil {
+			success = true
+			Debugf(wm, "Successfully committed offset %d for %s", wm.LargestOffset, wm.TopicPartition)
+			break
+		} else {
+			Warnf(wm, "Failed to commit offset %d for %s. Retying...", wm.LargestOffset, wm.TopicPartition)
+		}
+	}
+
+	if !success {
+		Errorf(wm, "Failed to commit offset %d for %s after %d retries", wm.LargestOffset, wm.TopicPartition, wm.Config.OffsetsCommitMaxRetries)
+		//TODO: what to do next?
+	} else {
+		wm.lastCommittedOffset = wm.LargestOffset
+	}
 }
 
 func (wm *WorkerManager) IsBatchProcessed() bool {
@@ -197,47 +278,10 @@ func (wm *WorkerManager) stopBatch() {
 }
 
 func (wm *WorkerManager) taskIsDone(result WorkerResult) {
-	key := result.Id().TopicPartition
-	wm.LargestOffsets[key] = int64(math.Max(float64(wm.LargestOffsets[key]), float64(result.Id().Offset)))
+	wm.LargestOffset = int64(math.Max(float64(wm.LargestOffset), float64(result.Id().Offset)))
 	wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
 	wm.activeWorkersCounter.Dec(1)
 	delete(wm.CurrentBatch, result.Id())
-}
-
-func NewWorkerManager(id string, config *ConsumerConfig, batchOutputChannel chan map[TopicAndPartition]int64,
-					  wmsIdleTimer metrics.Timer, batchDurationTimer metrics.Timer, activeWorkersCounter metrics.Counter,
-					  pendingWMsTasksCounter metrics.Counter) *WorkerManager {
-	workers := make([]*Worker, config.NumWorkers)
-	availableWorkers := make(chan *Worker, config.NumWorkers)
-	for i := 0; i < config.NumWorkers; i++ {
-		workers[i] = &Worker{
-			OutputChannel: make(chan WorkerResult),
-			TaskTimeout: config.WorkerTaskTimeout,
-		}
-		availableWorkers <- workers[i]
-	}
-
-	return &WorkerManager {
-		Id: id,
-		Config: config,
-		Strategy: config.Strategy,
-		FailureHook: config.WorkerFailureCallback,
-		FailedAttemptHook: config.WorkerFailedAttemptCallback,
-		AvailableWorkers: availableWorkers,
-		Workers: workers,
-		InputChannel: make(chan [] *Message),
-		OutputChannel: batchOutputChannel,
-		CurrentBatch: make(map[TaskId]*Task),
-		LargestOffsets: make(map[TopicAndPartition]int64),
-		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
-		batchProcessed: make(chan bool),
-		managerStop: make(chan bool),
-		processingStop: make(chan bool),
-		activeWorkersCounter: activeWorkersCounter,
-		pendingTasksCounter: pendingWMsTasksCounter,
-		batchDurationTimer: batchDurationTimer,
-		idleTimer: wmsIdleTimer,
-	}
 }
 
 type Worker struct {

@@ -64,6 +64,9 @@ type ConsumerConfig struct {
 		* it is retried and that retry does not count toward this limit. */
 	OffsetsCommitMaxRetries int32
 
+	/* Offset commit interval */
+	OffsetCommitInterval time.Duration
+
 	/** Specify whether offsets should be committed to "zookeeper" (default) or "kafka" */
 	OffsetsStorage string
 
@@ -149,6 +152,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.RebalanceBackoff = 5 * time.Second
 	config.RefreshLeaderBackoff = 200 * time.Millisecond
 	config.OffsetsCommitMaxRetries = 5
+	config.OffsetCommitInterval = 3 * time.Second
 	config.OffsetsStorage = "zookeeper"
 
 	config.AutoOffsetReset = "largest"

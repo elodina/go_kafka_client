@@ -44,7 +44,6 @@ type Consumer struct {
 	TopicRegistry map[string]map[int32]*PartitionTopicInfo
 	batchChannel chan []*Message
 	restartStreams chan []chan []*Message
-	offsetsCommitter *OffsetsCommitter
 	workerManagers map[TopicAndPartition]*WorkerManager
 	askNextBatch           chan TopicAndPartition
 	stopStreams            chan bool
@@ -140,7 +139,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	}
 
 	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
-		c.initializeWorkerManagersAndOffsetsCommitter()
+		c.initializeWorkerManagers()
 		go c.updateFetcher(c.config.NumConsumerFetchers)
 	} else {
 		panic("Could not reflect partition ownership")
@@ -296,30 +295,21 @@ func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStr
 	c.topicThreadIdsAndAccumulators = threadAccumulatorPairs
 }
 
-func (c *Consumer) initializeWorkerManagersAndOffsetsCommitter() {
-	workerChannels := make([]chan map[TopicAndPartition]int64, 0)
+func (c *Consumer) initializeWorkerManagers() {
 	Debugf(c, "Initializing worker managers from topic registry: %s", c.TopicRegistry)
 	for topic, partitions := range c.TopicRegistry {
 		for partition := range partitions {
 			topicPartition := TopicAndPartition{topic, partition}
 			workerManager, exists := c.workerManagers[topicPartition]
 			if !exists {
-				workerChannel := make(chan map[TopicAndPartition]int64)
-				workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, workerChannel, c.wmsIdleTimer,
+				workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.zkConn, c.wmsIdleTimer,
 												c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
 				c.workerManagers[topicPartition] = workerManager
 			}
 			go workerManager.Start()
-			workerChannels = append(workerChannels, workerManager.OutputChannel)
 		}
 	}
 
-	if c.offsetsCommitter != nil {
-		c.offsetsCommitter.UpdateWorkerAcks <- workerChannels
-	} else {
-		c.offsetsCommitter = NewOffsetsCommitter(c.config, workerChannels, c.zkConn)
-		go c.offsetsCommitter.Start()
-	}
 	c.removeObsoleteWorkerManagers()
 	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
 
@@ -383,7 +373,6 @@ func (c *Consumer) Close() <-chan bool {
 		}
 
 		Info(c, "Stopping offsets committer...")
-		c.offsetsCommitter.Stop()
 		c.stopStreams <- true
 		c.closeFinished <- true
 	}()
@@ -395,7 +384,6 @@ func (c *Consumer) Idle() {
 	Debug(c, "About to stop worker managers")
 	if len(c.workerManagers) > 0 {
 		c.stopWorkerManagers()
-		c.offsetsCommitter.Stop()
 	}
 	Debug(c, "Successfully stopped worker managers")
 	Debug(c, c.TopicRegistry)
@@ -646,7 +634,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 
 	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
 		c.TopicRegistry = currentTopicRegistry
-		c.initializeWorkerManagersAndOffsetsCommitter()
+		c.initializeWorkerManagers()
 		switch topicCount := assignmentContext.MyTopicToNumStreams.(type) {
 			case *StaticTopicsToNumStreams: {
 				var numStreams int
