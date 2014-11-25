@@ -115,6 +115,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 			//receive obsolete partitions map
 			for k := range newPartitionMap {
 				delete(m.partitionMap, k)
+				delete(m.askNextFetchers, k)
 			}
 			//receive unnecessary partitions list for fetcher cleanup
 			topicPartitionsToRemove := make([]TopicAndPartition, 0)
