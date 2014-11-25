@@ -31,7 +31,6 @@ type BatchAccumulator struct {
 	MessageBuffersLock sync.Mutex
 	closeFinished  chan bool
 	askNextBatch   chan TopicAndPartition
-	removeBuffer chan TopicAndPartition
 }
 
 func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition) *BatchAccumulator {

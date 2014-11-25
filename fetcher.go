@@ -113,6 +113,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 				}
 			}
 
+			Tracef(m, "Got new list of partitions to process %v", newPartitionMap)
 			//receive obsolete partitions map
 			for k := range newPartitionMap {
 				delete(m.partitionMap, k)
@@ -124,16 +125,21 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 				m.partitionMap[tp].Accumulator.RemoveBuffer(tp)
 				delete(m.partitionMap, tp)
 			}
+			Tracef(m, "There are obsolete partitions %v", topicPartitionsToRemove)
+
 			//removing unnecessary partition-fetchRoutine bindings
 			InLock(&m.fetcherRoutineMapLock, func() {
 				for _, fetcher := range m.fetcherRoutineMap {
+					Tracef(m, "Fetcher %s parition map before obsolete partitions removal", fetcher, fetcher.partitionMap)
 					fetcher.removePartitions(topicPartitionsToRemove)
+					Tracef(m, "Fetcher %s parition map after obsolete partitions removal", fetcher, fetcher.partitionMap)
 				}
 			})
 			//updating partitions map with requested partitions
 			for k, v := range newPartitionMap {
 				m.partitionMap[k] = v
 			}
+			Tracef(m, "Applied new partition map %v", m.partitionMap)
 		})
 	m.Ready()
 
