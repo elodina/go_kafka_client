@@ -136,9 +136,8 @@ func (wm *WorkerManager) Stop() chan bool {
 func (wm *WorkerManager) startBatch(batch []*Message) {
 	InLock(&wm.stopLock, func() {
 			for _, message := range batch {
-				wm.CurrentBatch[TaskId{ TopicAndPartition{ message.Topic, message.Partition }, message.Offset }] = &Task{
-				Msg: message,
-			}
+				topicPartition := TopicAndPartition{ message.Topic, message.Partition }
+				wm.CurrentBatch[TaskId{ topicPartition, message.Offset }] = &Task{Msg: message,}
 			}
 			wm.pendingTasksCounter.Inc(int64(len(wm.CurrentBatch)))
 			for _, task := range wm.CurrentBatch {

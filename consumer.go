@@ -41,8 +41,9 @@ type Consumer struct {
 	topicThreadIdsAndAccumulators map[TopicAndThreadId]*BatchAccumulator
 	TopicRegistry map[string]map[int32]*PartitionTopicInfo
 	batchChannel chan []*Message
-	restartStreams chan []chan []*Message
+	reconnectChannels chan bool
 	workerManagers map[TopicAndPartition]*WorkerManager
+	workerManagersLock sync.Mutex
 	askNextBatch           chan TopicAndPartition
 	stopStreams            chan bool
 
@@ -71,7 +72,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		closeFinished : make(chan bool),
 		topicThreadIdsAndAccumulators : make(map[TopicAndThreadId]*BatchAccumulator),
 		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
-		restartStreams: make(chan []chan []*Message),
+		reconnectChannels: make(chan bool),
 		workerManagers: make(map[TopicAndPartition]*WorkerManager),
 		askNextBatch: make(chan TopicAndPartition),
 		stopStreams: make(chan bool),
@@ -147,35 +148,49 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 }
 
 func (c *Consumer) startStreams() {
-	c.batchChannel = make(chan []*Message)
-	stopRedirectingChannels := RedirectChannelsTo(make([]<-chan []*Message, 0), c.batchChannel)
+	stopRedirects := make(map[TopicAndPartition]chan bool)
 	for {
 		Debug(c, "Inside select")
 		select {
 		case <-c.stopStreams: {
 			Debug(c, "Stop streams")
-			stopRedirectingChannels <- true
+			c.disconnectChannels(stopRedirects)
 			return
 		}
-		case newAllStreams := <-c.restartStreams: {
+		case <-c.reconnectChannels: {
 			Debug(c, "Restart streams")
-			stopRedirectingChannels <- true
-			stopRedirectingChannels = RedirectChannelsTo(newAllStreams, c.batchChannel)
+			c.disconnectChannels(stopRedirects)
+			c.connectChannels(stopRedirects)
 		}
-		case batch := <-c.batchChannel: {
-			Debugf(c, "Got batch of length %d", len(batch))
-			Debug(c, c.workerManagers)
-			topicPartition := TopicAndPartition{batch[0].Topic, batch[0].Partition}
-			if wm, ok := c.workerManagers[topicPartition]; !ok {
-				Warn(c, fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition))
-//				panic(fmt.Sprintf("%s - Failed to get wm for %s", c, topicPartition) )
-			} else {
-				wm.InputChannel<-batch
-				c.batchesSentToWorkerManagerCounter.Inc(1)
+		}
+	}
+}
+
+func (c *Consumer) connectChannels(stopRedirects map[TopicAndPartition]chan bool) {
+	InLock(&c.workerManagersLock, func(){
+		for topic, partitions := range c.TopicRegistry {
+			for partition, info := range partitions {
+				topicPartition := TopicAndPartition{topic, partition}
+				from, exists := info.Accumulator.MessageBuffers[topicPartition]
+				if !exists {
+					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					continue
+				}
+				to, exists := c.workerManagers[topicPartition]
+				if !exists {
+					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					continue
+				}
+				stopRedirects[topicPartition] = Pipe(from.OutputChannel, to.InputChannel)
 			}
-			Tracef(c, "Sent batch for processing: %s", batch)
 		}
-		}
+	})
+}
+
+func (c *Consumer) disconnectChannels(stopRedirects map[TopicAndPartition]chan bool) {
+	for tp, stopRedirect := range stopRedirects {
+		stopRedirect <- true
+		delete(stopRedirects, tp)
 	}
 }
 
@@ -281,21 +296,22 @@ func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStr
 }
 
 func (c *Consumer) initializeWorkerManagers() {
-	Debugf(c, "Initializing worker managers from topic registry: %s", c.TopicRegistry)
-	for topic, partitions := range c.TopicRegistry {
-		for partition := range partitions {
-			topicPartition := TopicAndPartition{topic, partition}
-			workerManager, exists := c.workerManagers[topicPartition]
-			if !exists {
-				workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.wmsIdleTimer,
-												c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
-				c.workerManagers[topicPartition] = workerManager
+	InLock(&c.workerManagersLock, func(){
+		Debugf(c, "Initializing worker managers from topic registry: %s", c.TopicRegistry)
+		for topic, partitions := range c.TopicRegistry {
+			for partition := range partitions {
+				topicPartition := TopicAndPartition{topic, partition}
+				workerManager, exists := c.workerManagers[topicPartition]
+				if !exists {
+					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.wmsIdleTimer,
+													c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
+					c.workerManagers[topicPartition] = workerManager
+				}
+				go workerManager.Start()
 			}
-			go workerManager.Start()
 		}
-	}
-
-	c.removeObsoleteWorkerManagers()
+		c.removeObsoleteWorkerManagers()
+	})
 	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
 
 }
@@ -371,48 +387,51 @@ func (c *Consumer) Idle() {
 }
 
 func (c *Consumer) stopWorkerManagers() bool {
-	if len(c.workerManagers) > 0 {
-		wmsAreStopped := make(chan bool)
-		wmStopChannels := make([]chan bool, 0)
-		for _, wm := range c.workerManagers {
-			wmStopChannels = append(wmStopChannels, wm.Stop())
+	success := false
+	InLock(&c.workerManagersLock, func(){
+		if len(c.workerManagers) > 0 {
+			wmsAreStopped := make(chan bool)
+			wmStopChannels := make([]chan bool, 0)
+			for _, wm := range c.workerManagers {
+				wmStopChannels = append(wmStopChannels, wm.Stop())
+			}
+			Debugf(c, "Worker channels length: %d", len(wmStopChannels))
+			NotifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
+			select {
+			case <-wmsAreStopped: {
+				Info(c, "All workers have been gracefully stopped")
+				c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
+				success = true
+			}
+			case <-time.After(c.config.WorkerManagersStopTimeout): {
+				Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
+				success = false
+			}
+			}
+		} else {
+			Debug(c, "No worker managers to close")
+			success = true
 		}
-		Debugf(c, "Worker channels length: %d", len(wmStopChannels))
-		NotifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
-		select {
-		case <-wmsAreStopped: {
-			Info(c, "All workers have been gracefully stopped")
-			c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
-			return true
-		}
-		case <-time.After(c.config.WorkerManagersStopTimeout): {
-			Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
-			return false
-		}
-		}
-	} else {
-		Debug(c, "No worker managers to close")
-		return true
-	}
+	})
+
+	return success
 }
 
 func (c *Consumer) updateFetcher(numStreams int) {
 	Debugf(c, "Updating fetcher with numStreams = %d", numStreams)
-	newAllStreams := make([]chan []*Message, 0)
 	allPartitionInfos := make([]*PartitionTopicInfo, 0)
 	Debugf(c, "Topic Registry = %s", c.TopicRegistry)
 	for _, partitionAndInfo := range c.TopicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
-			newAllStreams = append(newAllStreams, partitionInfo.Accumulator.OutputChannel)
 			allPartitionInfos = append(allPartitionInfos, partitionInfo)
 		}
 	}
 
-	Debug(c, "Restarting streams")
-	c.restartStreams <- newAllStreams
 	Debug(c, "Restarted streams")
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
 	Debug(c, "Updated fetcher")
+	Debug(c, "Restarting streams")
+	c.reconnectChannels <- true
 }
 
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {

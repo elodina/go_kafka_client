@@ -98,7 +98,8 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 
 				exists := false
 				for _, noLeader := range m.noLeaderPartitions {
-					if topicAndPartition == noLeader {
+					_, isAlreadyUp := m.askNextFetchers[topicAndPartition]
+					if topicAndPartition == noLeader || isAlreadyUp {
 						exists = true
 						break
 					}
@@ -109,29 +110,33 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 				}
 			}
 
+			Tracef(m, "Got new list of partitions to process %v", newPartitionMap)
 			//receive obsolete partitions map
 			for k := range newPartitionMap {
 				delete(m.partitionMap, k)
-				delete(m.askNextFetchers, k)
 			}
-			//receive unnecessary partitions list for fetcher cleanup
+			//receive unnecessary partitions list for fetcher cleanup, stopping obsolete message buffers
 			topicPartitionsToRemove := make([]TopicAndPartition, 0)
 			for tp := range m.partitionMap {
 				topicPartitionsToRemove = append(topicPartitionsToRemove, tp)
-				m.partitionMap[tp].Accumulator.MessageBuffers[tp].Stop()
+				m.partitionMap[tp].Accumulator.RemoveBuffer(tp)
 				delete(m.partitionMap, tp)
-				delete(m.askNextFetchers, tp)
 			}
+			Tracef(m, "There are obsolete partitions %v", topicPartitionsToRemove)
+
 			//removing unnecessary partition-fetchRoutine bindings
 			InLock(&m.fetcherRoutineMapLock, func() {
 				for _, fetcher := range m.fetcherRoutineMap {
+					Tracef(m, "Fetcher %s parition map before obsolete partitions removal", fetcher, fetcher.partitionMap)
 					fetcher.removePartitions(topicPartitionsToRemove)
+					Tracef(m, "Fetcher %s parition map after obsolete partitions removal", fetcher, fetcher.partitionMap)
 				}
 			})
 			//updating partitions map with requested partitions
 			for k, v := range newPartitionMap {
 				m.partitionMap[k] = v
 			}
+			Tracef(m, "Applied new partition map %v", m.partitionMap)
 		})
 	m.Ready()
 
@@ -147,6 +152,8 @@ func (m *consumerFetcherManager) WaitForNextRequests() {
 				Debugf(m, "Manager ready, asking next for %s", topicPartition)
 				if nextChannel, exists := m.askNextFetchers[topicPartition]; exists {
 					nextChannel <- topicPartition
+				} else {
+					Warnf(m, "Received askNext for wrong partition %s", topicPartition)
 				}
 			}
 		})
