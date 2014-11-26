@@ -86,7 +86,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 				})
 				}
 			}
-			ba.askNextBatch <- topicPartition
+			go func() { ba.askNextBatch <- topicPartition }()
 		}
 		case tp := <-ba.removeBufferChannel: {
 			delete(ba.MessageBuffers, tp)
@@ -110,6 +110,7 @@ func (ba *BatchAccumulator) Stop() {
 	Debug(ba, "Trying to stop BA")
 	if !ba.InputChannel.closed {
 		ba.InputChannel.closed = true
+		ba.stopProcessing <- true
 		<-ba.closeFinished
 	}
 }

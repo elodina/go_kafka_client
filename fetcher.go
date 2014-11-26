@@ -225,22 +225,26 @@ func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*
 	shuffledBrokers := make([]*BrokerInfo, len(brokers))
 	ShuffleArray(&brokers, &shuffledBrokers)
 	for i := 0; i < len(shuffledBrokers); i++ {
-		brokerAddr := fmt.Sprintf("%s:%d", shuffledBrokers[i].Host, shuffledBrokers[i].Port)
-		broker := sarama.NewBroker(brokerAddr)
-		err := broker.Open(NewSaramaBrokerConfig(m.config))
-		if err != nil {
-			Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
-			continue
-		}
-		defer broker.Close()
+		for j := 0; j < m.config.FetchTopicMetadataRetries; j++ {
+			brokerAddr := fmt.Sprintf("%s:%d", shuffledBrokers[i].Host, shuffledBrokers[i].Port)
+			broker := sarama.NewBroker(brokerAddr)
+			err := broker.Open(NewSaramaBrokerConfig(m.config))
+			if err != nil {
+				Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
+				time.Sleep(m.config.FetchTopicMetadataBackoff)
+				continue
+			}
+			defer broker.Close()
 
-		request := sarama.MetadataRequest{Topics: topics}
-		response, err := broker.GetMetadata(clientId, &request)
-		if err != nil {
-			Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
-			continue
+			request := sarama.MetadataRequest{Topics: topics}
+			response, err := broker.GetMetadata(clientId, &request)
+			if err != nil {
+				Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
+				time.Sleep(m.config.FetchTopicMetadataBackoff)
+				continue
+			}
+			return response
 		}
-		return response
 	}
 
 	panic(fmt.Sprintf("fetching topic metadata for topics [%s] from broker [%s] failed", topics, shuffledBrokers))
@@ -425,9 +429,12 @@ func (f *consumerFetcherRoutine) Start() {
 					Debug(f, "Next asked")
 					InLock(&f.partitionMapLock, func() {
 						Debugf(f, "Partition map: %v", f.partitionMap)
-						offset := f.partitionMap[nextTopicPartition]
-						f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
+						if offset, exists := f.partitionMap[nextTopicPartition]; exists {
+							f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
+						}
 					})
+
+					if _, exists := f.partitionMap[nextTopicPartition]; !exists { return }
 
 					config := f.manager.config
 					fetchRequest := new(sarama.FetchRequest)
@@ -622,6 +629,7 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 			for _, topicAndPartition := range partitions {
 				delete(f.partitionMap, topicAndPartition)
 				delete(f.manager.askNextFetchers, topicAndPartition)
+				delete(f.fetchRequestBlockMap, topicAndPartition)
 			}
 		})
 }

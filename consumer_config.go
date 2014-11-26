@@ -132,6 +132,12 @@ type ConsumerConfig struct {
 	/* Fetch max retries */
 	FetchMaxRetries int
 
+	/* Maximum retries to fetch metadata from one broker */
+	FetchTopicMetadataRetries int
+
+	/* Backoff for fetch topic metadata request */
+	FetchTopicMetadataBackoff time.Duration
+
 	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
 	Coordinator ConsumerCoordinator
 }
@@ -171,6 +177,8 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.FetchMaxRetries = 5
 	config.RequeueAskNextBackoff = 1 * time.Second
+	config.FetchTopicMetadataRetries = 3
+	config.FetchTopicMetadataBackoff = 500 * time.Millisecond
 
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 
