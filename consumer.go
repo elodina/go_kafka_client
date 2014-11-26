@@ -159,6 +159,7 @@ func (c *Consumer) startStreams() {
 		}
 		case <-c.reconnectChannels: {
 			Debug(c, "Restart streams")
+			c.disconnectChannels(stopRedirects)
 			c.connectChannels(stopRedirects)
 		}
 		}
@@ -166,23 +167,21 @@ func (c *Consumer) startStreams() {
 }
 
 func (c *Consumer) connectChannels(stopRedirects map[TopicAndPartition]chan bool) {
-	InLock(&c.workerManagersLock, func(){
+	InLock(&c.workerManagersLock, func() {
 		for topic, partitions := range c.TopicRegistry {
 			for partition, info := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
-				if _, exists := stopRedirects[topicPartition]; !exists {
-					from, exists := info.Accumulator.MessageBuffers[topicPartition]
-					if !exists {
-						Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
-						continue
-					}
-					to, exists := c.workerManagers[topicPartition]
-					if !exists {
-						Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
-						continue
-					}
-					stopRedirects[topicPartition] = Pipe(from.OutputChannel, to.InputChannel)
+				from, exists := info.Accumulator.MessageBuffers[topicPartition]
+				if !exists {
+					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					continue
 				}
+				to, exists := c.workerManagers[topicPartition]
+				if !exists {
+					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					continue
+				}
+				stopRedirects[topicPartition] = Pipe(from.OutputChannel, to.InputChannel)
 			}
 		}
 	})

@@ -26,6 +26,7 @@ import (
 	"strconv"
 	kafkaClient "github.com/stealthly/go_kafka_client"
 	metrics "github.com/rcrowley/go-metrics"
+	"github.com/stealthly/go_kafka_client"
 )
 
 func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, time.Duration) {
@@ -60,16 +61,17 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 	socketTimeout, _ := time.ParseDuration(rawConfig["socket_timeout"])
 	queuedMaxMessages, _ := strconv.Atoi(rawConfig["queued_max_messages"])
 	refreshLeaderBackoff, _ := time.ParseDuration(rawConfig["refresh_leader_backoff"])
-	stepsAhead, _ := strconv.Atoi(rawConfig["steps_ahead"])
 
 	offsetsCommitMaxRetries, _ := strconv.Atoi(rawConfig["offsets_commit_max_retries"])
 
 	flushInterval, _ := time.ParseDuration(rawConfig["flush_interval"])
+
+	zkConfig := go_kafka_client.NewZookeeperConfig()
+	zkConfig.ZookeeperConnect = []string{rawConfig["zookeeper_connect"]}
+	zkConfig.ZookeeperTimeout = zkTimeout
 	return &kafkaClient.ConsumerConfig{
 		ClientId: rawConfig["client_id"],
 		Groupid: rawConfig["group_id"],
-		ZookeeperConnect: []string{rawConfig["zookeeper_connect"]},
-		ZookeeperTimeout: zkTimeout,
 		NumWorkers: numWorkers,
 		MaxWorkerRetries: maxWorkerRetries,
 		WorkerBackoff: workerBackoff,
@@ -92,7 +94,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 		SocketTimeout: socketTimeout,
 		QueuedMaxMessages: int32(queuedMaxMessages),
 		RefreshLeaderBackoff: refreshLeaderBackoff,
-		StepsAhead: stepsAhead,
+		Coordinator: go_kafka_client.NewZookeeperCoordinator(zkConfig),
 		OffsetsStorage: rawConfig["offsets_storage"],
 		AutoOffsetReset: rawConfig["auto_offset_reset"],
 		OffsetsCommitMaxRetries: int32(offsetsCommitMaxRetries),

@@ -538,7 +538,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 							Infof(f.manager.config.ConsumerId, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
 						}
 						default: {
-							Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing", topicAndPartition)
+							Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing. Cause: %s", topicAndPartition, data.Err)
 							partitionsWithError[topicAndPartition] = true
 						}
 						}
