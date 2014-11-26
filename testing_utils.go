@@ -170,8 +170,8 @@ func CreateMultiplePartitionsTopic(zk string, topicName string, numPartitions in
 		script := fmt.Sprintf("%s\\bin\\windows\\kafka-topics.bat %s", os.Getenv("KAFKA_PATH"), params)
 		exec.Command("cmd", "/C", script).Output()
 	} else {
-		params := fmt.Sprintf("--zookeeper %s --replica 1 --partition %d --topic %s", zk, numPartitions, topicName)
-		script := fmt.Sprintf("%s/bin/kafka-create-topic.sh %s", os.Getenv("KAFKA_PATH"), params)
+		params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", zk, numPartitions, topicName)
+		script := fmt.Sprintf("%s/bin/kafka-topics.sh %s", os.Getenv("KAFKA_PATH"), params)
 		out, err := exec.Command("sh", "-c", script).Output()
 		if err != nil {
 			panic(err)
