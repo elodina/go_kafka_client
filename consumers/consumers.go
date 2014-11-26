@@ -72,7 +72,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 	zkConfig.ZookeeperConnect = []string{rawConfig["zookeeper_connect"]}
 	zkConfig.ZookeeperTimeout = zkTimeout
 	return &kafkaClient.ConsumerConfig{
-		ClientId: rawConfig["client_id"],
+		Clientid: rawConfig["client_id"],
 		Groupid: rawConfig["group_id"],
 		NumWorkers: numWorkers,
 		MaxWorkerRetries: maxWorkerRetries,
@@ -101,7 +101,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 		Coordinator: go_kafka_client.NewZookeeperCoordinator(zkConfig),
 		OffsetsStorage: rawConfig["offsets_storage"],
 		AutoOffsetReset: rawConfig["auto_offset_reset"],
-		OffsetsCommitMaxRetries: int32(offsetsCommitMaxRetries),
+		OffsetsCommitMaxRetries: offsetsCommitMaxRetries,
 	}, rawConfig["consumer_id_pattern"], rawConfig["topic"], numConsumers, rawConfig["graphite_connect"], flushInterval
 }
 
@@ -142,7 +142,7 @@ func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
 }
 
 func startNewConsumer(config kafkaClient.ConsumerConfig, topic string, consumerIdPattern string, consumerIndex int) *kafkaClient.Consumer {
-	config.ConsumerId = fmt.Sprintf(consumerIdPattern, consumerIndex)
+	config.Consumerid = fmt.Sprintf(consumerIdPattern, consumerIndex)
 	config.Strategy = Strategy
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
