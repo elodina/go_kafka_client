@@ -61,6 +61,8 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 	socketTimeout, _ := time.ParseDuration(rawConfig["socket_timeout"])
 	queuedMaxMessages, _ := strconv.Atoi(rawConfig["queued_max_messages"])
 	refreshLeaderBackoff, _ := time.ParseDuration(rawConfig["refresh_leader_backoff"])
+	fetchMetadataRetries, _ := strconv.Atoi(rawConfig["fetch_metadata_retries"])
+	fetchMetadataBackoff, _ := time.ParseDuration(rawConfig["fetch_metadata_backoff"])
 
 	offsetsCommitMaxRetries, _ := strconv.Atoi(rawConfig["offsets_commit_max_retries"])
 
@@ -89,6 +91,8 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 		FetchMessageMaxBytes: int32(fetchMessageMaxBytes),
 		FetchMinBytes: int32(fetchMinBytes),
 		FetchBatchTimeout: fetchBatchTimeout,
+		FetchTopicMetadataRetries: fetchMetadataRetries,
+		FetchTopicMetadataBackoff: fetchMetadataBackoff,
 		RequeueAskNextBackoff: requeueAskNextBackoff,
 		FetchWaitMaxMs: int32(fetchWaitMaxMs),
 		SocketTimeout: socketTimeout,
