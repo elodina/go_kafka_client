@@ -32,6 +32,7 @@ type BatchAccumulator struct {
 	askNextBatch       chan TopicAndPartition
 	reconnectChannels  chan bool
 	removeBufferChannel chan TopicAndPartition
+	stopProcessing chan bool
 }
 
 func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition, reconnectChannels chan bool) *BatchAccumulator {
@@ -44,6 +45,7 @@ func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndParti
 		askNextBatch: askNextBatch,
 		reconnectChannels: reconnectChannels,
 		removeBufferChannel: make(chan TopicAndPartition),
+		stopProcessing: make(chan bool),
 	}
 
 	go ba.processIncomingBlocks()
@@ -89,6 +91,9 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 		case tp := <-ba.removeBufferChannel: {
 			delete(ba.MessageBuffers, tp)
 		}
+		case <-ba.stopProcessing: {
+			return
+		}
 		}
 	}
 
@@ -105,7 +110,6 @@ func (ba *BatchAccumulator) Stop() {
 	Debug(ba, "Trying to stop BA")
 	if !ba.InputChannel.closed {
 		ba.InputChannel.closed = true
-		close(ba.InputChannel.chunks)
 		<-ba.closeFinished
 	}
 }
