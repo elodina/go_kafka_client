@@ -92,18 +92,17 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 			delete(ba.MessageBuffers, tp)
 		}
 		case <-ba.stopProcessing: {
+			Debug(ba, "Stopped processing")
+			for _, buffer := range ba.MessageBuffers {
+				buffer.Stop()
+			}
+
+			Debug(ba, "Closed batch accumulator")
+			ba.closeFinished <- true
 			return
 		}
 		}
 	}
-
-	Debug(ba, "Stopped processing")
-	for _, buffer := range ba.MessageBuffers {
-		buffer.Stop()
-	}
-
-	Debug(ba, "Closed batch accumulator")
-	ba.closeFinished <- true
 }
 
 func (ba *BatchAccumulator) Stop() {
