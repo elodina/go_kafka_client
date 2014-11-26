@@ -29,6 +29,10 @@ import (
 var InvalidOffset int64 = -1
 
 var SmallestOffset = "smallest"
+var LargestOffset = "largest"
+
+var ZookeeperOffsetStorage = "zookeeper"
+var KafkaOffsetStorage = "kafka"
 
 type Consumer struct {
 	config        *ConsumerConfig
@@ -64,9 +68,11 @@ type Message struct {
 }
 
 func NewConsumer(config *ConsumerConfig) *Consumer {
-	//TODO config validation
+	if err := config.Validate(); err != nil {
+		panic(err)
+	}
 
-	Infof(config.ConsumerId, "Starting new consumer with configuration: %s", config)
+	Infof(config.Consumerid, "Starting new consumer with configuration: %s", config)
 	c := &Consumer{
 		config : config,
 		unsubscribe : make(chan bool),
@@ -94,7 +100,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 }
 
 func (c *Consumer) String() string {
-	return c.config.ConsumerId
+	return c.config.Consumerid
 }
 
 func (c *Consumer) StartStatic(topicCountMap map[string]int) {
@@ -115,12 +121,12 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	}
 
 	topicCount := &StaticTopicsToNumStreams {
-		ConsumerId : c.config.ConsumerId,
+		ConsumerId : c.config.Consumerid,
 		TopicsToNumStreamsMap : topicsToNumStreamsMap,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, topicCount)
-	assignmentContext := NewStaticAssignmentContext(c.config.Groupid, c.config.ConsumerId, topicCount, topicPartitionMap)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	assignmentContext := NewStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, topicCount, topicPartitionMap)
 	partitionOwnershipDecision := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
 	topicPartitions := make([]*TopicAndPartition, 0)
@@ -198,11 +204,11 @@ func (c *Consumer) disconnectChannels(stopRedirects map[TopicAndPartition]chan b
 
 func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 	topicCount := &StaticTopicsToNumStreams {
-		ConsumerId : c.config.ConsumerId,
+		ConsumerId : c.config.Consumerid,
 		TopicsToNumStreamsMap : topicCountMap,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
 	c.ReinitializeConsumer()
 }
 
@@ -219,13 +225,13 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 	topicCount := &WildcardTopicsToNumStreams{
 		Coordinator : c.config.Coordinator,
-		ConsumerId : c.config.ConsumerId,
+		ConsumerId : c.config.Consumerid,
 		TopicFilter : topicFilter,
 		NumStreams : numStreams,
 		ExcludeInternalTopics : c.config.ExcludeInternalTopics,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
 	c.ReinitializeConsumer()
 
 	//TODO subscriptions?
@@ -344,14 +350,14 @@ func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 	Infof(c, "Switching to %s with pattern '%s'", topicCountMap, pattern)
 	//TODO: whitelist/blacklist pattern handling
 	switchTopicCount := &TopicSwitch {
-		ConsumerId : c.config.ConsumerId,
+		ConsumerId : c.config.Consumerid,
 		TopicsToNumStreamsMap : topicCountMap,
 		DesiredPattern: fmt.Sprintf("%s%s", SwitchToPatternPrefix, pattern),
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.ConsumerId, c.config.Groupid, switchTopicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, switchTopicCount)
 
-	err := c.config.Coordinator.NotifyConsumerGroup(c.config.Groupid, c.config.ConsumerId)
+	err := c.config.Coordinator.NotifyConsumerGroup(c.config.Groupid, c.config.Consumerid)
 	if err != nil {
 		panic(err)
 	}
@@ -466,15 +472,15 @@ func (c *Consumer) Unsubscribe() {
 	coordinator := c.config.Coordinator
 	coordinator.Unsubscribe()
 	c.releasePartitionOwnership(c.TopicRegistry)
-	coordinator.DeregisterConsumer(c.config.ConsumerId, c.config.Groupid)
+	coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
 }
 
 func (c *Consumer) rebalance() {
 	partitionAssignor := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	if (!c.isShuttingdown) {
-		Infof(c, "rebalance triggered for %s\n", c.config.ConsumerId)
+		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 		var success = false
-		for i := 0; i < int(c.config.RebalanceMaxRetries); i++ {
+		for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
 			if (tryRebalance(c, partitionAssignor)) {
 				success = true
 				break
@@ -487,13 +493,13 @@ func (c *Consumer) rebalance() {
 			panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
 		}
 	} else {
-		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.ConsumerId)
+		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.Consumerid)
 	}
 }
 
 func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	//Don't hurry to delete it, we need it for closing the fetchers
-	topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.ConsumerId, c.config.Coordinator, c.config.ExcludeInternalTopics)
+	topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.Consumerid, c.config.Coordinator, c.config.ExcludeInternalTopics)
 	if (err != nil) {
 		Errorf(c, "Failed to get topic count map: %s", err)
 		return false
@@ -508,7 +514,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	Infof(c, "%v\n", brokers)
 	c.releasePartitionOwnership(c.TopicRegistry)
 
-	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.ConsumerId, c.config.ExcludeInternalTopics, c.config.Coordinator)
+	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
 		return false
@@ -529,7 +535,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	currentTopicRegistry := make(map[string]map[int32]*PartitionTopicInfo)
 
 	if (c.isShuttingdown) {
-		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.ConsumerId)
+		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.Consumerid)
 		return true
 	} else {
 		c.ReinitializeAccumulatorsAndChannels(assignmentContext.MyTopicToNumStreams)
@@ -617,14 +623,14 @@ func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int
 		Accumulator: accumulator,
 		ConsumedOffset: offset,
 		FetchedOffset: offset,
-		ClientId: c.config.ConsumerId,
+		ClientId: c.config.Consumerid,
 	}
 
 	partTopicInfoMap[topicPartition.Partition] = partTopicInfo
 }
 
 func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]ConsumerThreadId) bool {
-	Infof(c, "Consumer %s is trying to reflect partition ownership decision: %v\n", c.config.ConsumerId, partitionOwnershipDecision)
+	Infof(c, "Consumer is trying to reflect partition ownership decision: %v\n", partitionOwnershipDecision)
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, consumerThreadId := range partitionOwnershipDecision {
 		success, err := c.config.Coordinator.ClaimPartitionOwnership(c.config.Groupid, topicPartition.Topic, topicPartition.Partition, consumerThreadId)
@@ -632,15 +638,15 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 			panic(err)
 		}
 		if (success) {
-			Debugf(c, "Consumer %s, successfully claimed partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
+			Debugf(c, "Consumer successfully claimed partition %d for topic %s", topicPartition.Partition, topicPartition.Topic)
 			successfullyOwnedPartitions = append(successfullyOwnedPartitions, &topicPartition)
 		} else {
-			Warnf(c, "Consumer %s failed to claim partition %d for topic %s", c.config.ConsumerId, topicPartition.Partition, topicPartition.Topic)
+			Warnf(c, "Consumer failed to claim partition %d for topic %s", topicPartition.Partition, topicPartition.Topic)
 		}
 	}
 
 	if (len(partitionOwnershipDecision) > len(successfullyOwnedPartitions)) {
-		Warnf(c, "Consumer %s failed to reflect all partitions %d of %d", c.config.ConsumerId, len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
+		Warnf(c, "Consumer failed to reflect all partitions %d of %d", len(successfullyOwnedPartitions), len(partitionOwnershipDecision))
 		for _, topicPartition := range successfullyOwnedPartitions {
 			c.config.Coordinator.ReleasePartitionOwnership(c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
 		}

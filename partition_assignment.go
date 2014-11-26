@@ -23,6 +23,11 @@ import (
 	"math"
 )
 
+const (
+	RangeStrategy = "range"
+	RoundRobinStrategy = "roundrobin"
+)
+
 type ConsumerGroupContextState struct {
 	IsGroupTopicSwitchInProgress bool
 	IsGroupTopicSwitchInSync bool
@@ -34,10 +39,12 @@ type AssignStrategy func(context *AssignmentContext) map[TopicAndPartition]Consu
 
 func NewPartitionAssignor(strategy string) AssignStrategy {
 	switch strategy {
-	case "roundrobin":
+	case RoundRobinStrategy:
 		return RoundRobinAssignor
-	default:
+	case RangeStrategy:
 		return RangeAssignor
+	default:
+		panic(fmt.Sprintf("Invalid partition assignment strategy: %s", strategy))
 	}
 }
 

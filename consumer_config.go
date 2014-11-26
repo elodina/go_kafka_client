@@ -20,6 +20,7 @@ package go_kafka_client
 import (
 	"time"
 	"fmt"
+	"errors"
 )
 
 type ConsumerConfig struct {
@@ -29,7 +30,7 @@ type ConsumerConfig struct {
 	/** consumer id: generated automatically if not set.
    	 *  Set this explicitly for only testing purpose.
    	 */
-	ConsumerId string
+	Consumerid string
 
 	/** the socket timeout for network requests. Its value should be at least fetch.wait.max.ms. */
 	SocketTimeout time.Duration
@@ -62,7 +63,7 @@ type ConsumerConfig struct {
 		* shut-down. It does not apply to commits from the auto-commit thread. It also does not apply to attempts to query
 		* for the offset coordinator before committing offsets. i.e., if a consumer metadata request fails for any reason,
 		* it is retried and that retry does not count toward this limit. */
-	OffsetsCommitMaxRetries int32
+	OffsetsCommitMaxRetries int
 
 	/* Offset commit interval */
 	OffsetCommitInterval time.Duration
@@ -79,7 +80,7 @@ type ConsumerConfig struct {
 	/**
 	   * Client id is specified by the kafka consumer client, used to distinguish different clients
 	   */
-	ClientId string
+	Clientid string
 
 	/** Whether messages from int32ernal topics (such as offsets) should be exposed to the consumer. */
 	ExcludeInternalTopics bool
@@ -156,13 +157,13 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.RefreshLeaderBackoff = 200 * time.Millisecond
 	config.OffsetsCommitMaxRetries = 5
 	config.OffsetCommitInterval = 3 * time.Second
-	config.OffsetsStorage = "zookeeper"
+	config.OffsetsStorage = ZookeeperOffsetStorage
 
-	config.AutoOffsetReset = "largest"
-	config.ClientId = ""
-	config.ConsumerId = "consumer1"
+	config.AutoOffsetReset = LargestOffset
+	config.Clientid = "go-client"
+	config.Consumerid = "consumer1"
 	config.ExcludeInternalTopics = true
-	config.PartitionAssignmentStrategy = "range"/* select between "range", and "roundrobin" */
+	config.PartitionAssignmentStrategy = RangeStrategy/* select between "range", and "roundrobin" */
 
 	config.NumWorkers = 10
 	config.MaxWorkerRetries = 3
@@ -221,10 +222,90 @@ FetchBatchTimeout %v
    c.FetchMinBytes, c.FetchWaitMaxMs,
    c.RebalanceBackoff, c.RefreshLeaderBackoff,
    c.OffsetsCommitMaxRetries, c.OffsetsStorage,
-   c.AutoOffsetReset, c.ClientId, c.ConsumerId,
+   c.AutoOffsetReset, c.Clientid, c.Consumerid,
    c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.NumWorkers,
    c.MaxWorkerRetries, c.WorkerRetryThreshold,
    c.WorkerConsideredFailedTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
    c.WorkerTaskTimeout, c.WorkerBackoff, c.WorkerBatchTimeout,
    c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)
+}
+
+func (c *ConsumerConfig) Validate() error {
+	if c.Groupid == "" {
+		return errors.New("Groupid cannot be empty")
+	}
+
+	if c.Consumerid == "" {
+		return errors.New("Consumerid cannot be empty")
+	}
+
+	if c.NumConsumerFetchers <= 0 {
+		return errors.New("NumConsumerFetchers should be at least 1")
+	}
+
+	if c.QueuedMaxMessages < 0 {
+		return errors.New("QueuedMaxMessages cannot be less than 0")
+	}
+
+	if c.RebalanceMaxRetries < 0 {
+		return errors.New("RebalanceMaxRetries cannot be less than 0")
+	}
+
+	if c.OffsetsCommitMaxRetries < 0 {
+		return errors.New("OffsetsCommitMaxRetries cannot be less than 0")
+	}
+
+	if c.OffsetsStorage != ZookeeperOffsetStorage && c.OffsetsStorage != KafkaOffsetStorage {
+		return errors.New(fmt.Sprintf("OffsetsStorage must be either \"%s\" or \"%s\"", ZookeeperOffsetStorage, KafkaOffsetStorage))
+	}
+
+	if c.AutoOffsetReset != SmallestOffset && c.AutoOffsetReset != LargestOffset {
+		return errors.New(fmt.Sprintf("AutoOffsetReset must be either \"%s\" or \"%s\"", SmallestOffset, LargestOffset))
+	}
+
+	if c.Clientid == "" {
+		return errors.New("Clientid cannot be empty")
+	}
+
+	if c.PartitionAssignmentStrategy != RangeStrategy && c.PartitionAssignmentStrategy != RoundRobinStrategy {
+		return errors.New(fmt.Sprintf("PartitionAssignmentStrategy must be either \"%s\" or \"%s\"", RangeStrategy, RoundRobinStrategy))
+	}
+
+	if c.NumWorkers <= 0 {
+		return errors.New("NumWorkers should be at least 1")
+	}
+
+	if c.MaxWorkerRetries < 0 {
+		return errors.New("MaxWorkerRetries cannot be less than 0")
+	}
+
+	if c.WorkerFailureCallback == nil {
+		return errors.New("Please provide a WorkerFailureCallback")
+	}
+
+	if c.WorkerFailedAttemptCallback == nil {
+		return errors.New("Please provide a WorkerFailedAttemptCallback")
+	}
+
+	if c.Strategy == nil {
+		return errors.New("Please provide a Strategy")
+	}
+
+	if c.FetchBatchSize <= 0 {
+		return errors.New("FetchBatchSize should be at least 1")
+	}
+
+	if c.FetchMaxRetries < 0 {
+		return errors.New("FetchMaxRetries cannot be less than 0")
+	}
+
+	if c.FetchTopicMetadataRetries < 0 {
+		return errors.New("FetchTopicMetadataRetries cannot be less than 0")
+	}
+
+	if c.Coordinator == nil {
+		return errors.New("Please provide a Coordinator")
+	}
+
+	return nil
 }

@@ -53,7 +53,7 @@ func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndParti
 }
 
 func (ba *BatchAccumulator) String() string {
-	return fmt.Sprintf("%s-batchAccumulator", ba.Config.ConsumerId)
+	return fmt.Sprintf("%s-batchAccumulator", ba.Config.Consumerid)
 }
 
 func (ba *BatchAccumulator) RemoveBuffer(topicPartition TopicAndPartition) {

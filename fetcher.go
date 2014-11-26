@@ -48,7 +48,7 @@ type consumerFetcherManager struct {
 }
 
 func (m *consumerFetcherManager) String() string {
-	return fmt.Sprintf("%s-manager", m.config.ConsumerId)
+	return fmt.Sprintf("%s-manager", m.config.Consumerid)
 }
 
 func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPartition) *consumerFetcherManager {
@@ -180,7 +180,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 				if err != nil {
 					panic(err)
 				}
-				topicsMetadata := m.fetchTopicMetadata(m.distinctTopics(), brokers, m.config.ClientId).Topics
+				topicsMetadata := m.fetchTopicMetadata(m.distinctTopics(), brokers, m.config.Clientid).Topics
 				for _, meta := range topicsMetadata {
 					topic := meta.Name
 					for _, partition := range meta.Partitions {
@@ -225,12 +225,12 @@ func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*
 	shuffledBrokers := make([]*BrokerInfo, len(brokers))
 	ShuffleArray(&brokers, &shuffledBrokers)
 	for i := 0; i < len(shuffledBrokers); i++ {
-		for j := 0; j < m.config.FetchTopicMetadataRetries; j++ {
+		for j := 0; j <= m.config.FetchTopicMetadataRetries; j++ {
 			brokerAddr := fmt.Sprintf("%s:%d", shuffledBrokers[i].Host, shuffledBrokers[i].Port)
 			broker := sarama.NewBroker(brokerAddr)
 			err := broker.Open(NewSaramaBrokerConfig(m.config))
 			if err != nil {
-				Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
+				Infof(m, "Could not fetch topic metadata from broker %s\n", brokerAddr)
 				time.Sleep(m.config.FetchTopicMetadataBackoff)
 				continue
 			}
@@ -239,7 +239,7 @@ func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*
 			request := sarama.MetadataRequest{Topics: topics}
 			response, err := broker.GetMetadata(clientId, &request)
 			if err != nil {
-				Infof(m.config.ConsumerId, "Could not fetch topic metadata from broker %s\n", brokerAddr)
+				Infof(m, "Could not fetch topic metadata from broker %s\n", brokerAddr)
 				time.Sleep(m.config.FetchTopicMetadataBackoff)
 				continue
 			}
@@ -289,7 +289,7 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 			if m.fetcherRoutineMap[brokerAndFetcherId] == nil {
 				Debugf(m, "Starting new fetcher")
 				fetcherRoutine := newConsumerFetcher(m,
-					fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.ConsumerId, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
+					fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.Consumerid, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
 					brokerAndFetcherId.Broker,
 					m.partitionMap)
 				m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
@@ -307,7 +307,7 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 }
 
 func (m *consumerFetcherManager) addPartitionsWithError(partitions []TopicAndPartition) {
-	Info(m.config.ConsumerId, "Adding partitions with error")
+	Info(m, "Adding partitions with error")
 	InLock(&m.partitionMapLock, func() {
 			if m.partitionMap != nil {
 				for _, topicAndPartition := range partitions {
@@ -448,7 +448,7 @@ func (f *consumerFetcherRoutine) Start() {
 						var hasMessages bool
 						f.manager.fetchDurationTimer.Time(func() {
 							hasMessages = f.processFetchRequest(fetchRequest)
-							for i := 0; i < config.FetchMaxRetries && !hasMessages; i++ {
+							for i := 0; i <= config.FetchMaxRetries && !hasMessages; i++ {
 								time.Sleep(config.RequeueAskNextBackoff)
 								Debug(f, "Asknext received no messages, requeue request")
 								hasMessages = f.processFetchRequest(fetchRequest)
@@ -505,7 +505,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 		f.handleFetchError(request, err, partitionsWithError)
 	}
 
-	response, err := saramaBroker.Fetch(f.manager.config.ClientId, request)
+	response, err := saramaBroker.Fetch(f.manager.config.Clientid, request)
 	if err != nil {
 		f.handleFetchError(request, err, partitionsWithError)
 	}
@@ -535,10 +535,10 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 						case sarama.OffsetOutOfRange: {
 							newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
 							f.partitionMap[topicAndPartition] = newOffset
-							Infof(f.manager.config.ConsumerId, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
+							Infof(f, "Current offset %d for partition %s is out of range. Reset offset to %d\n", currentOffset, topicAndPartition, newOffset)
 						}
 						default: {
-							Infof(f.manager.config.ConsumerId, "Error for partition %s. Removing. Cause: %s", topicAndPartition, data.Err)
+							Infof(f, "Error for partition %s. Removing. Cause: %s", topicAndPartition, data.Err)
 							partitionsWithError[topicAndPartition] = true
 						}
 						}
@@ -549,7 +549,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	}
 
 	if len(partitionsWithError) > 0 {
-		Info(f.manager.config.ConsumerId, "Handling partitions with error")
+		Info(f, "Handling partitions with error")
 		partitionsWithErrorSet := make([]TopicAndPartition, 0, len(partitionsWithError))
 		for k := range partitionsWithError {
 			partitionsWithErrorSet = append(partitionsWithErrorSet, k)
@@ -601,7 +601,7 @@ func (f *consumerFetcherRoutine) handlePartitionsWithErrors(partitions []TopicAn
 }
 
 func (f *consumerFetcherRoutine) earliestOrLatestOffset(topicAndPartition *TopicAndPartition, offsetTime sarama.OffsetTime) int64 {
-	client, err := sarama.NewClient(f.manager.config.ClientId, []string{f.brokerAddr}, nil)
+	client, err := sarama.NewClient(f.manager.config.Clientid, []string{f.brokerAddr}, nil)
 	if err != nil {
 		panic(err)
 	}

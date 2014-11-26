@@ -170,7 +170,7 @@ func (wm *WorkerManager) commitOffset() {
 	if wm.LargestOffset <= wm.lastCommittedOffset { return }
 
 	success := false
-	for i := 0; i < int(wm.Config.OffsetsCommitMaxRetries); i++ {
+	for i := 0; i <= wm.Config.OffsetsCommitMaxRetries; i++ {
 		err := wm.Config.Coordinator.CommitOffset(wm.Config.Groupid, &wm.TopicPartition, wm.LargestOffset)
 		if err == nil {
 			success = true
@@ -218,7 +218,7 @@ func (wm *WorkerManager) processBatch() {
 
 				Warnf(wm, "Worker task %s has failed", result.Id())
 				task.Retries++
-				if task.Retries >= wm.Config.MaxWorkerRetries {
+				if task.Retries > wm.Config.MaxWorkerRetries {
 					Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
 
 					var decision FailedDecision
