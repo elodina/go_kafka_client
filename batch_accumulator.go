@@ -86,7 +86,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 				})
 				}
 			}
-			go func() { ba.askNextBatch <- topicPartition }()
+			ba.safeAskNext(topicPartition)
 		}
 		case tp := <-ba.removeBufferChannel: {
 			delete(ba.MessageBuffers, tp)
@@ -103,6 +103,16 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 		}
 		}
 	}
+}
+
+func (ba *BatchAccumulator) safeAskNext(topicPartition TopicAndPartition) {
+	go func() {
+		defer func() {
+			r := recover()
+			Warn(ba, r)
+		}()
+		ba.askNextBatch <- topicPartition
+	}()
 }
 
 func (ba *BatchAccumulator) Stop() {
