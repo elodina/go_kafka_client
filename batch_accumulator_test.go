@@ -44,4 +44,8 @@ func TestMessageBuffer(t *testing.T) {
 	}()
 
 	ReceiveN(t, config.FetchBatchSize, 4*time.Second, out)
+
+	buffer.Add(&Message{})
+	buffer.Stop()
+	ReceiveNoMessages(t, 4*time.Second, out)
 }

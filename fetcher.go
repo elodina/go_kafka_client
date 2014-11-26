@@ -457,7 +457,8 @@ func (f *consumerFetcherRoutine) Start() {
 						})
 
 						if !hasMessages {
-							delete(f.partitionMap, nextTopicPartition)
+							//TODO uncomment when topic switch is done
+//							delete(f.partitionMap, nextTopicPartition)
 						}
 					}
 				}
