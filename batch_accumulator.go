@@ -28,9 +28,10 @@ type BatchAccumulator struct {
 	InputChannel *SharedBlockChannel
 	MessageBuffers map[TopicAndPartition]*MessageBuffer
 	MessageBuffersLock sync.Mutex
-	closeFinished  chan bool
-	askNextBatch   chan TopicAndPartition
-	reconnectChannels chan bool
+	closeFinished      chan bool
+	askNextBatch       chan TopicAndPartition
+	reconnectChannels  chan bool
+	removeBufferChannel chan TopicAndPartition
 }
 
 func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition, reconnectChannels chan bool) *BatchAccumulator {
@@ -42,6 +43,7 @@ func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndParti
 		closeFinished : make(chan bool),
 		askNextBatch: askNextBatch,
 		reconnectChannels: reconnectChannels,
+		removeBufferChannel: make(chan TopicAndPartition),
 	}
 
 	go ba.processIncomingBlocks()
@@ -53,17 +55,16 @@ func (ba *BatchAccumulator) String() string {
 }
 
 func (ba *BatchAccumulator) RemoveBuffer(topicPartition TopicAndPartition) {
-	InLock(&ba.MessageBuffersLock, func() {
-		ba.MessageBuffers[topicPartition].Stop()
-		delete(ba.MessageBuffers, topicPartition)
-	})
+	ba.MessageBuffers[topicPartition].Stop()
+	ba.removeBufferChannel <- topicPartition
 }
 
 func (ba *BatchAccumulator) processIncomingBlocks() {
 	Debug(ba, "Started processing blocks")
 
-	for b := range ba.InputChannel.chunks {
-		InLock(&ba.MessageBuffersLock, func() {
+	for {
+		select {
+		case b := <-ba.InputChannel.chunks: {
 			fetchResponseBlock := b.Data
 			topicPartition := b.TopicPartition
 			buffer, exists := ba.MessageBuffers[topicPartition]
@@ -75,16 +76,20 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 			if fetchResponseBlock != nil {
 				for _, message := range fetchResponseBlock.MsgSet.Messages {
 					buffer.Add(&Message {
-						Key : message.Msg.Key,
-						Value : message.Msg.Value,
-						Topic : topicPartition.Topic,
-						Partition : topicPartition.Partition,
-						Offset : message.Offset,
-					})
+					Key : message.Msg.Key,
+					Value : message.Msg.Value,
+					Topic : topicPartition.Topic,
+					Partition : topicPartition.Partition,
+					Offset : message.Offset,
+				})
 				}
 			}
 			ba.askNextBatch <- topicPartition
-		})
+		}
+		case tp := <-ba.removeBufferChannel: {
+			delete(ba.MessageBuffers, tp)
+		}
+		}
 	}
 
 	Debug(ba, "Stopped processing")

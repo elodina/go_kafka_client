@@ -96,10 +96,10 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 				topicAndPartition := TopicAndPartition{info.Topic, info.Partition}
 				newPartitionMap[topicAndPartition] = info
 
+				if _, isAlreadyUp := m.askNextFetchers[topicAndPartition]; isAlreadyUp { continue }
 				exists := false
 				for _, noLeader := range m.noLeaderPartitions {
-					_, isAlreadyUp := m.askNextFetchers[topicAndPartition]
-					if topicAndPartition == noLeader || isAlreadyUp {
+					if topicAndPartition == noLeader {
 						exists = true
 						break
 					}
