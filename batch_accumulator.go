@@ -108,8 +108,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 func (ba *BatchAccumulator) safeAskNext(topicPartition TopicAndPartition) {
 	go func() {
 		defer func() {
-			r := recover()
-			Warn(ba, r)
+			if r := recover(); r != nil { Warn(ba, r) }
 		}()
 		ba.askNextBatch <- topicPartition
 	}()

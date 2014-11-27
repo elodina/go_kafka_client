@@ -59,14 +59,6 @@ type Consumer struct {
 	wmsIdleTimer metrics.Timer
 }
 
-type Message struct {
-	Key       []byte
-	Value     []byte
-	Topic     string
-	Partition int32
-	Offset    int64
-}
-
 func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := config.Validate(); err != nil {
 		panic(err)

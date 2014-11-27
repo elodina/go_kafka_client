@@ -20,6 +20,7 @@ package go_kafka_client
 import (
 	"testing"
 	"time"
+	"github.com/Shopify/sarama"
 )
 
 func TestMessageBuffer(t *testing.T) {
@@ -48,4 +49,76 @@ func TestMessageBuffer(t *testing.T) {
 	buffer.Add(&Message{})
 	buffer.Stop()
 	ReceiveNoMessages(t, 4*time.Second, out)
+}
+
+func TestBatchAccumulator(t *testing.T) {
+	config := DefaultConsumerConfig()
+	config.FetchBatchSize = 5
+	askNextBatch := make(chan TopicAndPartition)
+	reconnectChannels := make(chan bool, 100) //we never read this, so just swallow these messages
+
+	topicPartition1 := TopicAndPartition{"fakeTopic", int32(0)}
+	topicPartition2 := TopicAndPartition{"anotherFakeTopic", int32(1)}
+
+	acc := NewBatchAccumulator(config, askNextBatch, reconnectChannels)
+	tpd1 := &TopicPartitionData{
+		TopicPartition : topicPartition1,
+		Data : &sarama.FetchResponseBlock{
+			MsgSet: sarama.MessageSet{
+				Messages: []*sarama.MessageBlock {
+					&sarama.MessageBlock{int64(1), &sarama.Message{}},
+					&sarama.MessageBlock{int64(2), &sarama.Message{}},
+					&sarama.MessageBlock{int64(3), &sarama.Message{}},
+					&sarama.MessageBlock{int64(4), &sarama.Message{}},
+					&sarama.MessageBlock{int64(5), &sarama.Message{}},
+				},
+			},
+		},
+	}
+	tpd2 := &TopicPartitionData{
+		TopicPartition : topicPartition2,
+		Data : &sarama.FetchResponseBlock{
+			MsgSet: sarama.MessageSet{
+				Messages: []*sarama.MessageBlock {
+					&sarama.MessageBlock{int64(1), &sarama.Message{}},
+					&sarama.MessageBlock{int64(2), &sarama.Message{}},
+					&sarama.MessageBlock{int64(3), &sarama.Message{}},
+					&sarama.MessageBlock{int64(4), &sarama.Message{}},
+					&sarama.MessageBlock{int64(5), &sarama.Message{}},
+				},
+			},
+		},
+	}
+	go func() {
+		acc.InputChannel.chunks <- tpd1
+		acc.InputChannel.chunks <- tpd2
+	}()
+
+	timeout := 1 * time.Second
+	select {
+	case <-askNextBatch:
+	case <-time.After(timeout): {
+		t.Errorf("Failed to receive an 'ask next' request from Batch Accumulator within %s", timeout)
+	}
+	}
+
+	if len(acc.MessageBuffers) != 2 {
+		t.Errorf("Batch Accumulator should contain 2 MessageBuffers, actual %d", len(acc.MessageBuffers))
+	}
+
+	acc.RemoveBuffer(topicPartition1)
+	time.Sleep(1 * time.Second)
+	if len(acc.MessageBuffers) != 1 {
+		t.Errorf("Batch Accumulator's MessageBuffers should be empty after buffer removal, actual %d", len(acc.MessageBuffers))
+	}
+
+	select {
+	case <-askNextBatch:
+	case <-time.After(timeout): {
+		t.Errorf("Failed to receive an 'ask next' request from Batch Accumulator within %s", timeout)
+	}
+	}
+
+	acc.Stop()
+	acc.Stop() //ensure BA does not hang
 }

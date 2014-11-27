@@ -31,6 +31,18 @@ var (
 	SwitchToPatternPrefix = "switch_to_"
 )
 
+type Message struct {
+	Key       []byte
+	Value     []byte
+	Topic     string
+	Partition int32
+	Offset    int64
+}
+
+func (m *Message) String() string {
+	return fmt.Sprintf("Message{Topic: %s, Partition: %d, Offset: %d}", m.Topic, m.Partition, m.Offset)
+}
+
 type BrokerInfo struct {
 	Version int16
 	Id      int32
