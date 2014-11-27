@@ -20,7 +20,13 @@ package go_kafka_client
 import (
 	"testing"
 	"time"
+	metrics "github.com/rcrowley/go-metrics"
+	"fmt"
 )
+
+var goodStrategy = func (_ *Worker, _ *Message, id TaskId) WorkerResult { return NewSuccessfulResult(id) }
+var failStrategy = func (_ *Worker, _ *Message, id TaskId) WorkerResult { return NewProcessingFailedResult(id) }
+var slowStrategy = func (_ *Worker, _ *Message, id TaskId) WorkerResult { time.Sleep(5 * time.Second); return NewSuccessfulResult(id) }
 
 func TestFailureCounter(t *testing.T) {
 	threshold := int32(5)
@@ -57,10 +63,6 @@ func TestWorker(t *testing.T) {
 	task := &Task{
 		Msg: &Message{},
 	}
-
-	goodStrategy := func (_ *Worker, _ *Message, id TaskId) WorkerResult { return NewSuccessfulResult(id) }
-	failStrategy := func (_ *Worker, _ *Message, id TaskId) WorkerResult { return NewProcessingFailedResult(id) }
-	slowStrategy := func (_ *Worker, _ *Message, id TaskId) WorkerResult { time.Sleep(5 * time.Second); return NewSuccessfulResult(id) }
 
 	//test good case
 	worker := &Worker{
@@ -101,5 +103,64 @@ func TestWorker(t *testing.T) {
 			t.Error("Worker should not produce any result after timeout")
 		}
 		case <-time.After(taskTimeout + time.Second):
+	}
+}
+
+func TestWorkerManager(t *testing.T) {
+	wmid := "test-WM"
+	config := DefaultConsumerConfig()
+	config.NumWorkers = 3
+	config.Strategy = goodStrategy
+	mockZk := newMockZookeeperCoordinator()
+	config.Coordinator = mockZk
+	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
+
+	wmsIdleTimer := metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", wmid), metrics.DefaultRegistry)
+	wmsBatchDurationTimer := metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", wmid), metrics.DefaultRegistry)
+	activeWorkersCounter := metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", wmid), metrics.DefaultRegistry)
+	pendingWMsTasksCounter := metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", wmid), metrics.DefaultRegistry)
+
+	manager := NewWorkerManager(wmid, config, topicPartition, wmsIdleTimer,
+		wmsBatchDurationTimer, activeWorkersCounter, pendingWMsTasksCounter)
+
+	go manager.Start()
+
+	if len(manager.Workers) != config.NumWorkers {
+		t.Errorf("Number of workers of worker manager should be %d, actual: %d", config.NumWorkers, len(manager.Workers))
+	}
+
+	checkAllWorkersAvailable(t, manager)
+
+	batch := []*Message{
+		&Message{Offset:0},
+		&Message{Offset:1},
+		&Message{Offset:2},
+		&Message{Offset:3},
+		&Message{Offset:4},
+		&Message{Offset:5},
+	}
+
+	manager.InputChannel <- batch
+
+	time.Sleep(1 * time.Second)
+	checkAllWorkersAvailable(t, manager)
+
+	<-manager.Stop()
+
+	//make sure we don't lose our offsets
+	if len(mockZk.commitHistory) != 1 {
+		t.Errorf("Worker manager should commit offset only once")
+	}
+	if mockZk.commitHistory[topicPartition] != 5 {
+		t.Errorf("Worker manager should commit offset 5")
+	}
+}
+
+func checkAllWorkersAvailable(t *testing.T, wm *WorkerManager) {
+	Trace("test", "Checking all workers availability")
+	//if all workers are available we shouldn't be able to insert one more available worker
+	select {
+		case wm.AvailableWorkers <- &Worker{}: t.Error("Not all workers are available")
+		case <-time.After(1 * time.Second):
 	}
 }

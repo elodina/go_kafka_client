@@ -30,13 +30,6 @@ var (
 	consumersPath                      = "/consumers"
 	brokerIdsPath                      = "/brokers/ids"
 	brokerTopicsPath                   = "/brokers/topics"
-	topicConfigPath                    = "/config/topics"
-	topicConfigChangesPath             = "/config/changes"
-	controllerPath                     = "/controller"
-	controllerEpochPath                = "/controller_epoch"
-	reassignPartitionsPath             = "/admin/reassign_partitions"
-	deleteTopicsPath                   = "/admin/delete_topics"
-	preferredReplicaLeaderElectionPath = "/admin/preferred_replica_election"
 )
 
 type ZookeeperCoordinator struct {
@@ -524,4 +517,35 @@ func newZKGroupTopicDirs(group string, topic string) *zkGroupTopicDirs {
 		ConsumerOffsetDir: fmt.Sprintf("%s/%s/%s", zkGroupsDirs.ConsumerGroupDir, "offsets", topic),
 		ConsumerOwnerDir: fmt.Sprintf("%s/%s/%s", zkGroupsDirs.ConsumerGroupDir, "owners", topic),
 	}
+}
+
+//used for tests only
+type mockZookeeperCoordinator struct {
+	commitHistory map[TopicAndPartition]int64
+}
+
+func newMockZookeeperCoordinator() *mockZookeeperCoordinator {
+	return &mockZookeeperCoordinator{
+		commitHistory: make(map[TopicAndPartition]int64),
+	}
+}
+
+func (mzk *mockZookeeperCoordinator) Connect() error { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) RegisterConsumer(consumerid string, group string, topicCount TopicsToNumStreams) error { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) DeregisterConsumer(consumerid string, group string) error { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetConsumerInfo(consumerid string, group string) (*ConsumerInfo, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetConsumersPerTopic(group string, excludeInternalTopics bool) (map[string][]ConsumerThreadId, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetConsumersInGroup(group string) ([]string, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetAllTopics() ([]string, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetPartitionsForTopics(topics []string) (map[string][]int32, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) NotifyConsumerGroup(group string, consumerId string) error { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan bool, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) ClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) ReleasePartitionOwnership(group string, topic string, partition int32) error { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) CommitOffset(group string, topicPartition *TopicAndPartition, offset int64) error {
+	mzk.commitHistory[*topicPartition] = offset
+	return nil
 }
