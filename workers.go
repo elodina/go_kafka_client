@@ -388,6 +388,10 @@ type ProcessingFailedResult struct {
 	id TaskId
 }
 
+func NewProcessingFailedResult(id TaskId) *ProcessingFailedResult {
+	return &ProcessingFailedResult{id}
+}
+
 func (sr *ProcessingFailedResult) String() string {
 	return fmt.Sprintf("{Failed: %s}", sr.Id())
 }
