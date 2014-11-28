@@ -40,6 +40,7 @@ type consumerFetcherManager struct {
 	askNext                 chan TopicAndPartition
 	askNextStopper			chan bool
 	askNextFetchers map[TopicAndPartition]chan TopicAndPartition
+	askNextFetchersLock sync.RWMutex
 	isReady                 bool
 	isReadyLock             sync.RWMutex
 
@@ -98,7 +99,12 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 				topicAndPartition := TopicAndPartition{info.Topic, info.Partition}
 				newPartitionMap[topicAndPartition] = info
 
-				if _, isAlreadyUp := m.askNextFetchers[topicAndPartition]; isAlreadyUp { continue }
+				isAlreadyUp := false
+				InReadLock(&m.askNextFetchersLock, func() {
+					_, isAlreadyUp = m.askNextFetchers[topicAndPartition]
+				})
+				if isAlreadyUp { continue }
+//				if _, isAlreadyUp := m.askNextFetchers[topicAndPartition]; isAlreadyUp { continue }
 				exists := false
 				for _, noLeader := range m.noLeaderPartitions {
 					if topicAndPartition == noLeader {
@@ -156,12 +162,14 @@ func (m *consumerFetcherManager) WaitForNextRequests() {
 				InReadLock(&m.isReadyLock, func() {
 					if m.isReady {
 						Tracef(m, "Manager ready, asking next for %s", topicPartition)
-						if nextChannel, exists := m.askNextFetchers[topicPartition]; exists {
-							nextChannel <- topicPartition
-							Tracef(m, "Manager ready, asked next for %s", topicPartition)
-						} else {
-							Warnf(m, "Received askNext for wrong partition %s", topicPartition)
-						}
+						InReadLock(&m.askNextFetchersLock, func() {
+							if nextChannel, exists := m.askNextFetchers[topicPartition]; exists {
+								nextChannel <- topicPartition
+								Tracef(m, "Manager ready, asked next for %s", topicPartition)
+							} else {
+								Warnf(m, "Received askNext for wrong partition %s", topicPartition)
+							}
+						})
 					}
 				})
 			}
@@ -493,7 +501,9 @@ func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndP
 						validOffset = f.handleOffsetOutOfRange(&topicAndPartition)
 					}
 					f.partitionMap[topicAndPartition] = validOffset
-					f.manager.askNextFetchers[topicAndPartition] = f.askNext
+					InWriteLock(&f.manager.askNextFetchersLock, func() {
+						f.manager.askNextFetchers[topicAndPartition] = f.askNext
+					})
 					newPartitions[topicAndPartition] = f.askNext
 					Debugf(f, "Owner of %s", topicAndPartition)
 				}
@@ -593,6 +603,7 @@ func (f *consumerFetcherRoutine) handleFetchError(request *sarama.FetchRequest, 
 }
 
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) int64 {
+	Tracef(f, "Handling offset out of range for %s", topicAndPartition)
 	offsetTime := sarama.LatestOffsets
 	if f.manager.config.AutoOffsetReset == SmallestOffset {
 		offsetTime = sarama.EarliestOffset
@@ -639,7 +650,9 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 	InLock(&f.partitionMapLock, func() {
 			for _, topicAndPartition := range partitions {
 				delete(f.partitionMap, topicAndPartition)
-				delete(f.manager.askNextFetchers, topicAndPartition)
+				InWriteLock(&f.manager.askNextFetchersLock, func() {
+					delete(f.manager.askNextFetchers, topicAndPartition)
+				})
 				delete(f.fetchRequestBlockMap, topicAndPartition)
 			}
 		})

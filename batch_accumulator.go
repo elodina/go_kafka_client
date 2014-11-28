@@ -27,12 +27,12 @@ type BatchAccumulator struct {
 	Config *ConsumerConfig
 	InputChannel *SharedBlockChannel
 	MessageBuffers map[TopicAndPartition]*MessageBuffer
-	MessageBuffersLock sync.Mutex
-	closeFinished      chan bool
-	askNextBatch       chan TopicAndPartition
-	reconnectChannels  chan bool
+	MessageBuffersLock  sync.Mutex
+	closeFinished       chan bool
+	askNextBatch        chan TopicAndPartition
+	reconnectChannels   chan bool
 	removeBufferChannel chan TopicAndPartition
-	stopProcessing chan bool
+	stopProcessing      chan bool
 }
 
 func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition, reconnectChannels chan bool) *BatchAccumulator {
@@ -78,34 +78,33 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 			if fetchResponseBlock != nil {
 				for _, message := range fetchResponseBlock.MsgSet.Messages {
 					buffer.Add(&Message {
-					Key : message.Msg.Key,
-					Value : message.Msg.Value,
-					Topic : topicPartition.Topic,
-					Partition : topicPartition.Partition,
-					Offset : message.Offset,
-				})
+						Key : message.Msg.Key,
+						Value : message.Msg.Value,
+						Topic : topicPartition.Topic,
+						Partition : topicPartition.Partition,
+						Offset : message.Offset,
+					})
 				}
 			}
 			select {
 			case ba.askNextBatch <- topicPartition:
-//			case tp := <-ba.removeBufferChannel: {
-//				ba.MessageBuffers[topicPartition].Stop()
-//				delete(ba.MessageBuffers, tp)
-//			}
+			case tp := <-ba.removeBufferChannel: {
+				if mb, exists := ba.MessageBuffers[tp]; exists {
+					mb.Stop()
+					delete(ba.MessageBuffers, tp)
+				}
+			}
 			case <-ba.stopProcessing: {
 				ba.closeFinished <- true
 				return
 			}
 			}
-//			ba.safeAskNext(topicPartition)
 		}
 		case tp := <-ba.removeBufferChannel: {
 			if mb, exists := ba.MessageBuffers[tp]; exists {
 				mb.Stop()
 				delete(ba.MessageBuffers, tp)
 			}
-//			//TODO move this to method?
-//			ba.MessageBuffers[tp].Stop()
 		}
 		case <-ba.stopProcessing: {
 			ba.closeFinished <- true
@@ -137,7 +136,7 @@ type MessageBuffer struct {
 	Timer *time.Timer
 	MessageLock   sync.Mutex
 	Close         chan bool
-	stopSending bool
+	stopSending   bool
 	TopicPartition *TopicAndPartition
 }
 
@@ -167,7 +166,7 @@ func (mb *MessageBuffer) Start() {
 		case <-mb.Timer.C: {
 			Debug(mb, "Batch accumulation timed out. Flushing...")
 			InLock(&mb.MessageLock, func() {
-				mb.Flush()
+				mb.Flush(true)
 			})
 		}
 		}
@@ -187,23 +186,25 @@ func (mb *MessageBuffer) Add(msg *Message) {
 		mb.Messages = append(mb.Messages, msg)
 		if len(mb.Messages) == mb.Config.FetchBatchSize {
 			Debug(mb, "Batch is ready. Flushing")
-			mb.Flush()
+			mb.Flush(false)
 		}
 	})
 }
 
-func (mb *MessageBuffer) Flush() {
+func (mb *MessageBuffer) Flush(optional bool) {
 	if len(mb.Messages) > 0 {
 		Debug(mb, "Flushing")
-		flushLoop:
+		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
+	flushLoop:
 		for {
 			select {
-				case mb.OutputChannel <- mb.Messages: break flushLoop
-				case <-time.After(200 * time.Millisecond): if mb.stopSending { return }
+			case mb.OutputChannel <- mb.Messages: break flushLoop
+			case <-time.After(200 * time.Millisecond): if mb.stopSending || optional {
+				return
+			}
 			}
 		}
 		Debug(mb, "Flushed")
 		mb.Messages = make([]*Message, 0)
 	}
-	mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 }
