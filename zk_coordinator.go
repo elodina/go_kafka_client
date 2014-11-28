@@ -58,7 +58,8 @@ func (zc *ZookeeperCoordinator) Connect() error {
 
 func (zc *ZookeeperCoordinator) RegisterConsumer(consumerid string, groupid string, topicCount TopicsToNumStreams) error {
 	Debugf(zc, "Trying to register consumer %s at group %s in Zookeeper", consumerid, groupid)
-	pathToConsumer := fmt.Sprintf("%s/%s", newZKGroupDirs(groupid).ConsumerRegistryDir, consumerid)
+	registryDir := newZKGroupDirs(groupid).ConsumerRegistryDir
+	pathToConsumer := fmt.Sprintf("%s/%s", registryDir, consumerid)
 	data, mappingError := json.Marshal(&ConsumerInfo{
 					Version : int16(1),
 					Subscription : topicCount.GetTopicsToNumStreamsMap(),
@@ -71,7 +72,16 @@ func (zc *ZookeeperCoordinator) RegisterConsumer(consumerid string, groupid stri
 
 	Debugf(zc, "Path: %s", pathToConsumer)
 
-	return zc.createOrUpdatePathParentMayNotExist(pathToConsumer, data)
+	_, err := zc.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	if err == zk.ErrNoNode {
+		err = zc.createOrUpdatePathParentMayNotExist(registryDir, make([]byte, 0))
+		if err != nil {
+			return err
+		}
+		_, err = zc.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	}
+
+	return err
 }
 
 func (zc *ZookeeperCoordinator) DeregisterConsumer(consumerid string, groupid string) error {
@@ -285,7 +295,15 @@ func (zc *ZookeeperCoordinator) ClaimPartitionOwnership(group string, topic stri
 	zc.createOrUpdatePathParentMayNotExist(dirs.ConsumerOwnerDir, make([]byte, 0))
 
 	pathToOwn := fmt.Sprintf("%s/%d", dirs.ConsumerOwnerDir, partition)
-	_, err := zc.zkConn.Create(pathToOwn, []byte(consumerThreadId.String()), 0, zk.WorldACL(zk.PermAll))
+	_, err := zc.zkConn.Create(pathToOwn, []byte(consumerThreadId.String()), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	if err == zk.ErrNoNode {
+		err = zc.createOrUpdatePathParentMayNotExist(dirs.ConsumerOwnerDir, make([]byte, 0))
+		if err != nil {
+			return false, err
+		}
+		_, err = zc.zkConn.Create(pathToOwn, []byte(consumerThreadId.String()), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	}
+
 	if (err != nil) {
 		if (err == zk.ErrNodeExists) {
 			Debugf(consumerThreadId, "waiting for the partition ownership to be deleted: %d", partition)
