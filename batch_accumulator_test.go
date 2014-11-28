@@ -61,34 +61,8 @@ func TestBatchAccumulator(t *testing.T) {
 	topicPartition2 := TopicAndPartition{"anotherFakeTopic", int32(1)}
 
 	acc := NewBatchAccumulator(config, askNextBatch, reconnectChannels)
-	tpd1 := &TopicPartitionData{
-		TopicPartition : topicPartition1,
-		Data : &sarama.FetchResponseBlock{
-			MsgSet: sarama.MessageSet{
-				Messages: []*sarama.MessageBlock {
-					&sarama.MessageBlock{int64(1), &sarama.Message{}},
-					&sarama.MessageBlock{int64(2), &sarama.Message{}},
-					&sarama.MessageBlock{int64(3), &sarama.Message{}},
-					&sarama.MessageBlock{int64(4), &sarama.Message{}},
-					&sarama.MessageBlock{int64(5), &sarama.Message{}},
-				},
-			},
-		},
-	}
-	tpd2 := &TopicPartitionData{
-		TopicPartition : topicPartition2,
-		Data : &sarama.FetchResponseBlock{
-			MsgSet: sarama.MessageSet{
-				Messages: []*sarama.MessageBlock {
-					&sarama.MessageBlock{int64(1), &sarama.Message{}},
-					&sarama.MessageBlock{int64(2), &sarama.Message{}},
-					&sarama.MessageBlock{int64(3), &sarama.Message{}},
-					&sarama.MessageBlock{int64(4), &sarama.Message{}},
-					&sarama.MessageBlock{int64(5), &sarama.Message{}},
-				},
-			},
-		},
-	}
+	tpd1 := generateBatch(topicPartition1, 5)
+	tpd2 := generateBatch(topicPartition2, 5)
 	go func() {
 		acc.InputChannel.chunks <- tpd1
 		acc.InputChannel.chunks <- tpd2
@@ -121,4 +95,48 @@ func TestBatchAccumulator(t *testing.T) {
 
 	acc.Stop()
 	acc.Stop() //ensure BA does not hang
+}
+
+func TestBatchAccumulatorLoad(t *testing.T) {
+	config := DefaultConsumerConfig()
+	config.FetchBatchSize = 2000
+	askNextBatch := make(chan TopicAndPartition)
+	reconnectChannels := make(chan bool, 100) //we never read this, so just swallow these messages
+
+	stopper := make(chan bool)
+
+	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
+	batch := generateBatch(topicPartition, 2000)
+
+	acc := NewBatchAccumulator(config, askNextBatch, reconnectChannels)
+	go func() {
+		for {
+			select {
+			case <-stopper: return
+			default: if !acc.InputChannel.closed { acc.InputChannel.chunks <- batch}
+			}
+		}
+	}()
+
+
+	time.Sleep(2 * time.Second)
+	acc.Stop()
+
+	stopper <- true
+}
+
+func generateBatch(topicPartition TopicAndPartition, size int) *TopicPartitionData {
+	messages := make([]*sarama.MessageBlock, 0)
+	for i := 0; i < size; i++ {
+		messages = append(messages, &sarama.MessageBlock{int64(i), &sarama.Message{}})
+	}
+
+	return &TopicPartitionData{
+		TopicPartition : topicPartition,
+		Data : &sarama.FetchResponseBlock{
+			MsgSet: sarama.MessageSet{
+				Messages: messages,
+			},
+		},
+	}
 }

@@ -168,19 +168,21 @@ func (c *Consumer) startStreams() {
 
 func (c *Consumer) connectChannels(stopRedirects map[TopicAndPartition]chan bool) {
 	InLock(&c.workerManagersLock, func() {
+		Tracef(c, "connect channels registry: %v", c.TopicRegistry)
 		for topic, partitions := range c.TopicRegistry {
 			for partition, info := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
 				from, exists := info.Accumulator.MessageBuffers[topicPartition]
 				if !exists {
-					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					Infof(c, "MB > Failed to pipe message buffer to workermanager on partition %s", topicPartition)
 					continue
 				}
 				to, exists := c.workerManagers[topicPartition]
 				if !exists {
-					Warnf(c, "Failed to pipe message buffer to workermanager on partition %s", topicPartition)
+					Infof(c, "WM > Failed to pipe message buffer to workermanager on partition %s", topicPartition)
 					continue
 				}
+				Tracef(c, "Piping %s", topicPartition)
 				stopRedirects[topicPartition] = Pipe(from.OutputChannel, to.InputChannel)
 			}
 		}

@@ -166,26 +166,27 @@ func (wm *WorkerManager) commitBatch() {
 }
 
 func (wm *WorkerManager) commitOffset() {
-	Tracef(wm, "Inside commit offset with largest %d and last %d", wm.LargestOffset, wm.lastCommittedOffset)
-	if wm.LargestOffset <= wm.lastCommittedOffset { return }
+	largestOffset := wm.LargestOffset
+	Tracef(wm, "Inside commit offset with largest %d and last %d", largestOffset, wm.lastCommittedOffset)
+	if largestOffset <= wm.lastCommittedOffset { return }
 
 	success := false
 	for i := 0; i <= wm.Config.OffsetsCommitMaxRetries; i++ {
-		err := wm.Config.Coordinator.CommitOffset(wm.Config.Groupid, &wm.TopicPartition, wm.LargestOffset)
+		err := wm.Config.Coordinator.CommitOffset(wm.Config.Groupid, &wm.TopicPartition, largestOffset)
 		if err == nil {
 			success = true
-			Debugf(wm, "Successfully committed offset %d for %s", wm.LargestOffset, wm.TopicPartition)
+			Debugf(wm, "Successfully committed offset %d for %s", largestOffset, wm.TopicPartition)
 			break
 		} else {
-			Warnf(wm, "Failed to commit offset %d for %s. Retying...", wm.LargestOffset, wm.TopicPartition)
+			Warnf(wm, "Failed to commit offset %d for %s. Retying...", largestOffset, wm.TopicPartition)
 		}
 	}
 
 	if !success {
-		Errorf(wm, "Failed to commit offset %d for %s after %d retries", wm.LargestOffset, wm.TopicPartition, wm.Config.OffsetsCommitMaxRetries)
+		Errorf(wm, "Failed to commit offset %d for %s after %d retries", largestOffset, wm.TopicPartition, wm.Config.OffsetsCommitMaxRetries)
 		//TODO: what to do next?
 	} else {
-		wm.lastCommittedOffset = wm.LargestOffset
+		wm.lastCommittedOffset = largestOffset
 	}
 }
 

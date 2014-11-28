@@ -57,7 +57,6 @@ func (ba *BatchAccumulator) String() string {
 }
 
 func (ba *BatchAccumulator) RemoveBuffer(topicPartition TopicAndPartition) {
-	ba.MessageBuffers[topicPartition].Stop()
 	ba.removeBufferChannel <- topicPartition
 }
 
@@ -71,6 +70,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 			topicPartition := b.TopicPartition
 			buffer, exists := ba.MessageBuffers[topicPartition]
 			if !exists {
+				Tracef(ba, "Adding new MessageBuffer for %s", topicPartition)
 				ba.MessageBuffers[topicPartition] = NewMessageBuffer(&topicPartition, make(chan []*Message, ba.Config.QueuedMaxMessages), ba.Config)
 				buffer = ba.MessageBuffers[topicPartition]
 				ba.reconnectChannels <-true
@@ -86,39 +86,46 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 				})
 				}
 			}
-			ba.safeAskNext(topicPartition)
+			select {
+			case ba.askNextBatch <- topicPartition:
+//			case tp := <-ba.removeBufferChannel: {
+//				ba.MessageBuffers[topicPartition].Stop()
+//				delete(ba.MessageBuffers, tp)
+//			}
+			case <-ba.stopProcessing: {
+				ba.closeFinished <- true
+				return
+			}
+			}
+//			ba.safeAskNext(topicPartition)
 		}
 		case tp := <-ba.removeBufferChannel: {
-			delete(ba.MessageBuffers, tp)
+			if mb, exists := ba.MessageBuffers[tp]; exists {
+				mb.Stop()
+				delete(ba.MessageBuffers, tp)
+			}
+//			//TODO move this to method?
+//			ba.MessageBuffers[tp].Stop()
 		}
 		case <-ba.stopProcessing: {
-			Debug(ba, "Stopped processing")
-			for _, buffer := range ba.MessageBuffers {
-				buffer.Stop()
-			}
-
-			Debug(ba, "Closed batch accumulator")
 			ba.closeFinished <- true
 			return
 		}
 		}
 	}
-}
-
-func (ba *BatchAccumulator) safeAskNext(topicPartition TopicAndPartition) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil { Warn(ba, r) }
-		}()
-		ba.askNextBatch <- topicPartition
-	}()
+	Trace(ba, "Left processing incoming blocks")
 }
 
 func (ba *BatchAccumulator) Stop() {
 	Debug(ba, "Trying to stop BA")
 	if !ba.InputChannel.closed {
 		ba.InputChannel.closed = true
+		for _, buffer := range ba.MessageBuffers {
+			buffer.Stop()
+		}
+		Trace(ba, "Stopping processing")
 		ba.stopProcessing <- true
+		Trace(ba, "Stopped processing")
 		<-ba.closeFinished
 	}
 }
@@ -130,6 +137,7 @@ type MessageBuffer struct {
 	Timer *time.Timer
 	MessageLock   sync.Mutex
 	Close         chan bool
+	stopSending bool
 	TopicPartition *TopicAndPartition
 }
 
@@ -168,6 +176,7 @@ func (mb *MessageBuffer) Start() {
 
 func (mb *MessageBuffer) Stop() {
 	Debug(mb, "Stopping message buffer")
+	mb.stopSending = true
 	mb.Close <- true
 	Debug(mb, "Stopped message buffer")
 }
@@ -186,7 +195,13 @@ func (mb *MessageBuffer) Add(msg *Message) {
 func (mb *MessageBuffer) Flush() {
 	if len(mb.Messages) > 0 {
 		Debug(mb, "Flushing")
-		mb.OutputChannel <- mb.Messages
+		flushLoop:
+		for {
+			select {
+				case mb.OutputChannel <- mb.Messages: break flushLoop
+				case <-time.After(200 * time.Millisecond): if mb.stopSending { return }
+			}
+		}
 		Debug(mb, "Flushed")
 		mb.Messages = make([]*Message, 0)
 	}

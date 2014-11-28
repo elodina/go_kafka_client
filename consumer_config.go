@@ -139,6 +139,9 @@ type ConsumerConfig struct {
 	/* Backoff for fetch topic metadata request */
 	FetchTopicMetadataBackoff time.Duration
 
+	/* Time period between two fetch requests for one fetch routine */
+	FetchRequestBackoff time.Duration
+
 	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
 	Coordinator ConsumerCoordinator
 }
@@ -180,6 +183,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.RequeueAskNextBackoff = 1 * time.Second
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
+	config.FetchRequestBackoff = 100 * time.Millisecond
 
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 
