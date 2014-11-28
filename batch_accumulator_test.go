@@ -97,34 +97,6 @@ func TestBatchAccumulator(t *testing.T) {
 	acc.Stop() //ensure BA does not hang
 }
 
-func TestBatchAccumulatorLoad(t *testing.T) {
-	config := DefaultConsumerConfig()
-	config.FetchBatchSize = 2000
-	askNextBatch := make(chan TopicAndPartition)
-	reconnectChannels := make(chan bool, 100) //we never read this, so just swallow these messages
-
-	stopper := make(chan bool)
-
-	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
-	batch := generateBatch(topicPartition, 2000)
-
-	acc := NewBatchAccumulator(config, askNextBatch, reconnectChannels)
-	go func() {
-		for {
-			select {
-			case <-stopper: return
-			default: if !acc.InputChannel.closed { acc.InputChannel.chunks <- batch}
-			}
-		}
-	}()
-
-
-	time.Sleep(2 * time.Second)
-	acc.Stop()
-
-	stopper <- true
-}
-
 func generateBatch(topicPartition TopicAndPartition, size int) *TopicPartitionData {
 	messages := make([]*sarama.MessageBlock, 0)
 	for i := 0; i < size; i++ {
