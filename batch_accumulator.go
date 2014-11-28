@@ -31,11 +31,12 @@ type BatchAccumulator struct {
 	closeFinished       chan bool
 	askNextBatch        chan TopicAndPartition
 	reconnectChannels   chan bool
+	disconnectChannelsForPartition chan TopicAndPartition
 	removeBufferChannel chan TopicAndPartition
 	stopProcessing      chan bool
 }
 
-func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition, reconnectChannels chan bool) *BatchAccumulator {
+func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndPartition, reconnectChannels chan bool, disconnectChannelsForPartition chan TopicAndPartition) *BatchAccumulator {
 	blockChannel := &SharedBlockChannel{make(chan *TopicPartitionData, config.QueuedMaxMessages), false}
 	ba := &BatchAccumulator {
 		Config : config,
@@ -44,6 +45,7 @@ func NewBatchAccumulator(config *ConsumerConfig, askNextBatch chan TopicAndParti
 		closeFinished : make(chan bool),
 		askNextBatch: askNextBatch,
 		reconnectChannels: reconnectChannels,
+		disconnectChannelsForPartition: disconnectChannelsForPartition,
 		removeBufferChannel: make(chan TopicAndPartition),
 		stopProcessing: make(chan bool),
 	}
@@ -104,6 +106,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 			if mb, exists := ba.MessageBuffers[tp]; exists {
 				mb.Stop()
 				delete(ba.MessageBuffers, tp)
+				ba.disconnectChannelsForPartition <- tp
 			}
 		}
 		case <-ba.stopProcessing: {
