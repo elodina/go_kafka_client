@@ -22,7 +22,6 @@ import (
 	"sync"
 	"fmt"
 	"github.com/Shopify/sarama"
-	"reflect"
 	metrics "github.com/rcrowley/go-metrics"
 )
 
@@ -42,9 +41,8 @@ type Consumer struct {
 	closeFinished  chan bool
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
-	topicThreadIdsAndAccumulators map[TopicAndThreadId]*BatchAccumulator
+	topicPartitionsAndBuffers map[TopicAndPartition]*MessageBuffer
 	TopicRegistry map[string]map[int32]*PartitionTopicInfo
-	batchChannel chan []*Message
 	connectChannels chan bool
 	disconnectChannelsForPartition chan TopicAndPartition
 	workerManagers map[TopicAndPartition]*WorkerManager
@@ -71,7 +69,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		unsubscribe : make(chan bool),
 		unsubscribeFinished : make(chan bool),
 		closeFinished : make(chan bool),
-		topicThreadIdsAndAccumulators : make(map[TopicAndThreadId]*BatchAccumulator),
+		topicPartitionsAndBuffers: make(map[TopicAndPartition]*MessageBuffer),
 		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
 		connectChannels: make(chan bool),
 		disconnectChannelsForPartition: make(chan TopicAndPartition),
@@ -132,7 +130,6 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	if (err != nil) {
 		panic(fmt.Sprintf("Failed to fetch offsets during rebalance: %s", err))
 	}
-	c.ReinitializeAccumulatorsAndChannels(topicCount)
 	for _, topicPartition := range topicPartitions {
 		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
 		threadId := partitionOwnershipDecision[*topicPartition]
@@ -174,31 +171,18 @@ func (c *Consumer) startStreams() {
 
 func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 	InLock(&c.workerManagersLock, func() {
-		for _, partitions := range c.TopicRegistry {
-			for partition, info := range partitions {
-				Tracef(c, "MBs for partition %d", partition)
-				for _, mb := range info.Accumulator.MessageBuffers {
-					Tracef(c, "MB: %s", mb)
-				}
-			}
-		}
 		Tracef(c, "connect channels registry: %v", c.TopicRegistry)
 		for topic, partitions := range c.TopicRegistry {
 			for partition, info := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
 				if _, exists := stopRedirects[topicPartition]; !exists {
-					from, exists := info.Accumulator.MessageBuffers[topicPartition]
-					if !exists {
-						Infof(c, "MB > Failed to pipe message buffer to workermanager on partition %s", topicPartition)
-						continue
-					}
 					to, exists := c.workerManagers[topicPartition]
 					if !exists {
 						Infof(c, "WM > Failed to pipe message buffer to workermanager on partition %s", topicPartition)
 						continue
 					}
 					Tracef(c, "Piping %s", topicPartition)
-					stopRedirects[topicPartition] = Pipe(from.OutputChannel, to.InputChannel)
+					stopRedirects[topicPartition] = Pipe(info.Buffer.OutputChannel, to.InputChannel)
 				}
 			}
 		}
@@ -255,62 +239,6 @@ func (c *Consumer) ReinitializeConsumer() {
 	//TODO more subscriptions
 	c.rebalance()
 	c.subscribeForChanges(c.config.Groupid)
-}
-
-func (c *Consumer) ReinitializeAccumulatorsAndChannels(topicCount TopicsToNumStreams) {
-	var accumulators []*BatchAccumulator = nil
-	switch tc := topicCount.(type) {
-	case *StaticTopicsToNumStreams: {
-			for _, threadIdSet := range tc.GetConsumerThreadIdsPerTopic() {
-				accumulatorsForThread := make([]*BatchAccumulator, len(threadIdSet))
-				for i := 0; i < len(accumulatorsForThread); i++ {
-					accumulatorsForThread[i] = NewBatchAccumulator(c.config, c.askNextBatch, c.connectChannels, c.disconnectChannelsForPartition)
-				}
-				accumulators = append(accumulators, accumulatorsForThread...)
-			}
-		}
-		case *WildcardTopicsToNumStreams: {
-			for i := 0; i < tc.NumStreams; i++ {
-				accumulators = append(accumulators, NewBatchAccumulator(c.config, c.askNextBatch, c.connectChannels, c.disconnectChannelsForPartition))
-			}
-		}
-	}
-
-	consumerThreadIdsPerTopic := topicCount.GetConsumerThreadIdsPerTopic()
-
-	allAccumulators := make([]*BatchAccumulator, 0)
-	switch topicCount.(type) {
-	case *StaticTopicsToNumStreams: {
-		allAccumulators = accumulators
-	}
-	case *WildcardTopicsToNumStreams: {
-		for _, _ = range consumerThreadIdsPerTopic {
-			for _, accumulator := range accumulators {
-				allAccumulators = append(allAccumulators, accumulator)
-			}
-		}
-	}
-	}
-	topicThreadIds := make([]TopicAndThreadId, 0)
-	for topic, threadIds := range consumerThreadIdsPerTopic {
-		for _, threadId := range threadIds {
-			topicThreadIds = append(topicThreadIds, TopicAndThreadId{topic, threadId})
-		}
-	}
-
-	if len(topicThreadIds) != len(allAccumulators) {
-		panic("Mismatch between thread ID count and channel count")
-	}
-	threadAccumulatorPairs := make(map[TopicAndThreadId]*BatchAccumulator)
-	for i := 0; i < len(topicThreadIds); i++ {
-		if _, exists := c.topicThreadIdsAndAccumulators[topicThreadIds[i]]; !exists {
-			threadAccumulatorPairs[topicThreadIds[i]] = allAccumulators[i]
-		} else {
-			threadAccumulatorPairs[topicThreadIds[i]] = c.topicThreadIdsAndAccumulators[topicThreadIds[i]]
-		}
-	}
-
-	c.topicThreadIdsAndAccumulators = threadAccumulatorPairs
 }
 
 func (c *Consumer) initializeWorkerManagers() {
@@ -448,6 +376,7 @@ func (c *Consumer) updateFetcher(numStreams int) {
 	Debug(c, "Restarted streams")
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
 	Debug(c, "Updated fetcher")
+	c.connectChannels <- true
 }
 
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
@@ -546,8 +475,6 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.Consumerid)
 		return true
 	} else {
-		//TODO problem here! accs and thread ids do not match
-		c.ReinitializeAccumulatorsAndChannels(assignmentContext.MyTopicToNumStreams)
 		for _, topicPartition := range topicPartitions {
 			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
 			threadId := partitionOwnershipDecision[*topicPartition]
@@ -612,27 +539,24 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int32]*PartitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
 	consumerThreadId ConsumerThreadId) {
+	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currentTopicRegistry, topicPartition)
 	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
 	if (!exists) {
 		partTopicInfoMap = make(map[int32]*PartitionTopicInfo)
 		currentTopicRegistry[topicPartition.Topic] = partTopicInfoMap
 	}
 
-	topicAndThreadId := TopicAndThreadId{topicPartition.Topic, consumerThreadId}
-	var accumulator *BatchAccumulator = nil
-	for topicThread, acc := range c.topicThreadIdsAndAccumulators {
-		if reflect.DeepEqual(topicAndThreadId, topicThread) {
-			accumulator = acc
-		}
+	buffer := c.topicPartitionsAndBuffers[*topicPartition]
+	if buffer == nil {
+		buffer = NewMessageBuffer(*topicPartition, make(chan []*Message, c.config.QueuedMaxMessages), c.config, c.askNextBatch, c.disconnectChannelsForPartition)
+		c.topicPartitionsAndBuffers[*topicPartition] = buffer
 	}
 
 	partTopicInfo := &PartitionTopicInfo{
 		Topic: topicPartition.Topic,
 		Partition: topicPartition.Partition,
-		Accumulator: accumulator,
-		ConsumedOffset: offset,
+		Buffer: buffer,
 		FetchedOffset: offset,
-		ClientId: c.config.Consumerid,
 	}
 
 	partTopicInfoMap[topicPartition.Partition] = partTopicInfo

@@ -123,15 +123,13 @@ type SharedBlockChannel struct {
 type PartitionTopicInfo struct {
 	Topic string
 	Partition int32
-	Accumulator *BatchAccumulator
-	ConsumedOffset int64
+	Buffer *MessageBuffer
 	FetchedOffset int64
-	ClientId string
 }
 
 func (p *PartitionTopicInfo) String() string {
-	return fmt.Sprintf("{Topic: %s, Partition: %d, ConsumedOffset: %d, FetchedOffset: %d, ClientId: %s, Accumulator: %s}",
-						p.Topic, p.Partition, p.ConsumedOffset, p.FetchedOffset, p.ClientId, p.Accumulator)
+	return fmt.Sprintf("{Topic: %s, Partition: %d, FetchedOffset: %d, Buffer: %s}",
+						p.Topic, p.Partition, p.FetchedOffset, p.Buffer)
 }
 
 type BrokerAndInitialOffset struct {

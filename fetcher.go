@@ -128,7 +128,8 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 			topicPartitionsToRemove := make([]TopicAndPartition, 0)
 			for tp := range m.partitionMap {
 				topicPartitionsToRemove = append(topicPartitionsToRemove, tp)
-				m.partitionMap[tp].Accumulator.RemoveBuffer(tp)
+				Tracef(m, "Stopping buffer: %s", m.partitionMap[tp].Buffer)
+				m.partitionMap[tp].Buffer.Stop()
 				delete(m.partitionMap, tp)
 			}
 			Tracef(m, "There are obsolete partitions %v", topicPartitionsToRemove)
@@ -582,9 +583,9 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, fetchOffset int64, partitionData *sarama.FetchResponseBlock) {
 	Tracef(f, "Processing partition data for %s", topicAndPartition)
 
-	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
-	if len(partitionData.MsgSet.Messages) > 0 && !partitionTopicInfo.Accumulator.InputChannel.closed {
-		partitionTopicInfo.Accumulator.InputChannel.chunks <- &TopicPartitionData{ topicAndPartition, partitionData }
+	partitionTopicInfo := f.allPartitionMap[topicAndPartition] //TODO this is potentially unsafe, maybe use allPartitionMapLock here?
+	if len(partitionData.MsgSet.Messages) > 0 {
+		partitionTopicInfo.Buffer.AddBatch(&TopicPartitionData{ topicAndPartition, partitionData })
 		Info(f, "Sent partition data")
 	} else {
 		Debug(f, "Got empty message. Ignoring...")
@@ -610,7 +611,6 @@ func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *Topic
 	newOffset := f.earliestOrLatestOffset(topicAndPartition, offsetTime)
 	partitionTopicInfo := f.allPartitionMap[*topicAndPartition]
 	partitionTopicInfo.FetchedOffset = newOffset
-	partitionTopicInfo.ConsumedOffset = newOffset
 
 	return newOffset
 }
@@ -662,9 +662,9 @@ func (f *consumerFetcherRoutine) Close() <-chan bool {
 		f.fetchStopper <- true
 		for tp, pti := range f.allPartitionMap {
 			if _, exists := f.partitionMap[tp]; exists {
-				Debugf(f, "Stopping %s", pti.Accumulator)
-				pti.Accumulator.Stop()
-				Debugf(f, "Stopped %s", pti.Accumulator)
+				Debugf(f, "Stopping %s", pti.Buffer)
+				pti.Buffer.Stop()
+				Debugf(f, "Stopped %s", pti.Buffer)
 			}
 		}
 		f.removeAllPartitions()
