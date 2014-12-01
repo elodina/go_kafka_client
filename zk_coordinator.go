@@ -291,6 +291,19 @@ func (zc *ZookeeperCoordinator) Unsubscribe() {
 }
 
 func (zc *ZookeeperCoordinator) ClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
+	var err error
+	for i := 0; i <= zc.config.MaxClaimPartitionRetries; i++ {
+		ok, err := zc.tryClaimPartitionOwnership(group, topic, partition, consumerThreadId)
+		if ok {
+			return ok, err
+		}
+		Tracef(zc, "Claim failed for topic %s, partition %d after %d-th retry", topic, partition, i)
+		time.Sleep(zc.config.ClaimPartitionBackoff)
+	}
+	return false, err
+}
+
+func (zc *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
 	dirs := newZKGroupTopicDirs(group, topic)
 	zc.createOrUpdatePathParentMayNotExist(dirs.ConsumerOwnerDir, make([]byte, 0))
 
@@ -484,14 +497,22 @@ type ZookeeperConfig struct {
 	/* Zookeeper hosts */
 	ZookeeperConnect []string
 
-	/** Zookeeper read timeout */
+	/* Zookeeper read timeout */
 	ZookeeperTimeout time.Duration
+
+	/* Max retries to claim one partition */
+	MaxClaimPartitionRetries int
+
+	/* Backoff to retry to claim partition */
+	ClaimPartitionBackoff time.Duration
 }
 
 func NewZookeeperConfig() *ZookeeperConfig {
 	config := &ZookeeperConfig{}
 	config.ZookeeperConnect = []string{"localhost"}
 	config.ZookeeperTimeout = 1*time.Second
+	config.MaxClaimPartitionRetries = 3
+	config.ClaimPartitionBackoff = 150 * time.Millisecond
 
 	return config
 }
