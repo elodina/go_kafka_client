@@ -160,6 +160,7 @@ func (c *Consumer) startStreams() {
 			return
 		}
 		case tp := <-c.disconnectChannelsForPartition: {
+			Tracef(c, "Disconnecting %s", tp)
 			stopRedirects[tp] <- true
 			delete(stopRedirects, tp)
 		}
@@ -173,6 +174,14 @@ func (c *Consumer) startStreams() {
 
 func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 	InLock(&c.workerManagersLock, func() {
+		for _, partitions := range c.TopicRegistry {
+			for partition, info := range partitions {
+				Tracef(c, "MBs for partition %d", partition)
+				for _, mb := range info.Accumulator.MessageBuffers {
+					Tracef(c, "MB: %s", mb)
+				}
+			}
+		}
 		Tracef(c, "connect channels registry: %v", c.TopicRegistry)
 		for topic, partitions := range c.TopicRegistry {
 			for partition, info := range partitions {
@@ -439,8 +448,6 @@ func (c *Consumer) updateFetcher(numStreams int) {
 	Debug(c, "Restarted streams")
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
 	Debug(c, "Updated fetcher")
-	Debug(c, "Restarting streams")
-	c.connectChannels <- true
 }
 
 func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
@@ -539,6 +546,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.Consumerid)
 		return true
 	} else {
+		//TODO problem here! accs and thread ids do not match
 		c.ReinitializeAccumulatorsAndChannels(assignmentContext.MyTopicToNumStreams)
 		for _, topicPartition := range topicPartitions {
 			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset

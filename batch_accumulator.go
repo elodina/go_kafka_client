@@ -94,6 +94,7 @@ func (ba *BatchAccumulator) processIncomingBlocks() {
 				if mb, exists := ba.MessageBuffers[tp]; exists {
 					mb.Stop()
 					delete(ba.MessageBuffers, tp)
+					ba.disconnectChannelsForPartition <- tp
 				}
 			}
 			case <-ba.stopProcessing: {

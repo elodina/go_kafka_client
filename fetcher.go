@@ -549,8 +549,6 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 								newOffset = messages[len(messages)-1].Offset+1
 							}
 							f.partitionMap[topicAndPartition] = newOffset
-							//TODO not sure if we need to do this in separate routine but the faster we're able to listen to "ask next" the better
-							//TODO this caused deadlocks sometimes when one routine is responsible for more than 1 partition
 							go f.processPartitionData(topicAndPartition, currentOffset, data)
 						}
 						case sarama.OffsetOutOfRange: {
@@ -582,7 +580,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 }
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, fetchOffset int64, partitionData *sarama.FetchResponseBlock) {
-	Info(f, "Processing partition data")
+	Tracef(f, "Processing partition data for %s", topicAndPartition)
 
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition]
 	if len(partitionData.MsgSet.Messages) > 0 && !partitionTopicInfo.Accumulator.InputChannel.closed {
