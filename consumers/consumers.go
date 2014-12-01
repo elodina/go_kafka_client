@@ -143,7 +143,7 @@ func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
 
 func startNewConsumer(config kafkaClient.ConsumerConfig, topic string, consumerIdPattern string, consumerIndex int) *kafkaClient.Consumer {
 	config.Consumerid = fmt.Sprintf(consumerIdPattern, consumerIndex)
-	config.Strategy = Strategy
+	config.Strategy = GetStrategy(config.Consumerid)
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
 	consumer := kafkaClient.NewConsumer(&config)
@@ -154,12 +154,14 @@ func startNewConsumer(config kafkaClient.ConsumerConfig, topic string, consumerI
 	return consumer
 }
 
-func Strategy(worker *kafkaClient.Worker, msg *kafkaClient.Message, id kafkaClient.TaskId) kafkaClient.WorkerResult {
-	kafkaClient.Infof("main", "Got a message: %s", string(msg.Value))
-	//	sleepTime := time.Duration(rand.Intn(2) + 1) * time.Second
-	//	time.Sleep(sleepTime)
+func GetStrategy(consumerId string) func(*kafkaClient.Worker, *kafkaClient.Message, kafkaClient.TaskId) kafkaClient.WorkerResult {
+	consumeRate := metrics.NewRegisteredMeter(fmt.Sprintf("%s-ConsumeRate", consumerId), metrics.DefaultRegistry)
+	return func(_ *kafkaClient.Worker, msg *kafkaClient.Message, id kafkaClient.TaskId) kafkaClient.WorkerResult {
+		kafkaClient.Tracef("main", "Got a message: %s", string(msg.Value))
+		consumeRate.Mark(1)
 
-	return kafkaClient.NewSuccessfulResult(id)
+		return kafkaClient.NewSuccessfulResult(id)
+	}
 }
 
 func FailedCallback(wm *kafkaClient.WorkerManager) kafkaClient.FailedDecision {

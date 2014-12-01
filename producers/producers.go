@@ -25,9 +25,11 @@ import (
 	"strconv"
 	"os"
 	"os/signal"
+	metrics "github.com/rcrowley/go-metrics"
+	"net"
 )
 
-func resolveConfig() (string, string, string, int, time.Duration) {
+func resolveConfig() (string, string, string, int, time.Duration, string, time.Duration) {
 	rawConfig, err := kafkaClient.LoadConfiguration("producers.properties")
 	if err != nil {
 		panic(err)
@@ -38,14 +40,33 @@ func resolveConfig() (string, string, string, int, time.Duration) {
 	topic := rawConfig["topic"]
 	numPartitions, _ := strconv.Atoi(rawConfig["num_partitions"])
 	sleepTime, _ := time.ParseDuration(rawConfig["sleep_time"])
+	flushInterval, _ := time.ParseDuration(rawConfig["flush_interval"])
 
-	return zkConnect, brokerConnect, topic, numPartitions, sleepTime
+	return zkConnect, brokerConnect, topic, numPartitions, sleepTime, rawConfig["graphite_connect"], flushInterval
+}
+
+func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
+	addr, err := net.ResolveTCPAddr("tcp", graphiteConnect)
+	if err != nil {
+		panic(err)
+	}
+	go metrics.GraphiteWithConfig(metrics.GraphiteConfig{
+		Addr:          addr,
+		Registry:      metrics.DefaultRegistry,
+		FlushInterval: graphiteFlushInterval,
+		DurationUnit:  time.Second,
+		Prefix:        "metrics",
+		Percentiles:   []float64{0.5, 0.75, 0.95, 0.99, 0.999},
+	})
 }
 
 func main() {
 	numMessage := 0
 
-	zkConnect, brokerConnect, topic, numPartitions, sleepTime := resolveConfig()
+	zkConnect, brokerConnect, topic, numPartitions, sleepTime, graphiteConnect, graphiteFlushInterval := resolveConfig()
+
+	startMetrics(graphiteConnect, graphiteFlushInterval)
+	produceRate := metrics.NewRegisteredMeter("ProduceRate", metrics.DefaultRegistry)
 
 	kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
 
@@ -57,6 +78,7 @@ func main() {
 				panic(err)
 			}
 			numMessage++
+			produceRate.Mark(1)
 			time.Sleep(sleepTime)
 		}
 	}()
