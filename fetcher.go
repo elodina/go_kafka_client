@@ -459,17 +459,18 @@ func (f *consumerFetcherRoutine) Start() {
 					fetchRequest.MinBytes = config.FetchMinBytes
 					fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
 					partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
-					Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
-					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), partitionFetchInfo.Offset, partitionFetchInfo.FetchSize)
+					offset := partitionFetchInfo.Offset
+					Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, partitionFetchInfo.FetchSize)
+					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, partitionFetchInfo.FetchSize)
 
 					if len(f.fetchRequestBlockMap) > 0 {
 						var hasMessages bool
 						f.manager.fetchDurationTimer.Time(func() {
-							hasMessages = f.processFetchRequest(fetchRequest)
+							hasMessages = f.processFetchRequest(fetchRequest, offset)
 							for i := 0; i <= config.FetchMaxRetries && !hasMessages; i++ {
 								time.Sleep(config.RequeueAskNextBackoff)
 								Debug(f, "Asknext received no messages, requeue request")
-								hasMessages = f.processFetchRequest(fetchRequest)
+								hasMessages = f.processFetchRequest(fetchRequest, offset)
 								Debug(f, "Requeued request")
 							}
 						})
@@ -516,7 +517,7 @@ func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndP
 	}
 }
 
-func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchRequest) bool {
+func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchRequest, requestedOffset int64) bool {
 	Info(f, "Started processing fetch request")
 	hasMessages := false
 	partitionsWithError := make(map[TopicAndPartition]bool)
@@ -550,6 +551,9 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 								newOffset = messages[len(messages)-1].Offset+1
 							}
 							f.partitionMap[topicAndPartition] = newOffset
+							if f.manager.config.CheckFetchedOffsets {
+								filterPartitionData(data, requestedOffset)
+							}
 							go f.processPartitionData(topicAndPartition, currentOffset, data)
 						}
 						case sarama.OffsetOutOfRange: {
@@ -578,6 +582,16 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	}
 
 	return hasMessages
+}
+
+func filterPartitionData(partitionData *sarama.FetchResponseBlock, requestedOffset int64) {
+	lowestCorrectIndex := 0
+	for i, v := range partitionData.MsgSet.Messages {
+		if v.Offset < requestedOffset {
+			lowestCorrectIndex = i+1
+		} else { break }
+	}
+	partitionData.MsgSet.Messages = partitionData.MsgSet.Messages[lowestCorrectIndex:]
 }
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, fetchOffset int64, partitionData *sarama.FetchResponseBlock) {
