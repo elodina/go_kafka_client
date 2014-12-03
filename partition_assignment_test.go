@@ -40,8 +40,8 @@ var (
 
 func TestRoundRobinAssignor(t *testing.T) {
 	//basic scenario
-	assignor := NewPartitionAssignor("roundrobin")
-	context := &AssignmentContext{
+	assignor := newPartitionAssignor("roundrobin")
+	context := &assignmentContext{
 		Group: "group",
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
@@ -99,8 +99,8 @@ func TestRoundRobinAssignor(t *testing.T) {
 
 func TestRangeAssignor(t *testing.T) {
 	//basic scenario
-	assignor := NewPartitionAssignor("range")
-	context := &AssignmentContext{
+	assignor := newPartitionAssignor("range")
+	context := &assignmentContext{
 		Group: "group",
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,

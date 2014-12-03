@@ -95,7 +95,7 @@ func testRegisterConsumer(t *testing.T) {
 	consumerInfo := &ConsumerInfo{
 		Version : int16(1),
 		Subscription : subscription,
-		Pattern : WhiteListPattern,
+		Pattern : whiteListPattern,
 		Timestamp : time.Now().Unix(),
 	}
 

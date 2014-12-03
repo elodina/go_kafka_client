@@ -57,7 +57,7 @@ type Consumer struct {
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
 	topicPartitionsAndBuffers map[TopicAndPartition]*messageBuffer
-	topicRegistry map[string]map[int32]*PartitionTopicInfo
+	topicRegistry map[string]map[int32]*partitionTopicInfo
 	connectChannels chan bool
 	disconnectChannelsForPartition chan TopicAndPartition
 	workerManagers map[TopicAndPartition]*WorkerManager
@@ -86,7 +86,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		unsubscribeFinished : make(chan bool),
 		closeFinished : make(chan bool),
 		topicPartitionsAndBuffers: make(map[TopicAndPartition]*messageBuffer),
-		topicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
+		topicRegistry: make(map[string]map[int32]*partitionTopicInfo),
 		connectChannels: make(chan bool),
 		disconnectChannelsForPartition: make(chan TopicAndPartition),
 		workerManagers: make(map[TopicAndPartition]*WorkerManager),
@@ -139,8 +139,8 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
-	assignmentContext := NewStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, topicCount, topicPartitionMap)
-	partitionOwnershipDecision := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
+	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, topicCount, topicPartitionMap)
+	partitionOwnershipDecision := newPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
 	topicPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, _ := range partitionOwnershipDecision {
@@ -311,7 +311,7 @@ func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 	switchTopicCount := &TopicSwitch {
 		ConsumerId : c.config.Consumerid,
 		TopicsToNumStreamsMap : topicCountMap,
-		DesiredPattern: fmt.Sprintf("%s%s", SwitchToPatternPrefix, pattern),
+		DesiredPattern: fmt.Sprintf("%s%s", switchToPatternPrefix, pattern),
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, switchTopicCount)
@@ -388,7 +388,7 @@ func (c *Consumer) stopWorkerManagers() bool {
 
 func (c *Consumer) updateFetcher(numStreams int) {
 	Debugf(c, "Updating fetcher with numStreams = %d", numStreams)
-	allPartitionInfos := make([]*PartitionTopicInfo, 0)
+	allPartitionInfos := make([]*partitionTopicInfo, 0)
 	Debugf(c, "Topic Registry = %s", c.topicRegistry)
 	for _, partitionAndInfo := range c.topicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
@@ -431,7 +431,7 @@ func (c *Consumer) unsubscribeFromChanges() {
 }
 
 func (c *Consumer) rebalance() {
-	partitionAssignor := NewPartitionAssignor(c.config.PartitionAssignmentStrategy)
+	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	if (!c.isShuttingdown) {
 		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 		var success = false
@@ -452,7 +452,7 @@ func (c *Consumer) rebalance() {
 	}
 }
 
-func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
+func tryRebalance(c *Consumer, partitionAssignor assignStrategy) bool {
 	//Don't hurry to delete it, we need it for closing the fetchers
 	topicPerThreadIdsMap, err := NewTopicsToNumStreams(c.config.Groupid, c.config.Consumerid, c.config.Coordinator, c.config.ExcludeInternalTopics)
 	if (err != nil) {
@@ -469,7 +469,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 	Infof(c, "%v\n", brokers)
 	c.releasePartitionOwnership(c.topicRegistry)
 
-	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
+	assignmentContext, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
 		return false
@@ -487,7 +487,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		return false
 	}
 
-	currenttopicRegistry := make(map[string]map[int32]*PartitionTopicInfo)
+	currenttopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
 
 	if (c.isShuttingdown) {
 		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.Consumerid)
@@ -554,13 +554,13 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 	}
 }
 
-func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*PartitionTopicInfo,
+func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
 	consumerThreadId ConsumerThreadId) {
 	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
 	partTopicInfoMap, exists := currenttopicRegistry[topicPartition.Topic]
 	if (!exists) {
-		partTopicInfoMap = make(map[int32]*PartitionTopicInfo)
+		partTopicInfoMap = make(map[int32]*partitionTopicInfo)
 		currenttopicRegistry[topicPartition.Topic] = partTopicInfoMap
 	}
 
@@ -570,7 +570,7 @@ func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int
 		c.topicPartitionsAndBuffers[*topicPartition] = buffer
 	}
 
-	partTopicInfo := &PartitionTopicInfo{
+	partTopicInfo := &partitionTopicInfo{
 		Topic: topicPartition.Topic,
 		Partition: topicPartition.Partition,
 		Buffer: buffer,
@@ -607,7 +607,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	return true
 }
 
-func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[int32]*PartitionTopicInfo) {
+func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[int32]*partitionTopicInfo) {
 	Info(c, "Releasing partition ownership")
 	for topic, partitionInfos := range localtopicRegistry {
 		for partition, _ := range partitionInfos {

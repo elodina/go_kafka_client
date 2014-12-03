@@ -24,42 +24,48 @@ import (
 )
 
 const (
+	/* Range partitioning works on a per-topic basis. For each topic, we lay out the available partitions in numeric order
+	and the consumer threads in lexicographic order. We then divide the number of partitions by the total number of
+	consumer streams (threads) to determine the number of partitions to assign to each consumer. If it does not evenly
+	divide, then the first few consumers will have one extra partition. For example, suppose there are two consumers C1
+	and C2 with two streams each, and there are five available partitions (p0, p1, p2, p3, p4). So each consumer thread
+	will get at least one partition and the first consumer thread will get one extra partition. So the assignment will be:
+	p0 -> C1-0, p1 -> C1-0, p2 -> C1-1, p3 -> C2-0, p4 -> C2-1 */
 	RangeStrategy = "range"
+	
+	/* The round-robin partition assignor lays out all the available partitions and all the available consumer threads. It
+	then proceeds to do a round-robin assignment from partition to consumer thread. If the subscriptions of all consumer
+	instances are identical, then the partitions will be uniformly distributed. (i.e., the partition ownership counts
+	will be within a delta of exactly one across all consumer threads.)
+	
+	(For simplicity of implementation) the assignor is allowed to assign a given topic-partition to any consumer instance
+	and thread-id within that instance. Therefore, round-robin assignment is allowed only if:
+	a) Every topic has the same number of streams within a consumer instance
+	b) The set of subscribed topics is identical for every consumer instance within the group. */
 	RoundRobinStrategy = "roundrobin"
 )
 
-type ConsumerGroupContextState struct {
+type consumerGroupContextState struct {
 	IsGroupTopicSwitchInProgress bool
-	IsGroupTopicSwitchInSync bool
-	DesiredPattern string
+	IsGroupTopicSwitchInSync     bool
+	DesiredPattern               string
 	DesiredTopicCountMap map[string]int
 }
 
-type AssignStrategy func(context *AssignmentContext) map[TopicAndPartition]ConsumerThreadId
+type assignStrategy func(*assignmentContext) map[TopicAndPartition]ConsumerThreadId
 
-func NewPartitionAssignor(strategy string) AssignStrategy {
+func newPartitionAssignor(strategy string) assignStrategy {
 	switch strategy {
 	case RoundRobinStrategy:
-		return RoundRobinAssignor
+		return roundRobinAssignor
 	case RangeStrategy:
-		return RangeAssignor
+		return rangeAssignor
 	default:
 		panic(fmt.Sprintf("Invalid partition assignment strategy: %s", strategy))
 	}
 }
 
-/**
- * The round-robin partition assignor lays out all the available partitions and all the available consumer threads. It
- * then proceeds to do a round-robin assignment from partition to consumer thread. If the subscriptions of all consumer
- * instances are identical, then the partitions will be uniformly distributed. (i.e., the partition ownership counts
- * will be within a delta of exactly one across all consumer threads.)
- *
- * (For simplicity of implementation) the assignor is allowed to assign a given topic-partition to any consumer instance
- * and thread-id within that instance. Therefore, round-robin assignment is allowed only if:
- * a) Every topic has the same number of streams within a consumer instance
- * b) The set of subscribed topics is identical for every consumer instance within the group.
- */
-func RoundRobinAssignor(context *AssignmentContext) map[TopicAndPartition]ConsumerThreadId {
+func roundRobinAssignor(context *assignmentContext) map[TopicAndPartition]ConsumerThreadId {
 	ownershipDecision := make(map[TopicAndPartition]ConsumerThreadId)
 
 	if (len(context.ConsumersForTopic) > 0) {
@@ -101,16 +107,7 @@ func RoundRobinAssignor(context *AssignmentContext) map[TopicAndPartition]Consum
 	return ownershipDecision
 }
 
-/**
- * Range partitioning works on a per-topic basis. For each topic, we lay out the available partitions in numeric order
- * and the consumer threads in lexicographic order. We then divide the number of partitions by the total number of
- * consumer streams (threads) to determine the number of partitions to assign to each consumer. If it does not evenly
- * divide, then the first few consumers will have one extra partition. For example, suppose there are two consumers C1
- * and C2 with two streams each, and there are five available partitions (p0, p1, p2, p3, p4). So each consumer thread
- * will get at least one partition and the first consumer thread will get one extra partition. So the assignment will be:
- * p0 -> C1-0, p1 -> C1-0, p2 -> C1-1, p3 -> C2-0, p4 -> C2-1
- */
-func RangeAssignor(context *AssignmentContext) map[TopicAndPartition]ConsumerThreadId {
+func rangeAssignor(context *assignmentContext) map[TopicAndPartition]ConsumerThreadId {
 	ownershipDecision := make(map[TopicAndPartition]ConsumerThreadId)
 
 	for topic, consumerThreadIds := range context.MyTopicThreadIds {
@@ -154,19 +151,19 @@ func RangeAssignor(context *AssignmentContext) map[TopicAndPartition]ConsumerThr
 	return ownershipDecision
 }
 
-type AssignmentContext struct {
-	ConsumerId string
-	Group      string
+type assignmentContext struct {
+	ConsumerId          string
+	Group               string
 	MyTopicThreadIds map[string][]ConsumerThreadId
 	MyTopicToNumStreams TopicsToNumStreams
 	PartitionsForTopic map[string][]int32
 	ConsumersForTopic map[string][]ConsumerThreadId
-	Consumers  []string
-	InTopicSwitch bool
-	State *ConsumerGroupContextState
+	Consumers           []string
+	InTopicSwitch       bool
+	State *consumerGroupContextState
 }
 
-func NewAssignmentContext(group string, consumerId string, excludeInternalTopics bool, coordinator ConsumerCoordinator) (*AssignmentContext, error) {
+func newAssignmentContext(group string, consumerId string, excludeInternalTopics bool, coordinator ConsumerCoordinator) (*assignmentContext, error) {
 	topicCount, _ := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
 	_, inTopicSwitch := topicCount.(*TopicSwitch)
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
@@ -197,7 +194,7 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 		}
 	}
 
-	return &AssignmentContext{
+	return &assignmentContext{
 		ConsumerId: consumerId,
 		Group: group,
 		MyTopicThreadIds: myTopicThreadIds,
@@ -205,7 +202,7 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
 		Consumers: consumers,
-		State: &ConsumerGroupContextState{
+		State: &consumerGroupContextState{
 			IsGroupTopicSwitchInProgress: isGroupTopicSwitchInProgress,
 			IsGroupTopicSwitchInSync: isGroupTopicSwitchInSync,
 			DesiredPattern: desiredPattern,
@@ -215,10 +212,10 @@ func NewAssignmentContext(group string, consumerId string, excludeInternalTopics
 	}, nil
 }
 
-func NewStaticAssignmentContext(group string, consumerId string, topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *AssignmentContext {
+func newStaticAssignmentContext(group string, consumerId string, topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *assignmentContext {
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 
-	return &AssignmentContext{
+	return &assignmentContext{
 		ConsumerId: consumerId,
 		Group: group,
 		MyTopicThreadIds: myTopicThreadIds,

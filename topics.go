@@ -28,16 +28,16 @@ func NewTopicsToNumStreams(group string, consumerId string, coordinator Consumer
 		return nil, err
 	}
 
-	hasTopicSwitch := strings.HasPrefix(consumerInfo.Pattern, SwitchToPatternPrefix)
+	hasTopicSwitch := strings.HasPrefix(consumerInfo.Pattern, switchToPatternPrefix)
 	if (hasTopicSwitch) {
 		var pattern string
 		switch consumerInfo.Pattern {
-		case fmt.Sprintf("%s%s", SwitchToPatternPrefix, WhiteListPattern):
-			pattern = WhiteListPattern
-		case fmt.Sprintf("%s%s", SwitchToPatternPrefix, BlackListPattern):
-			pattern = BlackListPattern
+		case fmt.Sprintf("%s%s", switchToPatternPrefix, whiteListPattern):
+			pattern = whiteListPattern
+		case fmt.Sprintf("%s%s", switchToPatternPrefix, blackListPattern):
+			pattern = blackListPattern
 		default:
-			pattern = StaticPattern
+			pattern = staticPattern
 		}
 		return &TopicSwitch{
 			ConsumerId: consumerId,
@@ -46,8 +46,8 @@ func NewTopicsToNumStreams(group string, consumerId string, coordinator Consumer
 		}, nil
 	}
 
-	hasWhiteList := WhiteListPattern == consumerInfo.Pattern
-	hasBlackList := BlackListPattern == consumerInfo.Pattern
+	hasWhiteList := whiteListPattern == consumerInfo.Pattern
+	hasBlackList := blackListPattern == consumerInfo.Pattern
 
 	if (len(consumerInfo.Subscription) == 0 || !(hasWhiteList || hasBlackList)) {
 		return &StaticTopicsToNumStreams{
@@ -116,7 +116,7 @@ func (tc *StaticTopicsToNumStreams) GetTopicsToNumStreamsMap() map[string]int {
 }
 
 func (tc *StaticTopicsToNumStreams) Pattern() string {
-	return StaticPattern
+	return staticPattern
 }
 
 type WildcardTopicsToNumStreams struct {
@@ -150,9 +150,9 @@ func (tc *WildcardTopicsToNumStreams) GetTopicsToNumStreamsMap() map[string]int 
 func (tc *WildcardTopicsToNumStreams) Pattern() string {
 	switch tc.TopicFilter.(type) {
 	case *WhiteList:
-		return WhiteListPattern
+		return whiteListPattern
 	case *BlackList:
-		return BlackListPattern
+		return blackListPattern
 	default:
 		panic("unknown topic filter")
 	}

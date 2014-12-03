@@ -32,8 +32,8 @@ type consumerFetcherManager struct {
 	closeFinished           chan bool
 	partitionMapLock        sync.Mutex
 	fetcherRoutineMapLock   sync.Mutex
-	partitionMap map[TopicAndPartition]*PartitionTopicInfo
-	fetcherRoutineMap map[BrokerAndFetcherId]*consumerFetcherRoutine
+	partitionMap map[TopicAndPartition]*partitionTopicInfo
+	fetcherRoutineMap map[brokerAndFetcherId]*consumerFetcherRoutine
 	noLeaderPartitions      []TopicAndPartition
 	shuttingDown            bool
 	leaderCond *sync.Cond
@@ -57,8 +57,8 @@ func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPart
 	manager := &consumerFetcherManager{
 		config : config,
 		closeFinished : make(chan bool),
-		partitionMap : make(map[TopicAndPartition]*PartitionTopicInfo),
-		fetcherRoutineMap : make(map[BrokerAndFetcherId]*consumerFetcherRoutine),
+		partitionMap : make(map[TopicAndPartition]*partitionTopicInfo),
+		fetcherRoutineMap : make(map[brokerAndFetcherId]*consumerFetcherRoutine),
 		noLeaderPartitions : make([]TopicAndPartition, 0),
 		askNext : askNext,
 		askNextStopper : make(chan bool),
@@ -81,14 +81,14 @@ func (m *consumerFetcherManager) notReady() {
 	})
 }
 
-func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicInfo, numStreams int) {
+func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicInfo, numStreams int) {
 	Trace(m, "Fetcher Manager started")
 	Debugf(m, "TopicInfos = %s", topicInfos)
 	m.numStreams = numStreams
 
 	inLock(&m.partitionMapLock, func() {
 			inWriteLock(&m.isReadyLock, func(){
-			newPartitionMap := make(map[TopicAndPartition]*PartitionTopicInfo)
+			newPartitionMap := make(map[TopicAndPartition]*partitionTopicInfo)
 			for _, info := range topicInfos {
 				topicAndPartition := TopicAndPartition{info.Topic, info.Partition}
 				newPartitionMap[topicAndPartition] = info
@@ -222,9 +222,9 @@ func (m *consumerFetcherManager) findLeaders() {
 			return
 		}
 
-		partitionAndOffsets := make(map[TopicAndPartition]*BrokerAndInitialOffset)
+		partitionAndOffsets := make(map[TopicAndPartition]*brokerAndInitialOffset)
 		for topicAndPartition, broker := range leaderForPartitions {
-			partitionAndOffsets[topicAndPartition] = &BrokerAndInitialOffset{broker, m.partitionMap[topicAndPartition].FetchedOffset}
+			partitionAndOffsets[topicAndPartition] = &brokerAndInitialOffset{broker, m.partitionMap[topicAndPartition].FetchedOffset}
 		}
 		m.addFetcherForPartitions(partitionAndOffsets)
 
@@ -284,17 +284,18 @@ func (m *consumerFetcherManager) distinctTopics() []string {
 	return topics[:i]
 }
 
-func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map[TopicAndPartition]*BrokerAndInitialOffset) {
+func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map[TopicAndPartition]*brokerAndInitialOffset) {
 	Infof(m, "Adding fetcher for partitions %v", partitionAndOffsets)
 	inLock(&m.fetcherRoutineMapLock, func() {
 
-		partitionsPerFetcher := make(map[BrokerAndFetcherId]map[TopicAndPartition]*BrokerAndInitialOffset)
-		for topicAndPartition, brokerAndInitialOffset := range partitionAndOffsets {
-			brokerAndFetcher := BrokerAndFetcherId{brokerAndInitialOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
+			//TODO map key contains a pointer, inspect this!
+		partitionsPerFetcher := make(map[brokerAndFetcherId]map[TopicAndPartition]*brokerAndInitialOffset)
+		for topicAndPartition, brokerAndOffset := range partitionAndOffsets {
+			brokerAndFetcher := brokerAndFetcherId{brokerAndOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
 			if partitionsPerFetcher[brokerAndFetcher] == nil {
-				partitionsPerFetcher[brokerAndFetcher] = make(map[TopicAndPartition]*BrokerAndInitialOffset)
+				partitionsPerFetcher[brokerAndFetcher] = make(map[TopicAndPartition]*brokerAndInitialOffset)
 			}
-			partitionsPerFetcher[brokerAndFetcher][topicAndPartition] = brokerAndInitialOffset
+			partitionsPerFetcher[brokerAndFetcher][topicAndPartition] = brokerAndOffset
 		}
 		Debugf(m, "partitionsPerFetcher: %v", partitionsPerFetcher)
 		for brokerAndFetcherId, partitionOffsets := range partitionsPerFetcher {
@@ -399,11 +400,11 @@ type consumerFetcherRoutine struct {
 	name             string
 	broker *BrokerInfo
 	brokerAddr       string //just not to calculate each time
-	allPartitionMap map[TopicAndPartition]*PartitionTopicInfo
+	allPartitionMap map[TopicAndPartition]*partitionTopicInfo
 	partitionMap map[TopicAndPartition]int64
 	partitionMapLock sync.Mutex
 	closeFinished    chan bool
-	fetchRequestBlockMap map[TopicAndPartition]*PartitionFetchInfo
+	fetchRequestBlockMap map[TopicAndPartition]*partitionFetchInfo
 	fetchStopper     chan bool
 	askNext          chan TopicAndPartition
 }
@@ -412,7 +413,7 @@ func (f *consumerFetcherRoutine) String() string {
 	return f.name
 }
 
-func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerInfo, allPartitionMap map[TopicAndPartition]*PartitionTopicInfo) *consumerFetcherRoutine {
+func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerInfo, allPartitionMap map[TopicAndPartition]*partitionTopicInfo) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
 		manager : m,
 		name : name,
@@ -421,7 +422,7 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 		allPartitionMap : allPartitionMap,
 		partitionMap : make(map[TopicAndPartition]int64),
 		closeFinished : make(chan bool),
-		fetchRequestBlockMap : make(map[TopicAndPartition]*PartitionFetchInfo),
+		fetchRequestBlockMap : make(map[TopicAndPartition]*partitionFetchInfo),
 		fetchStopper : make(chan bool),
 		askNext : make(chan TopicAndPartition),
 	}
@@ -442,7 +443,7 @@ func (f *consumerFetcherRoutine) start() {
 					inLock(&f.partitionMapLock, func() {
 						Debugf(f, "Partition map: %v", f.partitionMap)
 						if offset, exists := f.partitionMap[nextTopicPartition]; exists {
-							f.fetchRequestBlockMap[nextTopicPartition] = &PartitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
+							f.fetchRequestBlockMap[nextTopicPartition] = &partitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
 						}
 					})
 

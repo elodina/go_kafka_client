@@ -126,7 +126,7 @@ func (zc *ZookeeperCoordinator) GetConsumersPerTopic(group string, excludeIntern
 	}
 
 	for topic := range consumersPerTopicMap {
-		sort.Sort(ByName(consumersPerTopicMap[topic]))
+		sort.Sort(byName(consumersPerTopicMap[topic]))
 	}
 
 	return consumersPerTopicMap, nil

@@ -22,15 +22,14 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-//ConsumerInfo patterns
-//TODO any other patterns?
-var (
-	WhiteListPattern = "white_list"
-	BlackListPattern = "black_list"
-	StaticPattern    = "static"
-	SwitchToPatternPrefix = "switch_to_"
+const (
+	whiteListPattern = "white_list"
+	blackListPattern = "black_list"
+	staticPattern    = "static"
+	switchToPatternPrefix = "switch_to_"
 )
 
+//Single Kafka message that is sent to user-defined Strategy
 type Message struct {
 	Key       []byte
 	Value     []byte
@@ -43,6 +42,7 @@ func (m *Message) String() string {
 	return fmt.Sprintf("Message{Topic: %s, Partition: %d, Offset: %d}", m.Topic, m.Partition, m.Offset)
 }
 
+//General information about Kafka broker. Used to keep it in consumer coordinator.
 type BrokerInfo struct {
 	Version int16
 	Id      int32
@@ -55,6 +55,7 @@ func (b *BrokerInfo) String() string {
 						b.Version, b.Id, b.Host, b.Port)
 }
 
+//General information about Kafka consumer. Used to keep it in consumer coordinator.
 type ConsumerInfo struct {
 	Version   int16
 	Subscription map[string]int
@@ -67,6 +68,7 @@ func (c *ConsumerInfo) String() string {
 						c.Version, c.Subscription, c.Pattern, c.Timestamp)
 }
 
+//General information about Kafka topic. Used to keep it in consumer coordinator.
 type TopicInfo struct {
 	Version int16
 	Partitions map[string][]int32
@@ -77,35 +79,40 @@ func (t *TopicInfo) String() string {
 						t.Version, t.Partitions)
 }
 
+//Information on Consumer subscription. Used to keep it in consumer coordinator.
 type TopicsToNumStreams interface {
 	GetTopicsToNumStreamsMap() map[string]int
 	GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId
 	Pattern() string
 }
 
+//Consumer routine id. Used to keep track of what consumer routine consumes a particular topic-partition in consumer coordinator.
 type ConsumerThreadId struct {
 	Consumer string
 	ThreadId int
 }
 
-type ByName []ConsumerThreadId
-
-func (a ByName) Len() int { return len(a) }
-func (a ByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a ByName) Less(i, j int) bool {
-	this := fmt.Sprintf("%s-%d", a[i].Consumer, a[i].ThreadId)
-	that := fmt.Sprintf("%s-%d", a[j].Consumer, a[j].ThreadId)
-	return this < that
-}
 func (c *ConsumerThreadId) String() string {
 	return fmt.Sprintf("%s-%d", c.Consumer, c.ThreadId)
 }
 
+type byName []ConsumerThreadId
+
+func (a byName) Len() int { return len(a) }
+func (a byName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a byName) Less(i, j int) bool {
+	this := fmt.Sprintf("%s-%d", a[i].Consumer, a[i].ThreadId)
+	that := fmt.Sprintf("%s-%d", a[j].Consumer, a[j].ThreadId)
+	return this < that
+}
+
+//Either a WhiteList or BlackList consumer topic filter.
 type TopicFilter interface {
 	regex() string
 	topicAllowed(topic string, excludeInternalTopics bool) bool
 }
 
+//Type representing a single Kafka topic and partition
 type TopicAndPartition struct {
 	Topic string
 	Partition int32
@@ -115,67 +122,49 @@ func (tp *TopicAndPartition) String() string {
 	return fmt.Sprintf("{Topic: %s, Partition: %d}", tp.Topic, tp.Partition)
 }
 
-type SharedBlockChannel struct {
-	chunks chan *TopicPartitionData
-	closed bool
-}
-
-type PartitionTopicInfo struct {
+type partitionTopicInfo struct {
 	Topic string
 	Partition int32
 	Buffer *messageBuffer
 	FetchedOffset int64
 }
 
-func (p *PartitionTopicInfo) String() string {
+func (p *partitionTopicInfo) String() string {
 	return fmt.Sprintf("{Topic: %s, Partition: %d, FetchedOffset: %d, Buffer: %s}",
 						p.Topic, p.Partition, p.FetchedOffset, p.Buffer)
 }
 
-type BrokerAndInitialOffset struct {
+type brokerAndInitialOffset struct {
 	Broker *BrokerInfo
 	InitOffset int64
 }
 
-func (b *BrokerAndInitialOffset) String() string {
+func (b *brokerAndInitialOffset) String() string {
 	return fmt.Sprintf("{Broker: %s, InitialOffset: %d}", b.Broker, b.InitOffset)
 }
 
-type BrokerAndFetcherId struct {
+type brokerAndFetcherId struct {
 	Broker *BrokerInfo
 	FetcherId int
 }
 
-func (b *BrokerAndFetcherId) String() string {
+func (b *brokerAndFetcherId) String() string {
 	return fmt.Sprintf("{Broker: %s, FetcherId: %d}", b.Broker, b.FetcherId)
 }
 
-type TopicAndThreadId struct {
-	Topic string
-	ThreadId ConsumerThreadId
-}
-
-func (tt *TopicAndThreadId) String() string {
-	return fmt.Sprintf("{Topic: %s, ThreadId: %s}", tt.Topic, tt.ThreadId)
-}
-
-type PartitionFetchInfo struct {
+type partitionFetchInfo struct {
 	Offset int64
 	FetchSize int32
 }
 
-func (p *PartitionFetchInfo) String() string {
+func (p *partitionFetchInfo) String() string {
 	return fmt.Sprintf("{Offset: %d, FetchSize: %d}", p.Offset, p.FetchSize)
 }
 
+//Fetched data from Kafka broker for a particular topic and partition
 type TopicPartitionData struct {
 	TopicPartition TopicAndPartition
 	Data *sarama.FetchResponseBlock
-}
-
-type WorkerManagerAndNextBatchChannel struct {
-	WorkerMgr *WorkerManager
-	AskNextBatch chan bool
 }
 
 type intArray []int32
@@ -183,6 +172,7 @@ func (s intArray) Len() int { return len(s) }
 func (s intArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s intArray) Less(i, j int) bool { return s[i] < s[j] }
 
+//TODO document this!
 type ConsumerCoordinator interface {
 	Connect() error
 	RegisterConsumer(consumerid string, group string, topicCount TopicsToNumStreams) error
