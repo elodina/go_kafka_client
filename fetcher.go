@@ -551,9 +551,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 								newOffset = messages[len(messages)-1].Offset+1
 							}
 							f.partitionMap[topicAndPartition] = newOffset
-							if f.manager.config.CheckFetchedOffsets {
-								filterPartitionData(data, requestedOffset)
-							}
+							filterPartitionData(data, requestedOffset)
 							go f.processPartitionData(topicAndPartition, currentOffset, data)
 						}
 						case sarama.OffsetOutOfRange: {

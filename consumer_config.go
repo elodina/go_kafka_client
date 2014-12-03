@@ -142,10 +142,6 @@ type ConsumerConfig struct {
 	/* Time period between two fetch requests for one fetch routine */
 	FetchRequestBackoff time.Duration
 
-	/* Check whether the fetch response contains offsets lower than requested
-	Do not turn it off unless you know what you do */
-	CheckFetchedOffsets bool
-
 	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
 	Coordinator ConsumerCoordinator
 }
@@ -188,7 +184,6 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
 	config.FetchRequestBackoff = 100 * time.Millisecond
-	config.CheckFetchedOffsets = true
 
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 
