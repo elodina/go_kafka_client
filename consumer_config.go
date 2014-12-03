@@ -23,129 +23,126 @@ import (
 	"errors"
 )
 
+//ConsumerConfig defines configuration options for Consumer
 type ConsumerConfig struct {
-	/** a string that uniquely identifies a set of consumers within the same consumer group */
+	/* A string that uniquely identifies a set of consumers within the same consumer group */
 	Groupid string
 
-	/** consumer id: generated automatically if not set.
-   	 *  Set this explicitly for only testing purpose.
-   	 */
+	/* A string that uniquely identifies a consumer within a group. Generated automatically if not set.
+   	Set this explicitly for only testing purpose. */
 	Consumerid string
 
-	/** the socket timeout for network requests. Its value should be at least fetch.wait.max.ms. */
+	/* The socket timeout for network requests. Its value should be at least FetchWaitMaxMs. */
 	SocketTimeout time.Duration
 
-	/** the number of byes of messages to attempt to fetch */
+	/* The maximum number of bytes to attempt to fetch */
 	FetchMessageMaxBytes int32
 
-	/** the number threads used to fetch data */
+	/* The number of goroutines used to fetch data */
 	NumConsumerFetchers int
 
-	/** max number of message chunks buffered for consumption, each chunk can be up to fetch.message.max.bytes*/
+	/* Max number of message batches buffered for consumption, each batch can be up to FetchBatchSize */
 	QueuedMaxMessages int32
 
-	/** max number of retries during rebalance */
+	/* Max number of retries during rebalance */
 	RebalanceMaxRetries int32
 
-	/** the minimum amount of data the server should return for a fetch request. If insufficient data is available the request will block */
+	/* The minimum amount of data the server should return for a fetch request. If insufficient data is available the request will block */
 	FetchMinBytes int32
 
-	/** the maximum amount of time the server will block before answering the fetch request if there isn't sufficient data to immediately satisfy fetch.min.bytes */
+	/* The maximum amount of time the server will block before answering the fetch request if there isn't sufficient data to immediately satisfy FetchMinBytes */
 	FetchWaitMaxMs int32
 
-	/** backoff time between retries during rebalance */
+	/* Backoff time between retries during rebalance */
 	RebalanceBackoff time.Duration
 
-	/** backoff time to refresh the leader of a partition after it loses the current leader */
+	/* Backoff time to refresh the leader of a partition after it loses the current leader */
 	RefreshLeaderBackoff time.Duration
 
-	/** Retry the offset commit up to this many times on failure. This retry count only applies to offset commits during
-		* shut-down. It does not apply to commits from the auto-commit thread. It also does not apply to attempts to query
-		* for the offset coordinator before committing offsets. i.e., if a consumer metadata request fails for any reason,
-		* it is retried and that retry does not count toward this limit. */
+	/* Retry the offset commit up to this many times on failure. */
 	OffsetsCommitMaxRetries int
 
-	/* Offset commit interval */
+	/* Try to commit offset every OffsetCommitInterval. If previous offset commit for a partition is still in progress updates the next offset to commit and continues.
+	This way it does not commit all the offset history if the coordinator is slow, but only the highest offsets. */
 	OffsetCommitInterval time.Duration
 
-	/** Specify whether offsets should be committed to "zookeeper" (default) or "kafka" */
+	/* Specify whether offsets should be committed to "zookeeper" (default) or "kafka". */
 	OffsetsStorage string
 
-	/* what to do if an offset is out of range.
-		 smallest : automatically reset the offset to the smallest offset
-		 largest : automatically reset the offset to the largest offset
-		 anything else: throw exception to the consumer */
+	/* What to do if an offset is out of range.
+	SmallestOffset : automatically reset the offset to the smallest offset.
+	LargestOffset : automatically reset the offset to the largest offset.
+	Defaults to LargestOffset. */
 	AutoOffsetReset string
 
-	/**
-	   * Client id is specified by the kafka consumer client, used to distinguish different clients
-	   */
+	/* Client id is specified by the kafka consumer client, used to distinguish different clients. */
 	Clientid string
 
-	/** Whether messages from int32ernal topics (such as offsets) should be exposed to the consumer. */
+	/* Whether messages from internal topics (such as offsets) should be exposed to the consumer. */
 	ExcludeInternalTopics bool
 
-	/** Select a strategy for assigning partitions to consumer streams. Possible values: range, roundrobin */
+	/* Select a strategy for assigning partitions to consumer streams. Possible values: RangeStrategy, RoundRobinStrategy */
 	PartitionAssignmentStrategy string
 
-	/* Amount of workers */
+	/* Amount of workers per partition to process consumed messages. */
 	NumWorkers int
 
-	/* Times to retry failed message processing by worker */
+	/* Times to retry processing a failed message by a worker. */
 	MaxWorkerRetries int
 
-	/* Worker retry threshold */
+	/* Worker retry threshold. Increments each time a worker fails to process a message within MaxWorkerRetries.
+	When this threshold is hit within a WorkerThresholdTimeWindow, WorkerFailureCallback is called letting the user to decide whether the consumer should stop. */
 	WorkerRetryThreshold int32
 
-	/* Time period in which workers could be considered failed if WorkerRetryThreshold is exceeded */
-	WorkerConsideredFailedTimeWindow time.Duration
+	/* Resets WorkerRetryThreshold if it isn't hit within this period. */
+	WorkerThresholdTimeWindow time.Duration
 
-	/* Callback executed when WorkerRetryThreshold exceeded within WorkerConsideredFailedTimeWindow */
+	/* Callback executed when WorkerRetryThreshold exceeded within WorkerThresholdTimeWindow */
 	WorkerFailureCallback FailedCallback
 
 	/* Callback executed when Worker failed to process the message after MaxWorkerRetries and WorkerRetryThreshold is not hit */
 	WorkerFailedAttemptCallback FailedAttemptCallback
 
-	/* Task timeout */
+	/* Worker timeout to process a single message. */
 	WorkerTaskTimeout time.Duration
 
-	/* Backoff for worker message processing */
+	/* Backoff between worker attempts to process a single message. */
 	WorkerBackoff time.Duration
 
-	/* Timeout for processing the whole batch by cosumer */
-	WorkerBatchTimeout time.Duration
-
-	/* Worker managers stop timeout */
+	/* Maximum wait time to gracefully stop a worker manager */
 	WorkerManagersStopTimeout time.Duration
 
-	/* Worker strategy */
+	/* A function which defines a user-specified action on a single message. This function is responsible for actual message processing.
+	Consumer panics if Strategy is not set. */
 	Strategy WorkerStrategy
 
-	/* Batch size */
+	/* Number of messages to accumulate before flushing them to workers */
 	FetchBatchSize int
 
-	/* Timeout to accumulate messages */
+	/* Timeout to accumulate messages. Flushes accumulated batch to workers even if it is not yet full.
+	Resets after each flush meaning this won't be triggered if FetchBatchSize is reached before timeout. */
 	FetchBatchTimeout time.Duration
 
-	/* Backoff to requeue ask next if no messages were fetched */
+	/* Backoff between fetch requests if no messages were fetched from a previous fetch. */
 	RequeueAskNextBackoff time.Duration
 
-	/* Fetch max retries */
+	/* Maximum fetch retries if no messages were fetched from a previous fetch */
 	FetchMaxRetries int
 
-	/* Maximum retries to fetch metadata from one broker */
+	/* Maximum retries to fetch topic metadata from one broker. */
 	FetchTopicMetadataRetries int
 
-	/* Backoff for fetch topic metadata request */
+	/* Backoff for fetch topic metadata request if the previous request failed. */
 	FetchTopicMetadataBackoff time.Duration
 
-	/* Time period between two fetch requests for one fetch routine */
+	/* Backoff between two fetch requests for one fetch routine. Needed to prevent fetcher from querying the broker too frequently. */
 	FetchRequestBackoff time.Duration
 
 	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
 	Coordinator ConsumerCoordinator
 }
 
+//DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.
 func DefaultConsumerConfig() *ConsumerConfig {
 	config := &ConsumerConfig{}
 	config.Groupid = "go-consumer-group"
@@ -164,15 +161,13 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.AutoOffsetReset = LargestOffset
 	config.Clientid = "go-client"
-	config.Consumerid = "consumer1"
 	config.ExcludeInternalTopics = true
-	config.PartitionAssignmentStrategy = RangeStrategy/* select between "range", and "roundrobin" */
+	config.PartitionAssignmentStrategy = RangeStrategy/* select between "RangeStrategy", and "RoundRobinStrategy" */
 
 	config.NumWorkers = 10
 	config.MaxWorkerRetries = 3
 	config.WorkerRetryThreshold = 100
 	config.WorkerBackoff = 500 * time.Millisecond
-	config.WorkerBatchTimeout = 5 * time.Minute
 	config.WorkerTaskTimeout = 1 * time.Minute
 	config.WorkerManagersStopTimeout = 1 * time.Minute
 
@@ -212,12 +207,11 @@ PartitionAssignmentStrategy: %s
 NumWorkers: %d
 MaxWorkerRetries: %d
 WorkerRetryThreshold %d
-WorkerConsideredFailedTimeWindow %v
+WorkerThresholdTimeWindow %v
 WorkerFailureCallback %v
 WorkerFailedAttemptCallback %v
 WorkerTaskTimeout %v
 WorkerBackoff %v
-WorkerBatchTimeout %v
 Strategy %v
 FetchBatchSize %d
 FetchBatchTimeout %v
@@ -229,18 +223,19 @@ FetchBatchTimeout %v
    c.AutoOffsetReset, c.Clientid, c.Consumerid,
    c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.NumWorkers,
    c.MaxWorkerRetries, c.WorkerRetryThreshold,
-   c.WorkerConsideredFailedTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
-   c.WorkerTaskTimeout, c.WorkerBackoff, c.WorkerBatchTimeout,
+   c.WorkerThresholdTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
+   c.WorkerTaskTimeout, c.WorkerBackoff,
    c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)
 }
 
+//Validates this ConsumerConfig. Returns a corresponding error if the ConsumerConfig is invalid and nil otherwise.
 func (c *ConsumerConfig) Validate() error {
 	if c.Groupid == "" {
 		return errors.New("Groupid cannot be empty")
 	}
 
 	if c.Consumerid == "" {
-		return errors.New("Consumerid cannot be empty")
+		c.Consumerid = Uuid()
 	}
 
 	if c.NumConsumerFetchers <= 0 {

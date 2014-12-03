@@ -76,7 +76,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		CurrentBatch: make(map[TaskId]*Task),
 		TopicPartition: topicPartition,
 		LargestOffset: 0,
-		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerConsideredFailedTimeWindow),
+		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
 		batchProcessed: make(chan bool),
 		managerStop: make(chan bool),
 		processingStop: make(chan bool),
@@ -158,6 +158,7 @@ func (wm *WorkerManager) commitBatch() {
 			wm.commitOffset()
 			return
 		}
+		//TODO I don't like that. think think think!
 		case <-time.After(wm.Config.OffsetCommitInterval): {
 			wm.commitOffset()
 		}
@@ -322,14 +323,14 @@ type FailureCounter struct {
 	failedThreshold int32
 }
 
-func NewFailureCounter(FailedThreshold int32, WorkerConsideredFailedTimeWindow time.Duration) *FailureCounter {
+func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Duration) *FailureCounter {
 	counter := &FailureCounter {
 		failedThreshold : FailedThreshold,
 	}
 	go func() {
 		for {
 			select {
-			case <-time.After(WorkerConsideredFailedTimeWindow): {
+			case <-time.After(WorkerThresholdTimeWindow): {
 				if counter.count >= FailedThreshold {
 					counter.failed = true
 					return

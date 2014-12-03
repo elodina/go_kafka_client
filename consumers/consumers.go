@@ -42,7 +42,6 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 	workerBackoff, _ := time.ParseDuration(rawConfig["worker_backoff"])
 	workerRetryThreshold, _ := strconv.Atoi(rawConfig["worker_retry_threshold"])
 	workerConsideredFailedTimeWindow, _ := time.ParseDuration(rawConfig["worker_considered_failed_time_window"])
-	workerBatchTimeout, _ := time.ParseDuration(rawConfig["worker_batch_timeout"])
 	workerTaskTimeout, _ := time.ParseDuration(rawConfig["worker_task_timeout"])
 	workerManagersStopTimeout, _ := time.ParseDuration(rawConfig["worker_managers_stop_timeout"])
 
@@ -78,8 +77,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, string, int, string, 
 		MaxWorkerRetries: maxWorkerRetries,
 		WorkerBackoff: workerBackoff,
 		WorkerRetryThreshold: int32(workerRetryThreshold),
-		WorkerConsideredFailedTimeWindow: workerConsideredFailedTimeWindow,
-		WorkerBatchTimeout: workerBatchTimeout,
+		WorkerThresholdTimeWindow: workerConsideredFailedTimeWindow,
 		WorkerTaskTimeout: workerTaskTimeout,
 		WorkerManagersStopTimeout: workerManagersStopTimeout,
 		RebalanceMaxRetries: int32(rebalanceMaxRetries),

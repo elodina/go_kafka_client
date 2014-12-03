@@ -92,7 +92,7 @@ func createConsumer(consumerid string) *go_kafka_client.Consumer {
 	coordinatorConfig.ZookeeperConnect = []string{"192.168.86.5:2181"}
 	coordinator := go_kafka_client.NewZookeeperCoordinator(coordinatorConfig)
 	config.Coordinator = coordinator
-	config.Consumerid = consumerid
+//	config.Consumerid = consumerid
 	config.AutoOffsetReset = "smallest"
 	config.FetchBatchSize = 2000
 	config.FetchBatchTimeout = 3*time.Second
