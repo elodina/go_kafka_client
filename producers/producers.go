@@ -67,8 +67,8 @@ func main() {
 
 	_ = graphiteConnect
 	_ = graphiteFlushInterval
-//	startMetrics(graphiteConnect, graphiteFlushInterval)
-//	produceRate := metrics.NewRegisteredMeter("ProduceRate", metrics.DefaultRegistry)
+	startMetrics(graphiteConnect, graphiteFlushInterval)
+	produceRate := metrics.NewRegisteredMeter("ProduceRate", metrics.DefaultRegistry)
 
 	kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
 
@@ -80,7 +80,7 @@ func main() {
 				panic(err)
 			}
 			numMessage++
-//			produceRate.Mark(1)
+			produceRate.Mark(1)
 			time.Sleep(sleepTime)
 		}
 	}()
