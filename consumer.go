@@ -15,6 +15,13 @@
  * limitations under the License.
  */
 
+/* Package go_kafka_client provides a high-level Kafka consumer implementation and introduces different approach than Java/Scala high-level consumer.
+Primary differences include:
+- workers concept enforcing at least once processing before committing offsets;
+- improved rebalancing algorithm - closes obsolete connections and opens new connections without stopping the whole consumer;
+- supports graceful shutdown notifying client when it is over;
+- batch processing;
+- supports static partitions configuration allowing to start a consumer with a predefined set of partitions never caring about rebalancing; */
 package go_kafka_client
 
 import (
@@ -25,14 +32,22 @@ import (
 	metrics "github.com/rcrowley/go-metrics"
 )
 
-var InvalidOffset int64 = -1
+const (
+	InvalidOffset int64 = -1
 
-var SmallestOffset = "smallest"
-var LargestOffset = "largest"
+	//Reset the offset to the smallest offset if it is out of range
+	SmallestOffset = "smallest"
+	//Reset the offset to the largest offset if it is out of range
+	LargestOffset = "largest"
 
-var ZookeeperOffsetStorage = "zookeeper"
-var KafkaOffsetStorage = "kafka"
+	//Zookeeper offset storage configuration string
+	ZookeeperOffsetStorage = "zookeeper"
+	//Kafka offset storage configuration string
+	KafkaOffsetStorage = "kafka"
+)
 
+/* Consumer is a high-level Kafka consumer designed to work within a consumer group.
+It subscribes to coordinator events and is able to balance load within a consumer group. */
 type Consumer struct {
 	config        *ConsumerConfig
 	fetcher         *consumerFetcherManager
@@ -42,7 +57,7 @@ type Consumer struct {
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
 	topicPartitionsAndBuffers map[TopicAndPartition]*MessageBuffer
-	TopicRegistry map[string]map[int32]*PartitionTopicInfo
+	topicRegistry map[string]map[int32]*PartitionTopicInfo
 	connectChannels chan bool
 	disconnectChannelsForPartition chan TopicAndPartition
 	workerManagers map[TopicAndPartition]*WorkerManager
@@ -58,19 +73,20 @@ type Consumer struct {
 	wmsIdleTimer metrics.Timer
 }
 
+/* NewConsumer creates a new Consumer with a given configuration. Creating a Consumer does not start fetching immediately. */
 func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := config.Validate(); err != nil {
 		panic(err)
 	}
 
-	Infof(config.Consumerid, "Starting new consumer with configuration: %s", config)
+	Infof(config.Consumerid, "Creating new consumer with configuration: %s", config)
 	c := &Consumer{
 		config : config,
 		unsubscribe : make(chan bool),
 		unsubscribeFinished : make(chan bool),
 		closeFinished : make(chan bool),
 		topicPartitionsAndBuffers: make(map[TopicAndPartition]*MessageBuffer),
-		TopicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
+		topicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
 		connectChannels: make(chan bool),
 		disconnectChannelsForPartition: make(chan TopicAndPartition),
 		workerManagers: make(map[TopicAndPartition]*WorkerManager),
@@ -95,17 +111,20 @@ func (c *Consumer) String() string {
 	return c.config.Consumerid
 }
 
+/* Starts consuming specified topics using a configured amount of goroutines for each topic. */
 func (c *Consumer) StartStatic(topicCountMap map[string]int) {
 	go c.createMessageStreams(topicCountMap)
 
 	c.startStreams()
 }
 
+/* Starts consuming all topics which correspond to a given topicFilter using numStreams goroutines for each topic. */
 func (c *Consumer) StartWildcard(topicFilter TopicFilter, numStreams int) {
 	go c.createMessageStreamsByFilterN(topicFilter, numStreams)
 	c.startStreams()
 }
 
+/* Starts consuming given topic-partitions using ConsumerConfig.NumConsumerFetchers goroutines for each topic. */
 func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	topicsToNumStreamsMap := make(map[string]int)
 	for topic := range topicPartitionMap {
@@ -133,7 +152,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	for _, topicPartition := range topicPartitions {
 		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
 		threadId := partitionOwnershipDecision[*topicPartition]
-		c.addPartitionTopicInfo(c.TopicRegistry, topicPartition, offset, threadId)
+		c.addPartitionTopicInfo(c.topicRegistry, topicPartition, offset, threadId)
 	}
 
 	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
@@ -149,7 +168,6 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 func (c *Consumer) startStreams() {
 	stopRedirects := make(map[TopicAndPartition]chan bool)
 	for {
-		Debug(c, "Inside select")
 		select {
 		case <-c.stopStreams: {
 			Debug(c, "Stop streams")
@@ -171,8 +189,8 @@ func (c *Consumer) startStreams() {
 
 func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 	InLock(&c.workerManagersLock, func() {
-		Tracef(c, "connect channels registry: %v", c.TopicRegistry)
-		for topic, partitions := range c.TopicRegistry {
+		Tracef(c, "connect channels registry: %v", c.topicRegistry)
+		for topic, partitions := range c.topicRegistry {
 			for partition, info := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
 				if _, exists := stopRedirects[topicPartition]; !exists {
@@ -203,7 +221,7 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
-	c.ReinitializeConsumer()
+	c.reinitializeConsumer()
 }
 
 func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) {
@@ -226,7 +244,7 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
-	c.ReinitializeConsumer()
+	c.reinitializeConsumer()
 
 	//TODO subscriptions?
 }
@@ -235,7 +253,7 @@ func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) {
 	c.createMessageStreamsByFilterN(topicFilter, c.config.NumConsumerFetchers)
 }
 
-func (c *Consumer) ReinitializeConsumer() {
+func (c *Consumer) reinitializeConsumer() {
 	//TODO more subscriptions
 	c.rebalance()
 	c.subscribeForChanges(c.config.Groupid)
@@ -243,8 +261,8 @@ func (c *Consumer) ReinitializeConsumer() {
 
 func (c *Consumer) initializeWorkerManagers() {
 	InLock(&c.workerManagersLock, func(){
-		Debugf(c, "Initializing worker managers from topic registry: %s", c.TopicRegistry)
-		for topic, partitions := range c.TopicRegistry {
+		Debugf(c, "Initializing worker managers from topic registry: %s", c.topicRegistry)
+		for topic, partitions := range c.topicRegistry {
 			for partition := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
 				workerManager, exists := c.workerManagers[topicPartition]
@@ -269,7 +287,7 @@ func (c *Consumer) removeObsoleteWorkerManagers() {
 		obsoleteWms[tp] = wm
 	}
 	//remove all valid partitions from temp map, so only obsolete left after
-	for topic, partitions := range c.TopicRegistry {
+	for topic, partitions := range c.topicRegistry {
 		for partition := range partitions {
 			delete(obsoleteWms, TopicAndPartition{topic, partition})
 		}
@@ -284,6 +302,7 @@ func (c *Consumer) removeObsoleteWorkerManagers() {
 	}
 }
 
+//TODO time to implement this!
 func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 	Infof(c, "Switching to %s with pattern '%s'", topicCountMap, pattern)
 	//TODO: whitelist/blacklist pattern handling
@@ -301,11 +320,13 @@ func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
 	}
 }
 
+/* Tells the Consumer to close all existing connections and stop.
+This method is NOT blocking but returns a channel which will get a single value once the closing is finished. */
 func (c *Consumer) Close() <-chan bool {
 	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true
 	go func() {
-		c.Unsubscribe()
+		c.unsubscribeFromChanges()
 
 		Info(c, "Closing fetcher manager...")
 		<-c.fetcher.Close()
@@ -321,15 +342,15 @@ func (c *Consumer) Close() <-chan bool {
 	return c.closeFinished
 }
 
-func (c *Consumer) Idle() {
+func (c *Consumer) idle() {
 	c.fetcher.CloseAllFetchers()
 	Debug(c, "About to stop worker managers")
 	if len(c.workerManagers) > 0 {
 		c.stopWorkerManagers()
 	}
 	Debug(c, "Successfully stopped worker managers")
-	Debug(c, c.TopicRegistry)
-	c.releasePartitionOwnership(c.TopicRegistry)
+	Debug(c, c.topicRegistry)
+	c.releasePartitionOwnership(c.topicRegistry)
 }
 
 func (c *Consumer) stopWorkerManagers() bool {
@@ -366,8 +387,8 @@ func (c *Consumer) stopWorkerManagers() bool {
 func (c *Consumer) updateFetcher(numStreams int) {
 	Debugf(c, "Updating fetcher with numStreams = %d", numStreams)
 	allPartitionInfos := make([]*PartitionTopicInfo, 0)
-	Debugf(c, "Topic Registry = %s", c.TopicRegistry)
-	for _, partitionAndInfo := range c.TopicRegistry {
+	Debugf(c, "Topic Registry = %s", c.topicRegistry)
+	for _, partitionAndInfo := range c.topicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
 			allPartitionInfos = append(allPartitionInfos, partitionInfo)
 		}
@@ -377,11 +398,6 @@ func (c *Consumer) updateFetcher(numStreams int) {
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
 	Debug(c, "Updated fetcher")
 	c.connectChannels <- true
-}
-
-func (c *Consumer) Ack(offset int64, topic string, partition int32) error {
-	Infof(c, "Acking offset %d for topic %s and partition %d", offset, topic, partition)
-	return nil
 }
 
 func (c *Consumer) subscribeForChanges(group string) {
@@ -404,11 +420,11 @@ func (c *Consumer) subscribeForChanges(group string) {
 	}()
 }
 
-func (c *Consumer) Unsubscribe() {
+func (c *Consumer) unsubscribeFromChanges() {
 	c.unsubscribe <- true
 	coordinator := c.config.Coordinator
 	coordinator.Unsubscribe()
-	c.releasePartitionOwnership(c.TopicRegistry)
+	c.releasePartitionOwnership(c.topicRegistry)
 	coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
 }
 
@@ -449,7 +465,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		return false
 	}
 	Infof(c, "%v\n", brokers)
-	c.releasePartitionOwnership(c.TopicRegistry)
+	c.releasePartitionOwnership(c.topicRegistry)
 
 	assignmentContext, err := NewAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
@@ -469,7 +485,7 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		return false
 	}
 
-	currentTopicRegistry := make(map[string]map[int32]*PartitionTopicInfo)
+	currenttopicRegistry := make(map[string]map[int32]*PartitionTopicInfo)
 
 	if (c.isShuttingdown) {
 		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.Consumerid)
@@ -478,12 +494,12 @@ func tryRebalance(c *Consumer, partitionAssignor AssignStrategy) bool {
 		for _, topicPartition := range topicPartitions {
 			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
 			threadId := partitionOwnershipDecision[*topicPartition]
-			c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
+			c.addPartitionTopicInfo(currenttopicRegistry, topicPartition, offset, threadId)
 		}
 	}
 
 	if (c.reflectPartitionOwnershipDecision(partitionOwnershipDecision)) {
-		c.TopicRegistry = currentTopicRegistry
+		c.topicRegistry = currenttopicRegistry
 		c.initializeWorkerManagers()
 		switch topicCount := assignmentContext.MyTopicToNumStreams.(type) {
 			case *StaticTopicsToNumStreams: {
@@ -536,14 +552,14 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 	}
 }
 
-func (c *Consumer) addPartitionTopicInfo(currentTopicRegistry map[string]map[int32]*PartitionTopicInfo,
+func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*PartitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
 	consumerThreadId ConsumerThreadId) {
-	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currentTopicRegistry, topicPartition)
-	partTopicInfoMap, exists := currentTopicRegistry[topicPartition.Topic]
+	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
+	partTopicInfoMap, exists := currenttopicRegistry[topicPartition.Topic]
 	if (!exists) {
 		partTopicInfoMap = make(map[int32]*PartitionTopicInfo)
-		currentTopicRegistry[topicPartition.Topic] = partTopicInfoMap
+		currenttopicRegistry[topicPartition.Topic] = partTopicInfoMap
 	}
 
 	buffer := c.topicPartitionsAndBuffers[*topicPartition]
@@ -589,18 +605,18 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	return true
 }
 
-func (c *Consumer) releasePartitionOwnership(localTopicRegistry map[string]map[int32]*PartitionTopicInfo) {
+func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[int32]*PartitionTopicInfo) {
 	Info(c, "Releasing partition ownership")
-	for topic, partitionInfos := range localTopicRegistry {
+	for topic, partitionInfos := range localtopicRegistry {
 		for partition, _ := range partitionInfos {
 			if err := c.config.Coordinator.ReleasePartitionOwnership(c.config.Groupid, topic, partition); err != nil {
 				panic(err)
 			}
 		}
-		delete(localTopicRegistry, topic)
+		delete(localtopicRegistry, topic)
 	}
 }
 
-func IsOffsetInvalid(offset int64) bool {
+func isOffsetInvalid(offset int64) bool {
 	return offset <= InvalidOffset
 }
