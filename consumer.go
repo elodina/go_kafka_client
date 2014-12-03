@@ -190,7 +190,7 @@ func (c *Consumer) startStreams() {
 }
 
 func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
-	InLock(&c.workerManagersLock, func() {
+	inLock(&c.workerManagersLock, func() {
 		Tracef(c, "connect channels registry: %v", c.topicRegistry)
 		for topic, partitions := range c.topicRegistry {
 			for partition, info := range partitions {
@@ -202,7 +202,7 @@ func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 						continue
 					}
 					Tracef(c, "Piping %s", topicPartition)
-					stopRedirects[topicPartition] = Pipe(info.Buffer.OutputChannel, to.InputChannel)
+					stopRedirects[topicPartition] = pipe(info.Buffer.OutputChannel, to.InputChannel)
 				}
 			}
 		}
@@ -262,7 +262,7 @@ func (c *Consumer) reinitializeConsumer() {
 }
 
 func (c *Consumer) initializeWorkerManagers() {
-	InLock(&c.workerManagersLock, func(){
+	inLock(&c.workerManagersLock, func(){
 		Debugf(c, "Initializing worker managers from topic registry: %s", c.topicRegistry)
 		for topic, partitions := range c.topicRegistry {
 			for partition := range partitions {
@@ -357,7 +357,7 @@ func (c *Consumer) idle() {
 
 func (c *Consumer) stopWorkerManagers() bool {
 	success := false
-	InLock(&c.workerManagersLock, func(){
+	inLock(&c.workerManagersLock, func(){
 		if len(c.workerManagers) > 0 {
 			wmsAreStopped := make(chan bool)
 			wmStopChannels := make([]chan bool, 0)
@@ -365,7 +365,7 @@ func (c *Consumer) stopWorkerManagers() bool {
 				wmStopChannels = append(wmStopChannels, wm.Stop())
 			}
 			Debugf(c, "Worker channels length: %d", len(wmStopChannels))
-			NotifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
+			notifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
 			select {
 			case <-wmsAreStopped: {
 				Info(c, "All workers have been gracefully stopped")
@@ -412,7 +412,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 		for {
 			select {
 				case <-changes: {
-					InLock(&c.rebalanceLock, func() { c.rebalance() })
+					inLock(&c.rebalanceLock, func() { c.rebalance() })
 				}
 				case <-c.unsubscribe: {
 					return

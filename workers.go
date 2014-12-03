@@ -115,7 +115,7 @@ func (wm *WorkerManager) Stop() chan bool {
 	finished := make(chan bool)
 	go func() {
 		Debugf(wm, "Trying to stop workerManager")
-		InLock(&wm.stopLock, func() {
+		inLock(&wm.stopLock, func() {
 				Debug(wm, "Stopping manager")
 				wm.managerStop <- true
 				Debug(wm, "Stopping processor")
@@ -134,7 +134,7 @@ func (wm *WorkerManager) Stop() chan bool {
 }
 
 func (wm *WorkerManager) startBatch(batch []*Message) {
-	InLock(&wm.stopLock, func() {
+	inLock(&wm.stopLock, func() {
 			for _, message := range batch {
 				topicPartition := TopicAndPartition{ message.Topic, message.Partition }
 				wm.CurrentBatch[TaskId{ topicPartition, message.Offset }] = &Task{Msg: message,}
@@ -203,7 +203,7 @@ func (wm *WorkerManager) processBatch() {
 
 	resultsChannel := make(chan WorkerResult)
 	for {
-		stopRedirecting := RedirectChannelsTo(outputChannels, resultsChannel)
+		stopRedirecting := redirectChannelsTo(outputChannels, resultsChannel)
 		select {
 		case result := <-resultsChannel: {
 			go func() {
@@ -335,7 +335,7 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 					counter.failed = true
 					return
 				} else {
-					InLock(&counter.countLock, func() {
+					inLock(&counter.countLock, func() {
 						counter.count = 0
 					})
 				}
@@ -347,7 +347,7 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 }
 
 func (f *FailureCounter) Failed() bool {
-	InLock(&f.countLock, func() { f.count++ })
+	inLock(&f.countLock, func() { f.count++ })
 	return f.count >= f.failedThreshold || f.failed
 }
 

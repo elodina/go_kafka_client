@@ -75,6 +75,7 @@ func Criticalf(contextName interface{}, message interface{}, params ...interface
 	Logger.Criticalf(fmt.Sprintf("[%s] %s", contextName, message), params...)
 }
 
+//TODO we need a file -> ConsumerConfig parser, not a file -> map one
 func LoadConfiguration(path string) (map[string]string, error) {
 	cfgMap := make(map[string]string)
 	err := cfg.Load(path, cfgMap)
@@ -82,28 +83,28 @@ func LoadConfiguration(path string) (map[string]string, error) {
 	return cfgMap, err
 }
 
-func InLock(lock *sync.Mutex, fun func()) {
+func inLock(lock *sync.Mutex, fun func()) {
 	lock.Lock()
 	defer lock.Unlock()
 
 	fun()
 }
 
-func InReadLock(lock *sync.RWMutex, fun func()) {
+func inReadLock(lock *sync.RWMutex, fun func()) {
 	lock.RLock()
 	defer lock.RUnlock()
 
 	fun()
 }
 
-func InWriteLock(lock *sync.RWMutex, fun func()) {
+func inWriteLock(lock *sync.RWMutex, fun func()) {
 	lock.Lock()
 	defer lock.Unlock()
 
 	fun()
 }
 
-func ShuffleArray(src interface{}, dest interface{}) {
+func shuffleArray(src interface{}, dest interface{}) {
 	rSrc := reflect.ValueOf(src).Elem()
 	rDest := reflect.ValueOf(dest).Elem()
 
@@ -113,7 +114,7 @@ func ShuffleArray(src interface{}, dest interface{}) {
 	}
 }
 
-func CircularIterator(src interface{}) *ring.Ring {
+func circularIterator(src interface{}) *ring.Ring {
 	arr := reflect.ValueOf(src).Elem()
 	circle := ring.New(arr.Len())
 	for i := 0; i < arr.Len(); i++ {
@@ -124,7 +125,7 @@ func CircularIterator(src interface{}) *ring.Ring {
 	return circle
 }
 
-func Position(haystack interface {}, needle interface {}) int {
+func position(haystack interface {}, needle interface {}) int {
 	rSrc := reflect.ValueOf(haystack).Elem()
 	for position := 0; position < rSrc.Len(); position++ {
 		if (reflect.DeepEqual(rSrc.Index(position).Interface(), needle)) {
@@ -135,13 +136,13 @@ func Position(haystack interface {}, needle interface {}) int {
 	return -1
 }
 
-func Hash(s string) int32 {
+func hash(s string) int32 {
 	h := fnv.New32a()
 	h.Write([]byte(s))
 	return int32(h.Sum32())
 }
 
-func NotifyWhenThresholdIsReached(inputChannels interface{}, outputChannel interface{}, threshold int) chan bool {
+func notifyWhenThresholdIsReached(inputChannels interface{}, outputChannel interface{}, threshold int) chan bool {
 	input := reflect.ValueOf(inputChannels)
 	output := reflect.ValueOf(outputChannel)
 	killChannel := make(chan bool)
@@ -194,16 +195,16 @@ func NotifyWhenThresholdIsReached(inputChannels interface{}, outputChannel inter
 	return killChannel
 }
 
-func RedirectChannelsTo(inputChannels interface{}, outputChannel interface{}) chan bool {
-	killChannel, _ := RedirectChannelsToWithTimeout(inputChannels, outputChannel, 0 * time.Second)
+func redirectChannelsTo(inputChannels interface{}, outputChannel interface{}) chan bool {
+	killChannel, _ := redirectChannelsToWithTimeout(inputChannels, outputChannel, 0 * time.Second)
 	return killChannel
 }
 
-func Pipe(from interface {}, to interface {}) chan bool {
-	return RedirectChannelsTo([]interface {} {from}, to)
+func pipe(from interface {}, to interface {}) chan bool {
+	return redirectChannelsTo([]interface {} {from}, to)
 }
 
-func RedirectChannelsToWithTimeout(inputChannels interface{}, outputChannel interface{}, timeout time.Duration) (chan bool, <-chan time.Time) {
+func redirectChannelsToWithTimeout(inputChannels interface{}, outputChannel interface{}, timeout time.Duration) (chan bool, <-chan time.Time) {
 	input := reflect.ValueOf(inputChannels)
 	var timeoutInputChannel <-chan time.Time
 	if timeout.Seconds() == 0 {
@@ -265,13 +266,13 @@ func RedirectChannelsToWithTimeout(inputChannels interface{}, outputChannel inte
 	return killChannel, timeoutOutputChannel
 }
 
-func Uuid() string {
+func uuid() string {
 	b := make([]byte, 16)
 	crand.Read(b)
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-func NewSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
+func newSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
 	brokerConfig := sarama.NewBrokerConfig()
 	brokerConfig.DialTimeout = config.SocketTimeout
 	brokerConfig.ReadTimeout = config.SocketTimeout

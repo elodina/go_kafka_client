@@ -240,7 +240,7 @@ func (zc *ZookeeperCoordinator) SubscribeForChanges(group string) (<-chan bool, 
 	inputChannels := make([]*<-chan zk.Event, 0)
 	inputChannels = append(inputChannels, &consumersWatcher, &consumerGroupChangesWatcher, &topicsWatcher, &brokersWatcher)
 	zkEvents := make(chan zk.Event)
-	stopRedirecting := RedirectChannelsTo(inputChannels, zkEvents)
+	stopRedirecting := redirectChannelsTo(inputChannels, zkEvents)
 
 	go func() {
 		for {

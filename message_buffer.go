@@ -107,7 +107,7 @@ func (mb *MessageBuffer) Stop() {
 }
 
 func (mb *MessageBuffer) AddBatch(data *TopicPartitionData) {
-	InLock(&mb.MessageLock, func() {
+	inLock(&mb.MessageLock, func() {
 		fetchResponseBlock := data.Data
 		topicPartition := data.TopicPartition
 		if topicPartition != mb.TopicPartition {

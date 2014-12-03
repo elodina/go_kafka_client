@@ -84,8 +84,8 @@ func RoundRobinAssignor(context *AssignmentContext) map[TopicAndPartition]Consum
 		fmt.Printf("%v\n", topicsAndPartitions)
 
 		shuffledTopicsAndPartitions := make([]*TopicAndPartition, len(topicsAndPartitions))
-		ShuffleArray(&topicsAndPartitions, &shuffledTopicsAndPartitions)
-		threadIdsIterator := CircularIterator(&headThreadIds)
+		shuffleArray(&topicsAndPartitions, &shuffledTopicsAndPartitions)
+		threadIdsIterator := circularIterator(&headThreadIds)
 
 		fmt.Printf("%v\n", shuffledTopicsAndPartitions)
 
@@ -127,7 +127,7 @@ func RangeAssignor(context *AssignmentContext) map[TopicAndPartition]ConsumerThr
 		Tracef(context.ConsumerId, "nPartsPerConsumer: %d, nConsumersWithExtraPart: %d", nPartsPerConsumer, nConsumersWithExtraPart)
 
 		for _, consumerThreadId := range consumerThreadIds {
-			myConsumerPosition := Position(&consumersForTopic, consumerThreadId)
+			myConsumerPosition := position(&consumersForTopic, consumerThreadId)
 			Tracef(context.ConsumerId, "myConsumerPosition: %d", myConsumerPosition)
 			if (myConsumerPosition < 0) {
 				panic(fmt.Sprintf("There is no %s in consumers for topic %s", consumerThreadId, topic))

@@ -235,7 +235,7 @@ func (c *ConsumerConfig) Validate() error {
 	}
 
 	if c.Consumerid == "" {
-		c.Consumerid = Uuid()
+		c.Consumerid = uuid()
 	}
 
 	if c.NumConsumerFetchers <= 0 {
