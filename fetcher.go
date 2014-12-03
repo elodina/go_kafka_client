@@ -123,7 +123,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 			for tp := range m.partitionMap {
 				topicPartitionsToRemove = append(topicPartitionsToRemove, tp)
 				Tracef(m, "Stopping buffer: %s", m.partitionMap[tp].Buffer)
-				m.partitionMap[tp].Buffer.Stop()
+				m.partitionMap[tp].Buffer.stop()
 				delete(m.partitionMap, tp)
 			}
 			Tracef(m, "There are obsolete partitions %v", topicPartitionsToRemove)
@@ -591,7 +591,7 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition] //TODO this is potentially unsafe, maybe use allPartitionMapLock here?
 	if len(partitionData.MsgSet.Messages) > 0 {
-		partitionTopicInfo.Buffer.AddBatch(&TopicPartitionData{ topicAndPartition, partitionData })
+		partitionTopicInfo.Buffer.addBatch(&TopicPartitionData{ topicAndPartition, partitionData })
 		Info(f, "Sent partition data")
 	} else {
 		Debug(f, "Got empty message. Ignoring...")
@@ -669,7 +669,7 @@ func (f *consumerFetcherRoutine) close() <-chan bool {
 		for tp, pti := range f.allPartitionMap {
 			if _, exists := f.partitionMap[tp]; exists {
 				Debugf(f, "Stopping %s", pti.Buffer)
-				pti.Buffer.Stop()
+				pti.Buffer.stop()
 				Debugf(f, "Stopped %s", pti.Buffer)
 			}
 		}

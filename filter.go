@@ -21,54 +21,58 @@ import(
 	"regexp"
 )
 
-var (
-	OffsetsTopicName = "__consumer_offsets"
+const (
+	offsetsTopicName = "__consumer_offsets"
 )
 
+//WhiteList is a topic filter that will match every topic for a given regex
 type WhiteList struct {
-	RawRegex string
-	CompiledRegex *regexp.Regexp
+	rawRegex string
+	compiledRegex *regexp.Regexp
 }
 
-func (wl *WhiteList) Regex() string {
-	return wl.RawRegex
+func (wl *WhiteList) regex() string {
+	return wl.rawRegex
 }
 
-func (wl *WhiteList) IsTopicAllowed(topic string, excludeInternalTopics bool) bool {
-	return wl.CompiledRegex.MatchString(topic) && !(topic == OffsetsTopicName && excludeInternalTopics)
+func (wl *WhiteList) topicAllowed(topic string, excludeInternalTopics bool) bool {
+	return wl.compiledRegex.MatchString(topic) && !(topic == offsetsTopicName && excludeInternalTopics)
 }
 
+//Creates a new WhiteList topic filter for a given regex
 func NewWhiteList(regex string) *WhiteList {
 	cregexp, err := regexp.Compile(regex)
 	if (err != nil) {
 		panic(err)
 	}
 	return &WhiteList{
-		RawRegex: regex,
-		CompiledRegex: cregexp,
+		rawRegex: regex,
+		compiledRegex: cregexp,
 	}
 }
 
+//BlackList is a topic filter that will match every topic that does not match a given regex
 type BlackList struct {
-	RawRegex string
-	CompiledRegex *regexp.Regexp
+	rawRegex string
+	compiledRegex *regexp.Regexp
 }
 
-func (bl *BlackList) Regex() string {
-	return bl.RawRegex
+func (bl *BlackList) regex() string {
+	return bl.rawRegex
 }
 
-func (bl *BlackList) IsTopicAllowed(topic string, excludeInternalTopics bool) bool {
-	return !bl.CompiledRegex.MatchString(topic) && !(topic == OffsetsTopicName && excludeInternalTopics)
+func (bl *BlackList) topicAllowed(topic string, excludeInternalTopics bool) bool {
+	return !bl.compiledRegex.MatchString(topic) && !(topic == offsetsTopicName && excludeInternalTopics)
 }
 
+//Creates a new BlackList topic filter for a given regex
 func NewBlackList(regex string) *BlackList {
 	cregexp, err := regexp.Compile(regex)
 	if (err != nil) {
 		panic(err)
 	}
 	return &BlackList{
-		RawRegex: regex,
-		CompiledRegex: cregexp,
+		rawRegex: regex,
+		compiledRegex: cregexp,
 	}
 }

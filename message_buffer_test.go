@@ -34,19 +34,19 @@ func TestMessageBuffer(t *testing.T) {
 	topicPartition := TopicAndPartition{"fakeTopic", 0}
 	askNextBatch := make(chan TopicAndPartition)
 	disconnectChannelsForPartition := make(chan TopicAndPartition)
-	buffer := NewMessageBuffer(topicPartition, out, config, askNextBatch, disconnectChannelsForPartition)
+	buffer := newMessageBuffer(topicPartition, out, config, askNextBatch, disconnectChannelsForPartition)
 
 	ReceiveNoMessages(t, 4*time.Second, out)
 
-	go buffer.AddBatch(generateBatch(topicPartition, 1))
+	go buffer.addBatch(generateBatch(topicPartition, 1))
 	expectAskNext(t, askNextBatch, askNextTimeout)
 	ReceiveN(t, 1, 4*time.Second, out)
 
-	go buffer.AddBatch(generateBatch(topicPartition, config.FetchBatchSize))
+	go buffer.addBatch(generateBatch(topicPartition, config.FetchBatchSize))
 	ReceiveN(t, config.FetchBatchSize, 4*time.Second, out)
 	expectAskNext(t, askNextBatch, askNextTimeout)
 
-	go buffer.AddBatch(generateBatch(topicPartition, 1))
+	go buffer.addBatch(generateBatch(topicPartition, 1))
 	expectAskNext(t, askNextBatch, askNextTimeout)
 
 	go func() {
@@ -55,7 +55,7 @@ func TestMessageBuffer(t *testing.T) {
 		case <-time.After(2 * time.Second): t.Error("Failed to receive 'ask next'")
 		}
 	}()
-	buffer.Stop()
+	buffer.stop()
 	ReceiveNoMessages(t, 4*time.Second, out)
 }
 

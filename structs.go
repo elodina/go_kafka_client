@@ -102,8 +102,8 @@ func (c *ConsumerThreadId) String() string {
 }
 
 type TopicFilter interface {
-	Regex() string
-	IsTopicAllowed(topic string, excludeInternalTopics bool) bool
+	regex() string
+	topicAllowed(topic string, excludeInternalTopics bool) bool
 }
 
 type TopicAndPartition struct {
@@ -123,7 +123,7 @@ type SharedBlockChannel struct {
 type PartitionTopicInfo struct {
 	Topic string
 	Partition int32
-	Buffer *MessageBuffer
+	Buffer *messageBuffer
 	FetchedOffset int64
 }
 

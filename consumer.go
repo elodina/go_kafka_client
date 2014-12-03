@@ -56,7 +56,7 @@ type Consumer struct {
 	closeFinished  chan bool
 	rebalanceLock  sync.Mutex
 	isShuttingdown bool
-	topicPartitionsAndBuffers map[TopicAndPartition]*MessageBuffer
+	topicPartitionsAndBuffers map[TopicAndPartition]*messageBuffer
 	topicRegistry map[string]map[int32]*PartitionTopicInfo
 	connectChannels chan bool
 	disconnectChannelsForPartition chan TopicAndPartition
@@ -85,7 +85,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		unsubscribe : make(chan bool),
 		unsubscribeFinished : make(chan bool),
 		closeFinished : make(chan bool),
-		topicPartitionsAndBuffers: make(map[TopicAndPartition]*MessageBuffer),
+		topicPartitionsAndBuffers: make(map[TopicAndPartition]*messageBuffer),
 		topicRegistry: make(map[string]map[int32]*PartitionTopicInfo),
 		connectChannels: make(chan bool),
 		disconnectChannelsForPartition: make(chan TopicAndPartition),
@@ -233,7 +233,7 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 	filteredTopics := make([]string, 0)
 	for _, topic := range allTopics {
-		if topicFilter.IsTopicAllowed(topic, c.config.ExcludeInternalTopics) {
+		if topicFilter.topicAllowed(topic, c.config.ExcludeInternalTopics) {
 			filteredTopics = append(filteredTopics, topic)
 		}
 	}
@@ -566,7 +566,7 @@ func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int
 
 	buffer := c.topicPartitionsAndBuffers[*topicPartition]
 	if buffer == nil {
-		buffer = NewMessageBuffer(*topicPartition, make(chan []*Message, c.config.QueuedMaxMessages), c.config, c.askNextBatch, c.disconnectChannelsForPartition)
+		buffer = newMessageBuffer(*topicPartition, make(chan []*Message, c.config.QueuedMaxMessages), c.config, c.askNextBatch, c.disconnectChannelsForPartition)
 		c.topicPartitionsAndBuffers[*topicPartition] = buffer
 	}
 

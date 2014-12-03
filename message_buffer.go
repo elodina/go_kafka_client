@@ -23,7 +23,7 @@ import (
 	"fmt"
 )
 
-type MessageBuffer struct {
+type messageBuffer struct {
 	OutputChannel chan []*Message
 	Messages      []*Message
 	Config *ConsumerConfig
@@ -37,8 +37,8 @@ type MessageBuffer struct {
 	flush chan bool
 }
 
-func NewMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig, askNextBatch chan TopicAndPartition, disconnectChannelsForPartition chan TopicAndPartition) *MessageBuffer {
-	buffer := &MessageBuffer{
+func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig, askNextBatch chan TopicAndPartition, disconnectChannelsForPartition chan TopicAndPartition) *messageBuffer {
+	buffer := &messageBuffer{
 		OutputChannel : outputChannel,
 		Messages : make([]*Message, 0),
 		Config : config,
@@ -56,11 +56,11 @@ func NewMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Me
 	return buffer
 }
 
-func (mb *MessageBuffer) String() string {
+func (mb *messageBuffer) String() string {
 	return fmt.Sprintf("%s-MessageBuffer", &mb.TopicPartition)
 }
 
-func (mb *MessageBuffer) autoFlush() {
+func (mb *messageBuffer) autoFlush() {
 	for {
 		select {
 		case <-mb.Close: return
@@ -77,7 +77,7 @@ func (mb *MessageBuffer) autoFlush() {
 	}
 }
 
-func (mb *MessageBuffer) flushLoop() {
+func (mb *messageBuffer) flushLoop() {
 	for _ = range mb.flush {
 		if len(mb.Messages) > 0 {
 			Debug(mb, "Flushing")
@@ -97,7 +97,7 @@ func (mb *MessageBuffer) flushLoop() {
 	}
 }
 
-func (mb *MessageBuffer) Stop() {
+func (mb *messageBuffer) stop() {
 	Debug(mb, "Stopping message buffer")
 	mb.stopSending = true
 	mb.Close <- true
@@ -106,7 +106,7 @@ func (mb *MessageBuffer) Stop() {
 	Debug(mb, "Stopped message buffer")
 }
 
-func (mb *MessageBuffer) AddBatch(data *TopicPartitionData) {
+func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 	inLock(&mb.MessageLock, func() {
 		fetchResponseBlock := data.Data
 		topicPartition := data.TopicPartition
@@ -128,7 +128,7 @@ func (mb *MessageBuffer) AddBatch(data *TopicPartitionData) {
 	})
 }
 
-func (mb *MessageBuffer) add(msg *Message) {
+func (mb *messageBuffer) add(msg *Message) {
 	Debugf(mb, "Added message: %s", msg)
 	mb.Messages = append(mb.Messages, msg)
 	if len(mb.Messages) == mb.Config.FetchBatchSize {
