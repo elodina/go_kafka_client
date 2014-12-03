@@ -94,7 +94,9 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		stopStreams: make(chan bool),
 	}
 
-	c.config.Coordinator.Connect()
+	if err := c.config.Coordinator.Connect(); err != nil {
+		panic(err)
+	}
 	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
 
 	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
@@ -329,7 +331,7 @@ func (c *Consumer) Close() <-chan bool {
 		c.unsubscribeFromChanges()
 
 		Info(c, "Closing fetcher manager...")
-		<-c.fetcher.Close()
+		<-c.fetcher.close()
 		Info(c, "Stopping worker manager...")
 		if !c.stopWorkerManagers() {
 			panic("Graceful shutdown failed")
@@ -343,7 +345,7 @@ func (c *Consumer) Close() <-chan bool {
 }
 
 func (c *Consumer) idle() {
-	c.fetcher.CloseAllFetchers()
+	c.fetcher.closeAllFetchers()
 	Debug(c, "About to stop worker managers")
 	if len(c.workerManagers) > 0 {
 		c.stopWorkerManagers()

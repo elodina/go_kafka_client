@@ -69,19 +69,13 @@ func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPart
 	manager.idleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchersIdleTime-%s", manager.String()), metrics.DefaultRegistry)
 	manager.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchDuration-%s", manager.String()), metrics.DefaultRegistry)
 
-	go manager.FindLeaders()
-	go manager.WaitForNextRequests()
+	go manager.findLeaders()
+	go manager.waitForNextRequests()
 
 	return manager
 }
 
-func (m *consumerFetcherManager) Ready() {
-	InWriteLock(&m.isReadyLock, func() {
-		m.isReady = true
-	})
-}
-
-func (m *consumerFetcherManager) NotReady() {
+func (m *consumerFetcherManager) notReady() {
 	InWriteLock(&m.isReadyLock, func() {
 		m.isReady = false
 	})
@@ -155,7 +149,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*PartitionTopicIn
 	m.leaderCond.Broadcast()
 }
 
-func (m *consumerFetcherManager) WaitForNextRequests() {
+func (m *consumerFetcherManager) waitForNextRequests() {
 	for {
 		select {
 			case topicPartition := <-m.askNext: {
@@ -179,7 +173,7 @@ func (m *consumerFetcherManager) WaitForNextRequests() {
 	}
 }
 
-func (m *consumerFetcherManager) FindLeaders() {
+func (m *consumerFetcherManager) findLeaders() {
 	for {
 		Trace(m, "Find leaders")
 		leaderForPartitions := make(map[TopicAndPartition]*BrokerInfo)
@@ -234,7 +228,7 @@ func (m *consumerFetcherManager) FindLeaders() {
 		}
 		m.addFetcherForPartitions(partitionAndOffsets)
 
-		m.ShutdownIdleFetchers()
+		m.shutdownIdleFetchers()
 		time.Sleep(m.config.RefreshLeaderBackoff)
 	}
 }
@@ -311,14 +305,14 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 					brokerAndFetcherId.Broker,
 					m.partitionMap)
 				m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
-				go fetcherRoutine.Start()
+				go fetcherRoutine.start()
 			}
 
 			partitionToOffsetMap := make(map[TopicAndPartition]int64)
 			for tp, b := range partitionOffsets {
 				partitionToOffsetMap[tp] = b.InitOffset
 			}
-			m.fetcherRoutineMap[brokerAndFetcherId].AddPartitions(partitionToOffsetMap)
+			m.fetcherRoutineMap[brokerAndFetcherId].addPartitions(partitionToOffsetMap)
 		}
 
 	})
@@ -349,12 +343,12 @@ func (m *consumerFetcherManager) getFetcherId(topic string, partitionId int32) i
 	return int(math.Abs(float64(31 * Hash(topic) + partitionId))) % int(m.numStreams)
 }
 
-func (m *consumerFetcherManager) ShutdownIdleFetchers() {
+func (m *consumerFetcherManager) shutdownIdleFetchers() {
 	Trace(m, "Shutting down idle fetchers")
 	InLock(&m.fetcherRoutineMapLock, func() {
 			for key, fetcher := range m.fetcherRoutineMap {
 				if len(fetcher.partitionMap) <= 0 {
-					<-fetcher.Close()
+					<-fetcher.close()
 					delete(m.fetcherRoutineMap, key)
 				}
 			}
@@ -362,14 +356,14 @@ func (m *consumerFetcherManager) ShutdownIdleFetchers() {
 	Trace(m, "Closed idle fetchers")
 }
 
-func (m *consumerFetcherManager) CloseAllFetchers() {
+func (m *consumerFetcherManager) closeAllFetchers() {
 	Info(m, "Closing fetchers")
-	m.NotReady()
+	m.notReady()
 	InLock(&m.partitionMapLock, func() {
 		Debugf(m, "Trying to close %d fetchers", len(m.fetcherRoutineMap))
 		for _, fetcher := range m.fetcherRoutineMap {
 			Tracef(m, "Closing %s", fetcher)
-			<-fetcher.Close()
+			<-fetcher.close()
 			Tracef(m, "Closed %s", fetcher)
 		}
 
@@ -383,15 +377,15 @@ func (m *consumerFetcherManager) CloseAllFetchers() {
 	})
 }
 
-func (m *consumerFetcherManager) Close() <-chan bool {
+func (m *consumerFetcherManager) close() <-chan bool {
 	Info(m, "Closing manager")
 	go func() {
 		Info(m, "Stopping find leader")
-		m.NotReady()
+		m.notReady()
 		m.shuttingDown = true
 		m.askNextStopper <- true
 		m.leaderCond.Broadcast()
-		m.CloseAllFetchers()
+		m.closeAllFetchers()
 		m.partitionMap = nil
 		m.noLeaderPartitions = nil
 		m.closeFinished <- true
@@ -433,7 +427,7 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 	}
 }
 
-func (f *consumerFetcherRoutine) Start() {
+func (f *consumerFetcherRoutine) start() {
 	Info(f, "Fetcher started")
 	for {
 		Debug(f, "Waiting for asknext or die")
@@ -492,7 +486,7 @@ func (f *consumerFetcherRoutine) Start() {
 	}
 }
 
-func (f *consumerFetcherRoutine) AddPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
+func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
 	Infof(f, "Adding partitions: %v", partitionAndOffsets)
 	newPartitions := make(map[TopicAndPartition]chan TopicAndPartition)
 	InLock(&f.partitionMapLock, func() {
@@ -668,7 +662,7 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 		})
 }
 
-func (f *consumerFetcherRoutine) Close() <-chan bool {
+func (f *consumerFetcherRoutine) close() <-chan bool {
 	Info(f, "Closing fetcher")
 	go func() {
 		f.fetchStopper <- true
