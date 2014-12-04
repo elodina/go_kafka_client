@@ -30,6 +30,7 @@ var consumeTimeout = 20 * time.Second
 
 
 func TestStaticConsumingSinglePartition(t *testing.T) {
+	t.Skip() //Remove when CI is ready
 	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
 		consumeStatus := make(chan int)
 		topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
@@ -46,6 +47,76 @@ func TestStaticConsumingSinglePartition(t *testing.T) {
 		}
 		closeWithin(t, 10 * time.Second, consumer)
 	})
+}
+
+func TestStaticConsumingMultiplePartitions(t *testing.T) {
+	t.Skip() //Remove when CI is ready
+	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
+			consumeStatus := make(chan int)
+			topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
+
+			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic, 5)
+			go produceN(t, numMessages, topic, kafkaServer.Addr())
+
+			config := testConsumerConfig(zkServer)
+			config.Strategy = newCountingStrategy(t, numMessages, consumeTimeout, consumeStatus)
+			consumer := NewConsumer(config)
+			go consumer.StartStatic(map[string]int{topic: 3})
+			if actual := <-consumeStatus; actual != numMessages {
+				t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
+			}
+			closeWithin(t, 10 * time.Second, consumer)
+		})
+}
+
+func TestWhitelistConsumingSinglePartition(t *testing.T) {
+	t.Skip() //Remove when CI is ready
+	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
+			consumeStatus := make(chan int)
+			topic1 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix())
+			topic2 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix()+1)
+
+			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic1, 1)
+			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic2, 1)
+			go produceN(t, numMessages, topic1, kafkaServer.Addr())
+			go produceN(t, numMessages, topic2, kafkaServer.Addr())
+
+			expectedMessages := numMessages * 2
+
+			config := testConsumerConfig(zkServer)
+			config.Strategy = newCountingStrategy(t, expectedMessages, consumeTimeout, consumeStatus)
+			consumer := NewConsumer(config)
+			go consumer.StartWildcard(NewWhiteList("test-whitelist-.+"), 1)
+			if actual := <-consumeStatus; actual != expectedMessages {
+				t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
+			}
+			closeWithin(t, 10 * time.Second, consumer)
+		})
+}
+
+func TestWhitelistConsumingMultiplePartitions(t *testing.T) {
+	t.Skip() //Remove when CI is ready
+	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
+			consumeStatus := make(chan int)
+			topic1 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix())
+			topic2 := fmt.Sprintf("test-whitelist-%d-2", time.Now().Unix())
+
+			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic1, 5)
+			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic2, 5)
+			go produceN(t, numMessages, topic1, kafkaServer.Addr())
+			go produceN(t, numMessages, topic2, kafkaServer.Addr())
+
+			expectedMessages := numMessages * 2
+
+			config := testConsumerConfig(zkServer)
+			config.Strategy = newCountingStrategy(t, expectedMessages, consumeTimeout, consumeStatus)
+			consumer := NewConsumer(config)
+			go consumer.StartWildcard(NewWhiteList("test-whitelist-.+"), 10)
+			if actual := <-consumeStatus; actual != expectedMessages {
+				t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
+			}
+			closeWithin(t, 10 * time.Second, consumer)
+		})
 }
 
 //func TestBlueGreenDeployment(t *testing.T) {
@@ -85,14 +156,14 @@ func testConsumerConfig(zkServer *zk.TestServer) *ConsumerConfig {
 	return config
 }
 
-func newCountingStrategy(t *testing.T, expectedMessages int, consumeTimeout time.Duration, notify chan int) WorkerStrategy {
+func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Duration, notify chan int) WorkerStrategy {
 	consumedMessages := 0
 	var consumedMessagesLock sync.Mutex
 	consumeFinished := make(chan bool)
 	go func() {
 		select {
 		case <-consumeFinished:
-		case <-time.After(consumeTimeout):
+		case <-time.After(timeout):
 		}
 		inLock(&consumedMessagesLock, func() {
 				notify <- consumedMessages

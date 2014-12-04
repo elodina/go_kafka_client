@@ -52,6 +52,7 @@ func TestZkAPI(t *testing.T) {
 		testRegisterConsumer(t)
 		testGetConsumersInGroup(t)
 		testDeregisterConsumer(t)
+		testNewDeployedTopics(t)
 	})
 }
 
@@ -132,4 +133,36 @@ func testDeregisterConsumer(t *testing.T) {
 		t.Error(err)
 	}
 	assert(t, exists, false)
+}
+
+func testNewDeployedTopics(t *testing.T) {
+	group := fmt.Sprintf("group-%d", time.Now().Unix())
+	coordinator.ensureZkPathsExist(group)
+	topics := DeployedTopics {
+		Topics : "topic1,topic2",
+		Pattern: "static",
+	}
+
+	events, err := coordinator.SubscribeForChanges(group)
+	if err != nil {
+		panic(err)
+	}
+	go func() {
+		time.Sleep(1 * time.Second)
+		data, _ := json.Marshal(topics)
+		coordinator.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", newZKGroupDirs(group).ConsumerChangesDir, time.Now().Unix()), data)
+	}()
+	select {
+		case event := <-events: {
+			if event != NewTopicDeployed {
+				t.Errorf("Expected %s, actual %s", NewTopicDeployed, event)
+			}
+			deployedTopics, err := coordinator.GetNewDeployedTopics(group)
+			if err != nil {
+				panic(err)
+			}
+			assert(t, *deployedTopics[0], topics)
+		}
+		case <-time.After(5 * time.Second): t.Error("Failed to receive a Deployed Topic event from Zookeeper")
+	}
 }

@@ -250,6 +250,6 @@ type ConsumerCoordinator interface {
 type CoordinatorEvent string
 
 const (
-	Regular = "regular"
-	NewTopicDeployed = "consumeFrom"
+	Regular = "Regular"
+	NewTopicDeployed = "NewTopicDeployed"
 )

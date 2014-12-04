@@ -179,12 +179,12 @@ func (wm *WorkerManager) commitOffset() {
 			Debugf(wm, "Successfully committed offset %d for %s", largestOffset, wm.TopicPartition)
 			break
 		} else {
-			Warnf(wm, "Failed to commit offset %d for %s. Retying...", largestOffset, wm.TopicPartition)
+			Infof(wm, "Failed to commit offset %d for %s. Retying...", largestOffset, &wm.TopicPartition)
 		}
 	}
 
 	if !success {
-		Errorf(wm, "Failed to commit offset %d for %s after %d retries", largestOffset, wm.TopicPartition, wm.Config.OffsetsCommitMaxRetries)
+		Errorf(wm, "Failed to commit offset %d for %s after %d retries", largestOffset, &wm.TopicPartition, wm.Config.OffsetsCommitMaxRetries)
 		//TODO: what to do next?
 	} else {
 		wm.lastCommittedOffset = largestOffset

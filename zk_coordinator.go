@@ -516,7 +516,7 @@ func (zc *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCreate
 			parent, _ := path.Split(pathToCreate)
 			err = zc.createOrUpdatePathParentMayNotExist(parent[:len(parent)-1], make([]byte, 0))
 			if (err != nil) {
-				Error(zc, err.Error())
+				if zk.ErrNodeExists != err { Error(zc, err.Error()) }
 				return err
 			} else {
 				Debugf(zc, "Successfully created path %s", parent[:len(parent)-1])

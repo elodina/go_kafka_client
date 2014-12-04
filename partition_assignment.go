@@ -141,7 +141,7 @@ func rangeAssignor(context *assignmentContext) map[TopicAndPartition]ConsumerThr
 			} else {
 				for i := startPart; i < startPart+nParts; i++ {
 					partition := partitionsForTopic[i]
-					Infof(context.ConsumerId, "%s attempting to claim partition %d", consumerThreadId, partition)
+					Infof(context.ConsumerId, "%s attempting to claim %s", consumerThreadId, &TopicAndPartition{ Topic: topic, Partition: partition })
 					ownershipDecision[TopicAndPartition{ Topic: topic, Partition: partition, }] = consumerThreadId
 				}
 			}
