@@ -280,3 +280,41 @@ func newSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
 	brokerConfig.WriteTimeout = config.SocketTimeout
 	return brokerConfig
 }
+
+type Barrier struct {
+	size int32
+	barrierReachedLock sync.Mutex
+	barrierReachedCond *sync.Cond
+	broken bool
+}
+
+func NewBarrier(size int32) *Barrier {
+	if size == 0 {
+		panic("Cannot create barrier of size 0")
+	}
+
+	barrier := &Barrier{}
+	barrier.size = size
+	barrier.barrierReachedCond = sync.NewCond(&barrier.barrierReachedLock)
+
+	return barrier
+}
+
+func (b * Barrier) await() {
+	inLock(&b.barrierReachedLock, func() {
+		if b.broken {
+			panic("Barrier has been broken")
+		}
+
+		b.size--
+		if b.size > 0 {
+			for b.size > 0 {
+				b.barrierReachedCond.Wait()
+			}
+			return
+		}
+
+		b.broken = true
+		b.barrierReachedCond.Broadcast()
+	})
+}
