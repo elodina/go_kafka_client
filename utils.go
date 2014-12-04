@@ -285,10 +285,10 @@ type Barrier struct {
 	size int32
 	barrierReachedLock sync.Mutex
 	barrierReachedCond *sync.Cond
-	broken bool
+	callback func()
 }
 
-func NewBarrier(size int32) *Barrier {
+func NewBarrier(size int32, callback func()) *Barrier {
 	if size == 0 {
 		panic("Cannot create barrier of size 0")
 	}
@@ -296,25 +296,35 @@ func NewBarrier(size int32) *Barrier {
 	barrier := &Barrier{}
 	barrier.size = size
 	barrier.barrierReachedCond = sync.NewCond(&barrier.barrierReachedLock)
+	barrier.callback = callback
 
 	return barrier
 }
 
 func (b * Barrier) await() {
 	inLock(&b.barrierReachedLock, func() {
-		if b.broken {
+		if b.size == 0 {
 			panic("Barrier has been broken")
 		}
 
 		b.size--
-		if b.size > 0 {
-			for b.size > 0 {
+		if b.size != 0 {
+			for b.size != 0 {
 				b.barrierReachedCond.Wait()
 			}
 			return
 		}
+	})
 
-		b.broken = true
-		b.barrierReachedCond.Broadcast()
+	b.barrierReachedCond.Broadcast()
+	b.callback()
+}
+
+func (b *Barrier) reset(size int32) {
+	inLock(&b.barrierReachedLock, func(){
+		if b.size != 0 {
+			panic("Barrier is not broken yet")
+		}
+		b.size = size
 	})
 }
