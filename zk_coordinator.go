@@ -32,6 +32,7 @@ var (
 	brokerTopicsPath                   = "/brokers/topics"
 )
 
+/* ZookeeperCoordinator implements ConsumerCoordinator interface and is used to coordinate multiple consumers that work within the same consumer group. */
 type ZookeeperCoordinator struct {
 	config *ZookeeperConfig
 	zkConn *zk.Conn
@@ -42,13 +43,15 @@ func (zc *ZookeeperCoordinator) String() string {
 	return "zk"
 }
 
-func NewZookeeperCoordinator(config *ZookeeperConfig) *ZookeeperCoordinator {
+/* Creates a new ZookeeperCoordinator with a given configuration. */
+func NewZookeeperCoordinator(Config *ZookeeperConfig) *ZookeeperCoordinator {
 	return &ZookeeperCoordinator{
-		config: config,
+		config: Config,
 		unsubscribe: make(chan bool),
 	}
 }
 
+/* Establish connection to this ConsumerCoordinator. Returns an error if fails to connect, nil otherwise. */
 func (zc *ZookeeperCoordinator) Connect() error {
 	Infof(zc, "Connecting to ZK at %s\n", zc.config.ZookeeperConnect)
 	conn, _, err := zk.Connect(zc.config.ZookeeperConnect, zc.config.ZookeeperTimeout)
@@ -56,14 +59,15 @@ func (zc *ZookeeperCoordinator) Connect() error {
 	return err
 }
 
-func (zc *ZookeeperCoordinator) RegisterConsumer(consumerid string, groupid string, topicCount TopicsToNumStreams) error {
-	Debugf(zc, "Trying to register consumer %s at group %s in Zookeeper", consumerid, groupid)
-	registryDir := newZKGroupDirs(groupid).ConsumerRegistryDir
-	pathToConsumer := fmt.Sprintf("%s/%s", registryDir, consumerid)
+/* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Groupid in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
+func (zc *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid string, TopicCount TopicsToNumStreams) error {
+	Debugf(zc, "Trying to register consumer %s at group %s in Zookeeper", Consumerid, Groupid)
+	registryDir := newZKGroupDirs(Groupid).ConsumerRegistryDir
+	pathToConsumer := fmt.Sprintf("%s/%s", registryDir, Consumerid)
 	data, mappingError := json.Marshal(&ConsumerInfo{
 					Version : int16(1),
-					Subscription : topicCount.GetTopicsToNumStreamsMap(),
-					Pattern : topicCount.Pattern(),
+					Subscription : TopicCount.GetTopicsToNumStreamsMap(),
+					Pattern : TopicCount.Pattern(),
 					Timestamp : time.Now().Unix(),
 				})
 	if mappingError != nil {
@@ -84,8 +88,9 @@ func (zc *ZookeeperCoordinator) RegisterConsumer(consumerid string, groupid stri
 	return err
 }
 
-func (zc *ZookeeperCoordinator) DeregisterConsumer(consumerid string, groupid string) error {
-	pathToConsumer := fmt.Sprintf("%s/%s", newZKGroupDirs(groupid).ConsumerRegistryDir, consumerid)
+/* Deregisters consumer with Consumerid id that is a part of consumer group Groupid form this ConsumerCoordinator. Returns an error if deregistration failed, nil otherwise. */
+func (zc *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid string) error {
+	pathToConsumer := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
 	Debugf(zc, "Trying to deregister consumer at path: %s", pathToConsumer)
 	_, stat, err := zc.zkConn.Get(pathToConsumer)
 	if (err != nil) {
@@ -94,9 +99,11 @@ func (zc *ZookeeperCoordinator) DeregisterConsumer(consumerid string, groupid st
 	return zc.zkConn.Delete(pathToConsumer, stat.Version)
 }
 
-func (zc *ZookeeperCoordinator) GetConsumerInfo(consumerid string, group string) (*ConsumerInfo, error) {
+/* Gets the information about consumer with Consumerid id that is a part of consumer group Groupid from this ConsumerCoordinator.
+Returns ConsumerInfo on success and error otherwise (For example if consumer with given Consumerid does not exist). */
+func (zc *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
 	data, _, err := zc.zkConn.Get(fmt.Sprintf("%s/%s",
-		newZKGroupDirs(group).ConsumerRegistryDir, consumerid))
+		newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid))
 	if (err != nil) {
 		return nil, err
 	}
@@ -106,14 +113,16 @@ func (zc *ZookeeperCoordinator) GetConsumerInfo(consumerid string, group string)
 	return consumerInfo, nil
 }
 
-func (zc *ZookeeperCoordinator) GetConsumersPerTopic(group string, excludeInternalTopics bool) (map[string][]ConsumerThreadId, error) {
-	consumers, err := zc.GetConsumersInGroup(group)
+/* Gets the information about consumers per topic in consumer group Groupid excluding internal topics (such as offsets) if ExcludeInternalTopics = true.
+Returns a map where keys are topic names and values are slices of consumer ids and fetcher ids associated with this topic and error on failure. */
+func (zc *ZookeeperCoordinator) GetConsumersPerTopic(Groupid string, ExcludeInternalTopics bool) (map[string][]ConsumerThreadId, error) {
+	consumers, err := zc.GetConsumersInGroup(Groupid)
 	if (err != nil) {
 		return nil, err
 	}
 	consumersPerTopicMap := make(map[string][]ConsumerThreadId)
 	for _, consumer := range consumers {
-		topicsToNumStreams, err := NewTopicsToNumStreams(group, consumer, zc, excludeInternalTopics)
+		topicsToNumStreams, err := NewTopicsToNumStreams(Groupid, consumer, zc, ExcludeInternalTopics)
 		if (err != nil) {
 			return nil, err
 		}
@@ -132,9 +141,10 @@ func (zc *ZookeeperCoordinator) GetConsumersPerTopic(group string, excludeIntern
 	return consumersPerTopicMap, nil
 }
 
-func (zc *ZookeeperCoordinator) GetConsumersInGroup(group string) ([]string, error) {
-	Debugf(zc, "Getting consumers in group %s", group)
-	consumers, _, err := zc.zkConn.Children(newZKGroupDirs(group).ConsumerRegistryDir)
+/* Gets the list of all consumer ids within a consumer group Groupid. Returns a slice containing all consumer ids in group and error on failure. */
+func (zc *ZookeeperCoordinator) GetConsumersInGroup(Groupid string) ([]string, error) {
+	Debugf(zc, "Getting consumers in group %s", Groupid)
+	consumers, _, err := zc.zkConn.Children(newZKGroupDirs(Groupid).ConsumerRegistryDir)
 	if (err != nil) {
 		return nil, err
 	}
@@ -142,14 +152,17 @@ func (zc *ZookeeperCoordinator) GetConsumersInGroup(group string) ([]string, err
 	return consumers, nil
 }
 
+/* Gets the list of all topics registered in this ConsumerCoordinator. Returns a slice conaining topic names and error on failure. */
 func (zc *ZookeeperCoordinator) GetAllTopics() ([]string, error) {
 	topics, _, _, err := zc.zkConn.ChildrenW(brokerTopicsPath)
 	return topics, err
 }
 
-func (zc *ZookeeperCoordinator) GetPartitionsForTopics(topics []string) (map[string][]int32, error) {
+/* Gets the information about existing partitions for a given Topics.
+Returns a map where keys are topic names and values are slices of partition ids associated with this topic and error on failure. */
+func (zc *ZookeeperCoordinator) GetPartitionsForTopics(Topics []string) (map[string][]int32, error) {
 	result := make(map[string][]int32)
-	partitionAssignments, err := zc.getPartitionAssignmentsForTopics(topics)
+	partitionAssignments, err := zc.getPartitionAssignmentsForTopics(Topics)
 	if (err != nil) {
 		return nil, err
 	}
@@ -166,6 +179,8 @@ func (zc *ZookeeperCoordinator) GetPartitionsForTopics(topics []string) (map[str
 	return result, nil
 }
 
+/* Gets the information about all Kafka brokers registered in this ConsumerCoordinator.
+Returns a slice of BrokerInfo and error on failure. */
 func (zc *ZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) {
 	Debug(zc, "Getting all brokers in cluster")
 	brokerIds, _, err := zc.zkConn.Children(brokerIdsPath)
@@ -189,9 +204,11 @@ func (zc *ZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) {
 	return brokers, nil
 }
 
-func (zc *ZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error) {
-	dirs := newZKGroupTopicDirs(group, topicPartition.Topic)
-	offset, _, err := zc.zkConn.Get(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, topicPartition.Partition))
+/* Gets the offset for a given TopicPartition and consumer group Groupid.
+Returns offset on sucess, error otherwise. */
+func (zc *ZookeeperCoordinator) GetOffsetForTopicPartition(Groupid string, TopicPartition *TopicAndPartition) (int64, error) {
+	dirs := newZKGroupTopicDirs(Groupid, TopicPartition.Topic)
+	offset, _, err := zc.zkConn.Get(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition))
 	if (err != nil) {
 		if (err == zk.ErrNoNode) {
 			return InvalidOffset, nil
@@ -208,23 +225,26 @@ func (zc *ZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPa
 	return int64(offsetNum), nil
 }
 
-func (zc *ZookeeperCoordinator) NotifyConsumerGroup(group string, consumerId string) error {
-	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(group).ConsumerChangesDir, consumerId, time.Now().Nanosecond())
+//TODO not sure if we need this
+func (zc *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId string) error {
+	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(Groupid).ConsumerChangesDir, ConsumerId, time.Now().Nanosecond())
 	Debugf(zc, "Sending notification to consumer group at %s", path)
 	return zc.createOrUpdatePathParentMayNotExist(path, make([]byte, 0))
 }
 
-func (zc *ZookeeperCoordinator) SubscribeForChanges(group string) (<-chan bool, error) {
+/* Subscribes for any change that should trigger consumer rebalance on consumer group Groupid in this ConsumerCoordinator.
+Returns a read-only channel of booleans that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
+func (zc *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan bool, error) {
 	changes := make(chan bool)
 
-	zc.ensureZkPathsExist(group)
-	Infof(zc, "Subscribing for changes for %s", group)
+	zc.ensureZkPathsExist(Groupid)
+	Infof(zc, "Subscribing for changes for %s", Groupid)
 
-	consumersWatcher, err := zc.getConsumersInGroupWatcher(group)
+	consumersWatcher, err := zc.getConsumersInGroupWatcher(Groupid)
 	if err != nil {
 		return nil, err
 	}
-	consumerGroupChangesWatcher, err := zc.getConsumerGroupChangesWatcher(group)
+	consumerGroupChangesWatcher, err := zc.getConsumerGroupChangesWatcher(Groupid)
 	if err != nil {
 		return nil, err
 	}
@@ -249,11 +269,11 @@ func (zc *ZookeeperCoordinator) SubscribeForChanges(group string) (<-chan bool, 
 					Trace(zc, e)
 					if e.State == zk.StateDisconnected {
 						Debug(zc, "ZK watcher session ended, reconnecting...")
-						consumersWatcher, err = zc.getConsumersInGroupWatcher(group)
+						consumersWatcher, err = zc.getConsumersInGroupWatcher(Groupid)
 						if err != nil {
 							panic(err)
 						}
-						consumerGroupChangesWatcher, err = zc.getConsumerGroupChangesWatcher(group)
+						consumerGroupChangesWatcher, err = zc.getConsumerGroupChangesWatcher(Groupid)
 						if err != nil {
 							panic(err)
 						}
@@ -286,18 +306,21 @@ func (zc *ZookeeperCoordinator) SubscribeForChanges(group string) (<-chan bool, 
 	return changes, nil
 }
 
+/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 func (zc *ZookeeperCoordinator) Unsubscribe() {
 	zc.unsubscribe <- true
 }
 
-func (zc *ZookeeperCoordinator) ClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
+/* Tells the ConsumerCoordinator to claim partition topic Topic and partition Partition for consumerThreadId fetcher that works within a consumer group Group.
+	Returns true if claim is successful, false and error explaining failure otherwise. */
+func (zc *ZookeeperCoordinator) ClaimPartitionOwnership(Groupid string, Topic string, Partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
 	var err error
 	for i := 0; i <= zc.config.MaxClaimPartitionRetries; i++ {
-		ok, err := zc.tryClaimPartitionOwnership(group, topic, partition, consumerThreadId)
+		ok, err := zc.tryClaimPartitionOwnership(Groupid, Topic, Partition, consumerThreadId)
 		if ok {
 			return ok, err
 		}
-		Tracef(zc, "Claim failed for topic %s, partition %d after %d-th retry", topic, partition, i)
+		Tracef(zc, "Claim failed for topic %s, partition %d after %d-th retry", Topic, Partition, i)
 		time.Sleep(zc.config.ClaimPartitionBackoff)
 	}
 	return false, err
@@ -332,8 +355,10 @@ func (zc *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic s
 	return true, nil
 }
 
-func (zc *ZookeeperCoordinator) ReleasePartitionOwnership(group string, topic string, partition int32) error {
-	err := zc.deletePartitionOwnership(group, topic, partition)
+/* Tells the ConsumerCoordinator to release partition ownership on topic Topic and partition Partition for consumer group Groupid.
+Returns error if failed to released partition ownership. */
+func (zc *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topic string, Partition int32) error {
+	err := zc.deletePartitionOwnership(Groupid, Topic, Partition)
 	if (err != nil) {
 		if err == zk.ErrNoNode {
 			Warn(zc, err)
@@ -345,9 +370,11 @@ func (zc *ZookeeperCoordinator) ReleasePartitionOwnership(group string, topic st
 	return nil
 }
 
-func (zc *ZookeeperCoordinator) CommitOffset(group string, topicPartition *TopicAndPartition, offset int64) error {
-	dirs := newZKGroupTopicDirs(group, topicPartition.Topic)
-	return zc.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, topicPartition.Partition), []byte(strconv.FormatInt(offset, 10)))
+/* Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Groupid.
+Returns error if failed to commit offset. */
+func (zc *ZookeeperCoordinator) CommitOffset(Groupid string, TopicPartition *TopicAndPartition, Offset int64) error {
+	dirs := newZKGroupTopicDirs(Groupid, TopicPartition.Topic)
+	return zc.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
 }
 
 func (zc *ZookeeperCoordinator) ensureZkPathsExist(group string) {
@@ -493,6 +520,7 @@ func (zc *ZookeeperCoordinator) updateRecord(pathToCreate string, dataToWrite []
 	return err
 }
 
+/* ZookeeperConfig is used to pass multiple configuration entries to ZookeeperCoordinator. */
 type ZookeeperConfig struct {
 	/* Zookeeper hosts */
 	ZookeeperConnect []string
@@ -507,6 +535,7 @@ type ZookeeperConfig struct {
 	ClaimPartitionBackoff time.Duration
 }
 
+/* Created a new ZookeeperConfig with sane defaults. Default ZookeeperConnect points to localhost. */
 func NewZookeeperConfig() *ZookeeperConfig {
 	config := &ZookeeperConfig{}
 	config.ZookeeperConnect = []string{"localhost"}

@@ -66,7 +66,7 @@ func TestRoundRobinAssignor(t *testing.T) {
 		t.Logf("%v\n", ownershipDecision)
 	}
 
-	Assert(t, totalDecisions, totalPartitions)
+	assert(t, totalDecisions, totalPartitions)
 
 	//NOT every topic has the same number of streams within a consumer instance
 	failed := false
@@ -93,7 +93,7 @@ func TestRoundRobinAssignor(t *testing.T) {
 	}
 	assignor(context)
 
-	Assert(t, failed, true)
+	assert(t, failed, true)
 }
 
 
@@ -125,5 +125,5 @@ func TestRangeAssignor(t *testing.T) {
 		t.Logf("%v\n", ownershipDecision)
 	}
 
-	Assert(t, totalDecisions, totalPartitions)
+	assert(t, totalDecisions, totalPartitions)
 }

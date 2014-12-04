@@ -39,7 +39,7 @@ var (
 )
 
 func TestZkAPI(t *testing.T) {
-	WithZookeeper(t, func(zkServer *zk.TestServer) {
+	withZookeeper(t, func(zkServer *zk.TestServer) {
 		coordinatorConfig := NewZookeeperConfig()
 		coordinatorConfig.ZookeeperConnect = []string{fmt.Sprintf("127.0.0.1:%d", zkServer.Port)}
 		coordinator = NewZookeeperCoordinator(coordinatorConfig)
@@ -78,14 +78,14 @@ func testGetBrokerInfo(t *testing.T) {
 	if (err != nil) {
 		t.Error(err)
 	}
-	Assert(t, *brokerInfo, *broker)
+	assert(t, *brokerInfo, *broker)
 }
 
 func testGetAllBrokersInCluster(t *testing.T) {
 	brokers, err := coordinator.GetAllBrokers()
 
-	Assert(t, err, nil)
-	Assert(t, len(brokers), 1)
+	assert(t, err, nil)
+	assert(t, len(brokers), 1)
 }
 
 func testRegisterConsumer(t *testing.T) {
@@ -113,7 +113,7 @@ func testRegisterConsumer(t *testing.T) {
 	}
 	actualConsumerInfo, err := coordinator.GetConsumerInfo(fmt.Sprintf(consumerIdPattern, 0), consumerGroup)
 
-	Assert(t, *actualConsumerInfo, *consumerInfo)
+	assert(t, *actualConsumerInfo, *consumerInfo)
 }
 
 func testGetConsumersInGroup(t *testing.T) {
@@ -121,7 +121,7 @@ func testGetConsumersInGroup(t *testing.T) {
 	if (err != nil) {
 		t.Error(err)
 	}
-	Assert(t, len(consumers), 1)
+	assert(t, len(consumers), 1)
 }
 
 func testDeregisterConsumer(t *testing.T) {
@@ -131,5 +131,5 @@ func testDeregisterConsumer(t *testing.T) {
 	if (err != nil) {
 		t.Error(err)
 	}
-	Assert(t, exists, false)
+	assert(t, exists, false)
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+//TODO take a look at BDOS-121
 var Logger, _ = log.LoggerFromConfigAsFile("seelog.xml")
 
 func Trace(contextName interface{}, message interface{}) {

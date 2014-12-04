@@ -29,7 +29,7 @@ import (
 	"os/exec"
 )
 
-func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
+func withZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
 	testCluster, err := zk.StartTestCluster(1)
 	if err != nil {
 		t.Fatal(err)
@@ -40,8 +40,8 @@ func WithZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
 	zookeeperWork(&testCluster.Servers[0])
 }
 
-func WithKafka(t *testing.T, kafkaWork func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer)) {
-	WithZookeeper(t, func(zkServer *zk.TestServer) {
+func withKafka(t *testing.T, kafkaWork func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer)) {
+	withZookeeper(t, func(zkServer *zk.TestServer) {
 		cluster, err := StartTestKafkaCluster(1, zkServer.Port)
 		if err != nil {
 			panic(err)
@@ -52,19 +52,19 @@ func WithKafka(t *testing.T, kafkaWork func(zkServer *zk.TestServer, kafkaServer
 	})
 }
 
-func Assert(t *testing.T, actual interface{}, expected interface{}) {
+func assert(t *testing.T, actual interface{}, expected interface{}) {
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expected %v, actual %v", expected, actual)
 	}
 }
 
-func AssertNot(t *testing.T, actual interface{}, expected interface{}) {
+func assertNot(t *testing.T, actual interface{}, expected interface{}) {
 	if reflect.DeepEqual(actual, expected) {
 		t.Errorf("%v should not be %v", actual, expected)
 	}
 }
 
-func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message) {
+func receiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message) {
 	numMessages := 0
 	for {
 		select {
@@ -87,7 +87,7 @@ func ReceiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 	}
 }
 
-func ReceiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, from []<-chan []*Message) map[<-chan []*Message]int {
+func receiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, from []<-chan []*Message) map[<-chan []*Message]int {
 	numMessages := 0
 
 	messageStats := make(map[<-chan []*Message]int)
@@ -130,7 +130,7 @@ func ReceiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 	return nil
 }
 
-func ReceiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Message) {
+func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Message) {
 	for {
 		select {
 		case batch := <-from: {
@@ -144,7 +144,7 @@ func ReceiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 	}
 }
 
-func ProduceN(t *testing.T, n int, p *producer.KafkaProducer) {
+func produceN(t *testing.T, n int, p *producer.KafkaProducer) {
 	for i := 0; i < n; i++ {
 		message := fmt.Sprintf("test-kafka-message-%d", n)
 		if err := p.Send(message); err != nil {
@@ -153,7 +153,7 @@ func ProduceN(t *testing.T, n int, p *producer.KafkaProducer) {
 	}
 }
 
-func CloseWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
+func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	select {
 	case <-consumer.Close(): {
 		Info("test", "Successfully closed consumer")

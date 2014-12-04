@@ -22,8 +22,10 @@ import (
 	"strings"
 )
 
-func NewTopicsToNumStreams(group string, consumerId string, coordinator ConsumerCoordinator, excludeInternalTopics bool) (TopicsToNumStreams, error) {
-	consumerInfo, err := coordinator.GetConsumerInfo(consumerId, group)
+/* Constructs a new TopicsToNumStreams for consumer with Consumerid id that works within consumer group Groupid.
+Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator. */
+func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator ConsumerCoordinator, ExcludeInternalTopics bool) (TopicsToNumStreams, error) {
+	consumerInfo, err := Coordinator.GetConsumerInfo(Consumerid, Groupid)
 	if (err != nil) {
 		return nil, err
 	}
@@ -40,7 +42,7 @@ func NewTopicsToNumStreams(group string, consumerId string, coordinator Consumer
 			pattern = staticPattern
 		}
 		return &TopicSwitch{
-			ConsumerId: consumerId,
+			ConsumerId: Consumerid,
 			DesiredPattern: pattern,
 			TopicsToNumStreamsMap: consumerInfo.Subscription,
 		}, nil
@@ -51,7 +53,7 @@ func NewTopicsToNumStreams(group string, consumerId string, coordinator Consumer
 
 	if (len(consumerInfo.Subscription) == 0 || !(hasWhiteList || hasBlackList)) {
 		return &StaticTopicsToNumStreams{
-			ConsumerId: consumerId,
+			ConsumerId: Consumerid,
 			TopicsToNumStreamsMap: consumerInfo.Subscription,
 		}, nil
 	} else {
@@ -66,11 +68,11 @@ func NewTopicsToNumStreams(group string, consumerId string, coordinator Consumer
 		}
 
 		return &WildcardTopicsToNumStreams{
-			Coordinator: coordinator,
-			ConsumerId: consumerId,
+			Coordinator: Coordinator,
+			ConsumerId: Consumerid,
 			TopicFilter: filter,
 			NumStreams: numStreams,
-			ExcludeInternalTopics: excludeInternalTopics,
+			ExcludeInternalTopics: ExcludeInternalTopics,
 		}, nil
 	}
 }
@@ -101,24 +103,28 @@ func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[
 	return result
 }
 
-
+//TopicsToNumStreams implementation representing a static consumer subscription.
 type StaticTopicsToNumStreams struct {
 	ConsumerId string
 	TopicsToNumStreamsMap map[string]int
 }
 
+//Creates a map describing consumer subscription where keys are topic names and values are slices of ConsumerThreadIds used to fetch these topics.
 func (tc *StaticTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
 	return makeConsumerThreadIdsPerTopic(tc.ConsumerId, tc.TopicsToNumStreamsMap)
 }
 
+//Creates a map descibing consumer subscription where keys are topic names and values are number of fetchers used to fetch these topics.
 func (tc *StaticTopicsToNumStreams) GetTopicsToNumStreamsMap() map[string]int {
 	return tc.TopicsToNumStreamsMap
 }
 
+//Returns a pattern describing this TopicsToNumStreams.
 func (tc *StaticTopicsToNumStreams) Pattern() string {
 	return staticPattern
 }
 
+//TopicsToNumStreams implementation representing either whitelist or blacklist consumer subscription.
 type WildcardTopicsToNumStreams struct {
 	Coordinator           ConsumerCoordinator
 	ConsumerId            string
@@ -127,6 +133,7 @@ type WildcardTopicsToNumStreams struct {
 	ExcludeInternalTopics bool
 }
 
+//Creates a map describing consumer subscription where keys are topic names and values are slices of ConsumerThreadIds used to fetch these topics.
 func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
 	topicsToNumStreams := make(map[string]int)
 	topics, err := tc.Coordinator.GetAllTopics()
@@ -141,12 +148,14 @@ func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string]
 	return makeConsumerThreadIdsPerTopic(tc.ConsumerId, topicsToNumStreams)
 }
 
+//Creates a map descibing consumer subscription where keys are topic names and values are number of fetchers used to fetch these topics.
 func (tc *WildcardTopicsToNumStreams) GetTopicsToNumStreamsMap() map[string]int {
 	result := make(map[string]int)
 	result[tc.TopicFilter.regex()] = tc.NumStreams
 	return result
 }
 
+//Returns a pattern describing this TopicsToNumStreams.
 func (tc *WildcardTopicsToNumStreams) Pattern() string {
 	switch tc.TopicFilter.(type) {
 	case *WhiteList:
@@ -158,7 +167,7 @@ func (tc *WildcardTopicsToNumStreams) Pattern() string {
 	}
 }
 
-
+//TODO ???
 type TopicSwitch struct {
 	ConsumerId string
 	DesiredPattern string

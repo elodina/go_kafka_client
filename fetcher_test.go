@@ -33,20 +33,20 @@ func TestFilterPartitionData(t *testing.T) {
 	data := getFetchResponseBlock(startOffset, numMessages)
 	filterPartitionData(data, requestedOffset)
 	//no messages should be filtered when startOffset == requestedOffset
-	Assert(t, len(data.MsgSet.Messages), numMessages)
+	assert(t, len(data.MsgSet.Messages), numMessages)
 
 	requestedOffset = startOffset + rand.Int63n(100)
 	filterPartitionData(data, requestedOffset)
 	expectedMessages := numMessages - int(requestedOffset - startOffset)
 	if expectedMessages < 0 { expectedMessages = 0 }
 	//check the filtering itself
-	Assert(t, len(data.MsgSet.Messages), expectedMessages)
+	assert(t, len(data.MsgSet.Messages), expectedMessages)
 
 	requestedOffset = startOffset + int64(numMessages)
 	data = getFetchResponseBlock(startOffset, numMessages)
 	filterPartitionData(data, requestedOffset)
 	//should get empty slice if the response does not contain values from requested offset
-	Assert(t, len(data.MsgSet.Messages), 0)
+	assert(t, len(data.MsgSet.Messages), 0)
 }
 
 func getFetchResponseBlock(startOffset int64, numMessages int) *sarama.FetchResponseBlock {

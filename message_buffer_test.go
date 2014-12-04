@@ -36,14 +36,14 @@ func TestMessageBuffer(t *testing.T) {
 	disconnectChannelsForPartition := make(chan TopicAndPartition)
 	buffer := newMessageBuffer(topicPartition, out, config, askNextBatch, disconnectChannelsForPartition)
 
-	ReceiveNoMessages(t, 4*time.Second, out)
+	receiveNoMessages(t, 4*time.Second, out)
 
 	go buffer.addBatch(generateBatch(topicPartition, 1))
 	expectAskNext(t, askNextBatch, askNextTimeout)
-	ReceiveN(t, 1, 4*time.Second, out)
+	receiveN(t, 1, 4*time.Second, out)
 
 	go buffer.addBatch(generateBatch(topicPartition, config.FetchBatchSize))
-	ReceiveN(t, config.FetchBatchSize, 4*time.Second, out)
+	receiveN(t, config.FetchBatchSize, 4*time.Second, out)
 	expectAskNext(t, askNextBatch, askNextTimeout)
 
 	go buffer.addBatch(generateBatch(topicPartition, 1))
@@ -56,7 +56,7 @@ func TestMessageBuffer(t *testing.T) {
 		}
 	}()
 	buffer.stop()
-	ReceiveNoMessages(t, 4*time.Second, out)
+	receiveNoMessages(t, 4*time.Second, out)
 }
 
 func expectAskNext(t *testing.T, askNext chan TopicAndPartition, timeout time.Duration) {

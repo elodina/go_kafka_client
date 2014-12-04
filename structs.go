@@ -81,8 +81,13 @@ func (t *TopicInfo) String() string {
 
 //Information on Consumer subscription. Used to keep it in consumer coordinator.
 type TopicsToNumStreams interface {
+	//Creates a map descibing consumer subscription where keys are topic names and values are number of fetchers used to fetch these topics.
 	GetTopicsToNumStreamsMap() map[string]int
+
+	//Creates a map describing consumer subscription where keys are topic names and values are slices of ConsumerThreadIds used to fetch these topics.
 	GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId
+
+	//Returns a pattern describing this TopicsToNumStreams.
 	Pattern() string
 }
 
@@ -172,22 +177,64 @@ func (s intArray) Len() int { return len(s) }
 func (s intArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s intArray) Less(i, j int) bool { return s[i] < s[j] }
 
-//TODO document this!
+/* ConsumerCoordinator is used to coordinate actions of multiple consumers within the same consumer group.
+It is responsible for keeping track of alive consumers, manages their offsets and assigns partitions to consume.
+The current default ConsumerCoordinator is ZookeeperCoordinator. More of them can be added in future. */
 type ConsumerCoordinator interface {
+	/* Establish connection to this ConsumerCoordinator. Returns an error if fails to connect, nil otherwise. */
 	Connect() error
-	RegisterConsumer(consumerid string, group string, topicCount TopicsToNumStreams) error
-	DeregisterConsumer(consumerid string, group string) error
-	GetConsumerInfo(consumerid string, group string) (*ConsumerInfo, error)
-	GetConsumersPerTopic(group string, excludeInternalTopics bool) (map[string][]ConsumerThreadId, error)
-	GetConsumersInGroup(group string) ([]string, error)
+
+	/* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Group in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
+	RegisterConsumer(Consumerid string, Group string, TopicCount TopicsToNumStreams) error
+
+	/* Deregisters consumer with Consumerid id that is a part of consumer group Group form this ConsumerCoordinator. Returns an error if deregistration failed, nil otherwise. */
+	DeregisterConsumer(Consumerid string, Group string) error
+
+	/* Gets the information about consumer with Consumerid id that is a part of consumer group Group from this ConsumerCoordinator.
+	Returns ConsumerInfo on success and error otherwise (For example if consumer with given Consumerid does not exist). */
+	GetConsumerInfo(Consumerid string, Group string) (*ConsumerInfo, error)
+
+	/* Gets the information about consumers per topic in consumer group Group excluding internal topics (such as offsets) if ExcludeInternalTopics = true.
+	Returns a map where keys are topic names and values are slices of consumer ids and fetcher ids associated with this topic and error on failure. */
+	GetConsumersPerTopic(Group string, ExcludeInternalTopics bool) (map[string][]ConsumerThreadId, error)
+
+	/* Gets the list of all consumer ids within a consumer group Group. Returns a slice containing all consumer ids in group and error on failure. */
+	GetConsumersInGroup(Group string) ([]string, error)
+
+	/* Gets the list of all topics registered in this ConsumerCoordinator. Returns a slice conaining topic names and error on failure. */
 	GetAllTopics() ([]string, error)
-	GetPartitionsForTopics(topics []string) (map[string][]int32, error)
+
+	/* Gets the information about existing partitions for a given Topics.
+	Returns a map where keys are topic names and values are slices of partition ids associated with this topic and error on failure. */
+	GetPartitionsForTopics(Topics []string) (map[string][]int32, error)
+
+	/* Gets the information about all Kafka brokers registered in this ConsumerCoordinator.
+	Returns a slice of BrokerInfo and error on failure. */
 	GetAllBrokers() ([]*BrokerInfo, error)
-	GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error)
-	NotifyConsumerGroup(group string, consumerId string) error
-	SubscribeForChanges(group string) (<-chan bool, error)
+
+	/* Gets the offset for a given TopicPartition and consumer group Group.
+	Returns offset on sucess, error otherwise. */
+	GetOffsetForTopicPartition(Group string, TopicPartition *TopicAndPartition) (int64, error)
+
+	//TODO not sure if we still need this
+	NotifyConsumerGroup(Group string, ConsumerId string) error
+
+	/* Subscribes for any change that should trigger consumer rebalance on consumer group Group in this ConsumerCoordinator.
+	Returns a read-only channel of booleans that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
+	SubscribeForChanges(Group string) (<-chan bool, error)
+
+	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
-	ClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error)
-	ReleasePartitionOwnership(group string, topic string, partition int32) error
-	CommitOffset(group string, topicPartition *TopicAndPartition, offset int64) error
+
+	/* Tells the ConsumerCoordinator to claim partition topic Topic and partition Partition for ConsumerThreadId fetcher that works within a consumer group Group.
+	Returns true if claim is successful, false and error explaining failure otherwise. */
+	ClaimPartitionOwnership(Group string, Topic string, Partition int32, ConsumerThreadId ConsumerThreadId) (bool, error)
+
+	/* Tells the ConsumerCoordinator to release partition ownership on topic Topic and partition Partition for consumer group Group.
+	Returns error if failed to released partition ownership. */
+	ReleasePartitionOwnership(Group string, Topic string, Partition int32) error
+
+	/* Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Group.
+	Returns error if failed to commit offset. */
+	CommitOffset(Group string, TopicPartition *TopicAndPartition, Offset int64) error
 }
