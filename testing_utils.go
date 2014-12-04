@@ -144,13 +144,15 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 	}
 }
 
-func produceN(t *testing.T, n int, p *producer.KafkaProducer) {
+func produceN(t *testing.T, n int, topic string, brokerAddr string) {
+	p := producer.NewKafkaProducer(topic, []string{brokerAddr}, nil)
 	for i := 0; i < n; i++ {
 		message := fmt.Sprintf("test-kafka-message-%d", n)
 		if err := p.Send(message); err != nil {
 			t.Fatalf("Failed to produce message %s", message)
 		}
 	}
+	p.Close()
 }
 
 func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {

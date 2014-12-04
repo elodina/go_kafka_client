@@ -140,6 +140,11 @@ type ConsumerConfig struct {
 
 	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
 	Coordinator ConsumerCoordinator
+
+	/* Indicates whether the client supports blue-green deployment.
+	This config entry is needed because blue-green deployment won't work with RoundRobin partition assignment strategy.
+	Defaults to true. */
+	BlueGreenDeploymentEnabled bool
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.
@@ -181,6 +186,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchRequestBackoff = 100 * time.Millisecond
 
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
+	config.BlueGreenDeploymentEnabled = true
 
 	return config
 }
@@ -304,6 +310,10 @@ func (c *ConsumerConfig) Validate() error {
 
 	if c.Coordinator == nil {
 		return errors.New("Please provide a Coordinator")
+	}
+
+	if c.BlueGreenDeploymentEnabled && c.PartitionAssignmentStrategy != RangeStrategy {
+		return errors.New("In order to use Blue-Green deployment Range partition assignment strategy should be used")
 	}
 
 	return nil

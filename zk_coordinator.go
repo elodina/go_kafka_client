@@ -642,6 +642,7 @@ func (mzk *mockZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) { pa
 func (mzk *mockZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) NotifyConsumerGroup(group string, consumerId string) error { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan CoordinatorEvent, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) GetNewDeployedTopics(Group string) ([]*DeployedTopics, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) ClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) ReleasePartitionOwnership(group string, topic string, partition int32) error { panic("Not implemented") }
