@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"encoding/json"
 	"path"
+	"errors"
+	"strings"
 )
 
 var (
@@ -234,8 +236,8 @@ func (zc *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId s
 
 /* Subscribes for any change that should trigger consumer rebalance on consumer group Groupid in this ConsumerCoordinator.
 Returns a read-only channel of booleans that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
-func (zc *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan bool, error) {
-	changes := make(chan bool)
+func (zc *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
+	changes := make(chan CoordinatorEvent)
 
 	zc.ensureZkPathsExist(Groupid)
 	Infof(zc, "Subscribing for changes for %s", Groupid)
@@ -288,7 +290,11 @@ func (zc *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan bool
 					} else {
 						emptyEvent := zk.Event{}
 						if e != emptyEvent {
-							changes <- true
+							if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+								changes <- NewTopicDeployed
+							} else {
+								changes <- Regular
+							}
 						} else {
 							//TODO configurable?
 							time.Sleep(2 * time.Second)
@@ -304,6 +310,32 @@ func (zc *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan bool
 	}()
 
 	return changes, nil
+}
+
+func (zc *ZookeeperCoordinator) GetNewDeployedTopics(Group string) ([]*DeployedTopics, error) {
+	changesPath := newZKGroupDirs(Group).ConsumerChangesDir
+	children, _, err := zc.zkConn.Children(changesPath)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to get new deployed topics: %s", err.Error()))
+	}
+
+	deployedTopics := make([]*DeployedTopics, len(children))
+	for i, child := range children {
+		entryPath := fmt.Sprintf("%s/%s", changesPath, child)
+		rawDeployedTopicsEntry, _, err := zc.zkConn.Get(entryPath)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("Unable to fetch deployed topic entry %s: %s", entryPath, err.Error()))
+		}
+		deployedTopicsEntry := &DeployedTopics{}
+		err = json.Unmarshal(rawDeployedTopicsEntry, deployedTopicsEntry)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("Unable to parse deployed topic entry %s: %s", rawDeployedTopicsEntry, err.Error()))
+		}
+
+		deployedTopics[i] = deployedTopicsEntry
+	}
+
+	return deployedTopics, nil
 }
 
 /* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
@@ -609,7 +641,7 @@ func (mzk *mockZookeeperCoordinator) GetPartitionsForTopics(topics []string) (ma
 func (mzk *mockZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) NotifyConsumerGroup(group string, consumerId string) error { panic("Not implemented") }
-func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan bool, error) { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan CoordinatorEvent, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) ClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) ReleasePartitionOwnership(group string, topic string, partition int32) error { panic("Not implemented") }

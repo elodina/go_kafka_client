@@ -17,35 +17,12 @@
 
 package go_kafka_client
 
-import (
-	"fmt"
-	"strings"
-)
-
 /* Constructs a new TopicsToNumStreams for consumer with Consumerid id that works within consumer group Groupid.
 Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator. */
 func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator ConsumerCoordinator, ExcludeInternalTopics bool) (TopicsToNumStreams, error) {
 	consumerInfo, err := Coordinator.GetConsumerInfo(Consumerid, Groupid)
 	if (err != nil) {
 		return nil, err
-	}
-
-	hasTopicSwitch := strings.HasPrefix(consumerInfo.Pattern, switchToPatternPrefix)
-	if (hasTopicSwitch) {
-		var pattern string
-		switch consumerInfo.Pattern {
-		case fmt.Sprintf("%s%s", switchToPatternPrefix, whiteListPattern):
-			pattern = whiteListPattern
-		case fmt.Sprintf("%s%s", switchToPatternPrefix, blackListPattern):
-			pattern = blackListPattern
-		default:
-			pattern = staticPattern
-		}
-		return &TopicSwitch{
-			ConsumerId: Consumerid,
-			DesiredPattern: pattern,
-			TopicsToNumStreamsMap: consumerInfo.Subscription,
-		}, nil
 	}
 
 	hasWhiteList := whiteListPattern == consumerInfo.Pattern

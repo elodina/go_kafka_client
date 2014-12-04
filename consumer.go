@@ -71,6 +71,8 @@ type Consumer struct {
 	pendingWMsTasksCounter metrics.Counter
 	wmsBatchDurationTimer metrics.Timer
 	wmsIdleTimer metrics.Timer
+
+	newDeployedTopics []*DeployedTopics
 }
 
 /* NewConsumer creates a new Consumer with a given configuration. Creating a Consumer does not start fetching immediately. */
@@ -304,24 +306,6 @@ func (c *Consumer) removeObsoleteWorkerManagers() {
 	}
 }
 
-//TODO time to implement this!
-func (c *Consumer) SwitchTopic(topicCountMap map[string]int, pattern string) {
-	Infof(c, "Switching to %s with pattern '%s'", topicCountMap, pattern)
-	//TODO: whitelist/blacklist pattern handling
-	switchTopicCount := &TopicSwitch {
-		ConsumerId : c.config.Consumerid,
-		TopicsToNumStreamsMap : topicCountMap,
-		DesiredPattern: fmt.Sprintf("%s%s", switchToPatternPrefix, pattern),
-	}
-
-	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, switchTopicCount)
-
-	err := c.config.Coordinator.NotifyConsumerGroup(c.config.Groupid, c.config.Consumerid)
-	if err != nil {
-		panic(err)
-	}
-}
-
 /* Tells the Consumer to close all existing connections and stop.
 This method is NOT blocking but returns a channel which will get a single value once the closing is finished. */
 func (c *Consumer) Close() <-chan bool {
@@ -411,8 +395,16 @@ func (c *Consumer) subscribeForChanges(group string) {
 	go func() {
 		for {
 			select {
-				case <-changes: {
-					inLock(&c.rebalanceLock, func() { c.rebalance() })
+				case eventType := <-changes: {
+					if eventType == NewTopicDeployed {
+						deployedTopics, err := c.config.Coordinator.GetNewDeployedTopics(group)
+						if err != nil {
+							panic(err)
+						}
+						c.newDeployedTopics = deployedTopics
+					} else {
+						inLock(&c.rebalanceLock, func() { c.rebalance() })
+					}
 				}
 				case <-c.unsubscribe: {
 					return

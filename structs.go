@@ -26,7 +26,6 @@ const (
 	whiteListPattern = "white_list"
 	blackListPattern = "black_list"
 	staticPattern    = "static"
-	switchToPatternPrefix = "switch_to_"
 )
 
 //Single Kafka message that is sent to user-defined Strategy
@@ -172,6 +171,13 @@ type TopicPartitionData struct {
 	Data *sarama.FetchResponseBlock
 }
 
+type DeployedTopics struct {
+	//comma separated list of topics to consume from
+	Topics string
+	//either black_list, white_list or static
+	Pattern string
+}
+
 type intArray []int32
 func (s intArray) Len() int { return len(s) }
 func (s intArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
@@ -221,7 +227,9 @@ type ConsumerCoordinator interface {
 
 	/* Subscribes for any change that should trigger consumer rebalance on consumer group Group in this ConsumerCoordinator.
 	Returns a read-only channel of booleans that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
-	SubscribeForChanges(Group string) (<-chan bool, error)
+	SubscribeForChanges(Group string) (<-chan CoordinatorEvent, error)
+
+	GetNewDeployedTopics(Group string) ([]*DeployedTopics, error)
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
@@ -238,3 +246,10 @@ type ConsumerCoordinator interface {
 	Returns error if failed to commit offset. */
 	CommitOffset(Group string, TopicPartition *TopicAndPartition, Offset int64) error
 }
+
+type CoordinatorEvent string
+
+const (
+	Regular = "regular"
+	NewTopicDeployed = "consumeFrom"
+)
