@@ -316,8 +316,8 @@ func (b * Barrier) await() {
 		}
 	})
 
-	b.barrierReachedCond.Broadcast()
 	b.callback()
+	b.barrierReachedCond.Broadcast()
 }
 
 func (b *Barrier) reset(size int32) {
