@@ -17,8 +17,8 @@
 
 package go_kafka_client
 
-/* Constructs a new TopicsToNumStreams for consumer with Consumerid id that works within consumer group Groupid.
-Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator. */
+// Constructs a new TopicsToNumStreams for consumer with Consumerid id that works within consumer group Groupid.
+// Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator.
 func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator ConsumerCoordinator, ExcludeInternalTopics bool) (TopicsToNumStreams, error) {
 	consumerInfo, err := Coordinator.GetConsumerInfo(Consumerid, Groupid)
 	if (err != nil) {

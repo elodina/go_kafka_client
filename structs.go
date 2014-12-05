@@ -183,9 +183,9 @@ func (s intArray) Len() int { return len(s) }
 func (s intArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s intArray) Less(i, j int) bool { return s[i] < s[j] }
 
-/* ConsumerCoordinator is used to coordinate actions of multiple consumers within the same consumer group.
-It is responsible for keeping track of alive consumers, manages their offsets and assigns partitions to consume.
-The current default ConsumerCoordinator is ZookeeperCoordinator. More of them can be added in future. */
+// ConsumerCoordinator is used to coordinate actions of multiple consumers within the same consumer group.
+// It is responsible for keeping track of alive consumers, manages their offsets and assigns partitions to consume.
+// The current default ConsumerCoordinator is ZookeeperCoordinator. More of them can be added in future.
 type ConsumerCoordinator interface {
 	/* Establish connection to this ConsumerCoordinator. Returns an error if fails to connect, nil otherwise. */
 	Connect() error

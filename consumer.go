@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -16,12 +16,12 @@
  */
 
 /* Package go_kafka_client provides a high-level Kafka consumer implementation and introduces different approach than Java/Scala high-level consumer.
-Primary differences include:
-- workers concept enforcing at least once processing before committing offsets;
-- improved rebalancing algorithm - closes obsolete connections and opens new connections without stopping the whole consumer;
-- supports graceful shutdown notifying client when it is over;
-- batch processing;
-- supports static partitions configuration allowing to start a consumer with a predefined set of partitions never caring about rebalancing; */
+ Primary differences include:
+ - workers concept enforcing at least once processing before committing offsets;
+ - improved rebalancing algorithm - closes obsolete connections and opens new connections without stopping the whole consumer;
+ - supports graceful shutdown notifying client when it is over;
+ - batch processing;
+ - supports static partitions configuration allowing to start a consumer with a predefined set of partitions never caring about rebalancing; */
 package go_kafka_client
 
 import (
@@ -46,8 +46,8 @@ const (
 	KafkaOffsetStorage = "kafka"
 )
 
-/* Consumer is a high-level Kafka consumer designed to work within a consumer group.
-It subscribes to coordinator events and is able to balance load within a consumer group. */
+// Consumer is a high-level Kafka consumer designed to work within a consumer group.
+// It subscribes to coordinator events and is able to balance load within a consumer group.
 type Consumer struct {
 	config        *ConsumerConfig
 	fetcher         *consumerFetcherManager
@@ -306,8 +306,8 @@ func (c *Consumer) removeObsoleteWorkerManagers() {
 	}
 }
 
-/* Tells the Consumer to close all existing connections and stop.
-This method is NOT blocking but returns a channel which will get a single value once the closing is finished. */
+// Tells the Consumer to close all existing connections and stop.
+// This method is NOT blocking but returns a channel which will get a single value once the closing is finished.
 func (c *Consumer) Close() <-chan bool {
 	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true

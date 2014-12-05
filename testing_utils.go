@@ -166,6 +166,8 @@ func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	}
 }
 
+//Convenience utility to create a topic topicName with numPartitions partitions in Zookeeper located at zk (format should be host:port).
+//Please note that this requires Apache Kafka 0.8.1 binary distribution available through KAFKA_PATH environment variable
 func CreateMultiplePartitionsTopic(zk string, topicName string, numPartitions int) {
 	if runtime.GOOS == "windows" {
 		params := fmt.Sprintf("--create --zookeeper %s --replication-factor 1 --partitions %d --topic %s", zk, numPartitions, topicName)
