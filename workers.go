@@ -75,7 +75,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		InputChannel: make(chan [] *Message),
 		CurrentBatch: make(map[TaskId]*Task),
 		TopicPartition: topicPartition,
-		LargestOffset: 0,
+		LargestOffset: InvalidOffset,
 		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
 		batchProcessed: make(chan bool),
 		managerStop: make(chan bool),
@@ -169,7 +169,7 @@ func (wm *WorkerManager) commitBatch() {
 func (wm *WorkerManager) commitOffset() {
 	largestOffset := wm.LargestOffset
 	Tracef(wm, "Inside commit offset with largest %d and last %d", largestOffset, wm.lastCommittedOffset)
-	if largestOffset <= wm.lastCommittedOffset { return }
+	if largestOffset <= wm.lastCommittedOffset || isOffsetInvalid(largestOffset) { return }
 
 	success := false
 	for i := 0; i <= wm.Config.OffsetsCommitMaxRetries; i++ {
