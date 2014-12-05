@@ -156,15 +156,6 @@ func (b *brokerAndFetcherId) String() string {
 	return fmt.Sprintf("{Broker: %s, FetcherId: %d}", b.Broker, b.FetcherId)
 }
 
-type partitionFetchInfo struct {
-	Offset int64
-	FetchSize int32
-}
-
-func (p *partitionFetchInfo) String() string {
-	return fmt.Sprintf("{Offset: %d, FetchSize: %d}", p.Offset, p.FetchSize)
-}
-
 //Fetched data from Kafka broker for a particular topic and partition
 type TopicPartitionData struct {
 	TopicPartition TopicAndPartition

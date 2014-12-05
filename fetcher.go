@@ -404,7 +404,6 @@ type consumerFetcherRoutine struct {
 	partitionMap map[TopicAndPartition]int64
 	partitionMapLock sync.Mutex
 	closeFinished    chan bool
-	fetchRequestBlockMap map[TopicAndPartition]*partitionFetchInfo
 	fetchStopper     chan bool
 	askNext          chan TopicAndPartition
 }
@@ -422,7 +421,6 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 		allPartitionMap : allPartitionMap,
 		partitionMap : make(map[TopicAndPartition]int64),
 		closeFinished : make(chan bool),
-		fetchRequestBlockMap : make(map[TopicAndPartition]*partitionFetchInfo),
 		fetchStopper : make(chan bool),
 		askNext : make(chan TopicAndPartition),
 	}
@@ -440,40 +438,36 @@ func (f *consumerFetcherRoutine) start() {
 			inReadLock(&f.manager.isReadyLock, func() {
 				if f.manager.isReady {
 					Debug(f, "Next asked")
+					offset := InvalidOffset
 					inLock(&f.partitionMapLock, func() {
 						Debugf(f, "Partition map: %v", f.partitionMap)
-						if offset, exists := f.partitionMap[nextTopicPartition]; exists {
-							f.fetchRequestBlockMap[nextTopicPartition] = &partitionFetchInfo{offset, f.manager.config.FetchMessageMaxBytes}
+						if existingOffset, exists := f.partitionMap[nextTopicPartition]; exists {
+							offset = existingOffset
 						}
 					})
-
-					if _, exists := f.partitionMap[nextTopicPartition]; !exists { return }
+					if isOffsetInvalid(offset) { return }
 
 					config := f.manager.config
 					fetchRequest := new(sarama.FetchRequest)
 					fetchRequest.MinBytes = config.FetchMinBytes
 					fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
-					partitionFetchInfo := f.fetchRequestBlockMap[nextTopicPartition]
-					offset := partitionFetchInfo.Offset
-					Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, partitionFetchInfo.FetchSize)
-					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, partitionFetchInfo.FetchSize)
+					Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, f.manager.config.FetchMessageMaxBytes)
+					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, f.manager.config.FetchMessageMaxBytes)
 
-					if len(f.fetchRequestBlockMap) > 0 {
-						var hasMessages bool
-						f.manager.fetchDurationTimer.Time(func() {
+					var hasMessages bool
+					f.manager.fetchDurationTimer.Time(func() {
+						hasMessages = f.processFetchRequest(fetchRequest, offset)
+						for i := 0; i <= config.FetchMaxRetries && !hasMessages; i++ {
+							time.Sleep(config.RequeueAskNextBackoff)
+							Debug(f, "Asknext received no messages, requeue request")
 							hasMessages = f.processFetchRequest(fetchRequest, offset)
-							for i := 0; i <= config.FetchMaxRetries && !hasMessages; i++ {
-								time.Sleep(config.RequeueAskNextBackoff)
-								Debug(f, "Asknext received no messages, requeue request")
-								hasMessages = f.processFetchRequest(fetchRequest, offset)
-								Debug(f, "Requeued request")
-							}
-						})
-
-						if !hasMessages {
-							//TODO uncomment when topic switch is done
-//							delete(f.partitionMap, nextTopicPartition)
+							Debug(f, "Requeued request")
 						}
+					})
+
+					if !hasMessages {
+						//TODO uncomment when topic switch is done
+//							delete(f.partitionMap, nextTopicPartition)
 					}
 				}
 			})
@@ -535,8 +529,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 			for topic, partitionAndData := range response.Blocks {
 				for partition, data := range partitionAndData {
 					topicAndPartition := TopicAndPartition{topic, partition}
-					currentOffset, exists := f.partitionMap[topicAndPartition]
-					if exists && f.fetchRequestBlockMap[topicAndPartition].Offset == currentOffset {
+					if currentOffset, exists := f.partitionMap[topicAndPartition]; exists {
 						switch data.Err {
 						case sarama.NoError: {
 							messages := data.MsgSet.Messages
@@ -658,7 +651,6 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 				inWriteLock(&f.manager.askNextFetchersLock, func() {
 					delete(f.manager.askNextFetchers, topicAndPartition)
 				})
-				delete(f.fetchRequestBlockMap, topicAndPartition)
 			}
 		})
 }
