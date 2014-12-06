@@ -29,8 +29,18 @@ import (
 	"os/exec"
 )
 
+type logWriter struct {
+	t *testing.T
+	p string
+}
+
+func (lw logWriter) Write(b []byte) (int, error) {
+	lw.t.Logf("%s%s", lw.p, string(b))
+	return len(b), nil
+}
+
 func withZookeeper(t *testing.T, zookeeperWork func(zkServer *zk.TestServer)) {
-	testCluster, err := zk.StartTestCluster(1)
+	testCluster, err := zk.StartTestCluster(1, nil, logWriter{t: t, p: "[ZKERR] "})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,10 +155,10 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 }
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
-	p := producer.NewKafkaProducer(topic, []string{brokerAddr}, nil)
+	p := producer.NewKafkaProducer(topic, []string{brokerAddr})
 	for i := 0; i < n; i++ {
 		message := fmt.Sprintf("test-kafka-message-%d", i)
-		if err := p.Send(message); err != nil {
+		if err := p.SendStringSync(message); err != nil {
 			t.Fatalf("Failed to produce message %s because: %s", message, err)
 		}
 	}
