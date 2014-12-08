@@ -32,7 +32,16 @@ import (
 )
 
 //TODO take a look at BDOS-121
-var Logger, _ = log.LoggerFromConfigAsFile("seelog.xml")
+var config = `<seelog minlevel="info">
+    <outputs formatid="main">
+        <console />
+    </outputs>
+
+    <formats>
+        <format id="main" format="%Date/%Time [%LEVEL] %Msg%n"/>
+    </formats>
+</seelog>`
+var Logger, err = log.LoggerFromConfigAsBytes([]byte(config))
 
 func Trace(contextName interface{}, message interface{}) {
 	Logger.Trace(fmt.Sprintf("[%s] %s", contextName, message))
