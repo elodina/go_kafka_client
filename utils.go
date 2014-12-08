@@ -25,65 +25,10 @@ import (
 	"sync"
 	"container/ring"
 	"hash/fnv"
-	log "github.com/cihub/seelog"
 	"fmt"
 	"time"
 	"github.com/Shopify/sarama"
 )
-
-//TODO take a look at BDOS-121
-var config = `<seelog minlevel="info">
-    <outputs formatid="main">
-        <console />
-    </outputs>
-
-    <formats>
-        <format id="main" format="%Date/%Time [%LEVEL] %Msg%n"/>
-    </formats>
-</seelog>`
-var Logger, err = log.LoggerFromConfigAsBytes([]byte(config))
-
-func Trace(contextName interface{}, message interface{}) {
-	Logger.Trace(fmt.Sprintf("[%s] %s", contextName, message))
-}
-func Tracef(contextName interface{}, message interface{}, params ...interface{}) {
-	Logger.Tracef(fmt.Sprintf("[%s] %s", contextName, message), params...)
-}
-
-func Debug(contextName interface{}, message interface{}) {
-	Logger.Debug(fmt.Sprintf("[%s] %s", contextName, message))
-}
-func Debugf(contextName interface{}, message interface{}, params ...interface{}) {
-	Logger.Debugf(fmt.Sprintf("[%s] %s", contextName, message), params...)
-}
-
-func Info(contextName interface{}, message interface{}) {
-	Logger.Info(fmt.Sprintf("[%s] %s", contextName, message))
-}
-func Infof(contextName interface{}, message interface{}, params ...interface{}) {
-	Logger.Infof(fmt.Sprintf("[%s] %s", contextName, message), params...)
-}
-
-func Warn(contextName interface{}, message interface{}) {
-	Logger.Warn(fmt.Sprintf("[%s] %s", contextName, message))
-}
-func Warnf(contextName interface{}, message interface{}, params ...interface{}) {
-	Logger.Warnf(fmt.Sprintf("[%s] %s", contextName, message), params...)
-}
-
-func Error(contextName interface{}, message interface{}) {
-	Logger.Error(fmt.Sprintf("[%s] %s", contextName, message))
-}
-func Errorf(contextName interface{}, message interface{}, params ...interface{}) {
-	Logger.Errorf(fmt.Sprintf("[%s] %s", contextName, message), params...)
-}
-
-func Critical(contextName interface{}, message interface{}) {
-	Logger.Critical(fmt.Sprintf("[%s] %s", contextName, message))
-}
-func Criticalf(contextName interface{}, message interface{}, params ...interface{}) {
-	Logger.Criticalf(fmt.Sprintf("[%s] %s", contextName, message), params...)
-}
 
 //TODO we need a file -> ConsumerConfig parser, not a file -> map one
 func LoadConfiguration(path string) (map[string]string, error) {
