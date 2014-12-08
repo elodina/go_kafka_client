@@ -17,7 +17,7 @@
 
 #Start Zookeeper
 echo 'Starting Zookeeper'
-$ZK_HOME/bin/zkServer.sh start #> /dev/null #we don't want zk, kafka and gpm to write into stdout
+$ZK_HOME/bin/zkServer.sh start
 
 #Start Kafka
 sed -r -i "s/(zookeeper.connect)=(.*)/\1=$ZK_PORT_2181_TCP_ADDR/g" $KAFKA_HOME/config/server.properties
@@ -26,14 +26,14 @@ sed -r -i "s/#(advertised.host.name)=(.*)/\1=$HOST_IP/g" $KAFKA_HOME/config/serv
 sed -r -i "s/^(port)=(.*)/\1=$PORT/g" $KAFKA_HOME/config/server.properties
 
 echo 'Starting Kafka'
-$KAFKA_HOME/bin/kafka-server-start.sh $KAFKA_HOME/config/server.properties & #> /dev/null & #we don't want zk, kafka and gpm to write into stdout
+$KAFKA_HOME/bin/kafka-server-start.sh $KAFKA_HOME/config/server.properties &
 
 mkdir -p $GOPATH/src/github.com/stealthly/go_kafka_client
 cp -r /go_kafka_client $GOPATH/src/github.com/stealthly
 cd $GOPATH/src/github.com/stealthly/go_kafka_client
 
 echo 'Updating dependencies'
-gpm install #> /dev/null #we don't want zk, kafka and gpm to write into stdout
+gpm install
 
 echo 'Running tests'
 go test -v
