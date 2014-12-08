@@ -72,11 +72,11 @@ func main() {
 
 	kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
 
-	p := producer.NewKafkaProducer(topic, []string{brokerConnect}, nil)
+	p := producer.NewKafkaProducer(topic, []string{brokerConnect})
 	defer p.Close()
 	go func() {
 		for {
-			if err := p.Send(fmt.Sprintf("message %d!", numMessage)); err != nil {
+			if err := p.SendStringSync(fmt.Sprintf("message %d!", numMessage)); err != nil {
 				panic(err)
 			}
 			numMessage++

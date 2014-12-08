@@ -22,7 +22,6 @@ import (
 	"github.com/stealthly/go_kafka_client"
 	"time"
 	"fmt"
-//	"math/rand"
 	"os"
 	"os/signal"
 	"net"
@@ -50,16 +49,14 @@ func main() {
 	go_kafka_client.CreateMultiplePartitionsTopic("192.168.86.5:2181", topic, 6)
 	time.Sleep(4 * time.Second)
 
-	p := producer.NewKafkaProducer(topic, []string{"192.168.86.10:9092"}, nil)
+	p := producer.NewKafkaProducer(topic, []string{"192.168.86.10:9092"})
 	defer p.Close()
 	go func() {
 		for {
-			if err := p.Send(fmt.Sprintf("message %d!", numMessage)); err != nil {
+			if err := p.SendStringSync(fmt.Sprintf("message %d!", numMessage)); err != nil {
 				panic(err)
 			}
 			numMessage++
-//			sleepTime := time.Duration(rand.Intn(100) + 1) * time.Millisecond
-//			time.Sleep(sleepTime)
 		}
 	}()
 
