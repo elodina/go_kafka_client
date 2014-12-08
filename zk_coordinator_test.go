@@ -39,21 +39,19 @@ var (
 )
 
 func TestZkAPI(t *testing.T) {
-	withZookeeper(t, func(zkServer *zk.TestServer) {
-		coordinatorConfig := NewZookeeperConfig()
-		coordinatorConfig.ZookeeperConnect = []string{fmt.Sprintf("127.0.0.1:%d", zkServer.Port)}
-		coordinator = NewZookeeperCoordinator(coordinatorConfig)
-		coordinator.Connect()
-		zkConnection = coordinator.zkConn
-		testCreatePathParentMayNotExist(t, brokerIdsPath)
-		testCreatePathParentMayNotExist(t, brokerTopicsPath)
-		testGetBrokerInfo(t)
-		testGetAllBrokersInCluster(t)
-		testRegisterConsumer(t)
-		testGetConsumersInGroup(t)
-		testDeregisterConsumer(t)
-		testNewDeployedTopics(t)
-	})
+	coordinatorConfig := NewZookeeperConfig()
+	coordinatorConfig.ZookeeperConnect = []string{"127.0.0.1:2181"}
+	coordinator = NewZookeeperCoordinator(coordinatorConfig)
+	coordinator.Connect()
+	zkConnection = coordinator.zkConn
+	testCreatePathParentMayNotExist(t, brokerIdsPath)
+	testCreatePathParentMayNotExist(t, brokerTopicsPath)
+	testGetAllBrokersInCluster(t)
+	testGetBrokerInfo(t)
+	testRegisterConsumer(t)
+	testGetConsumersInGroup(t)
+	testDeregisterConsumer(t)
+	testNewDeployedTopics(t)
 }
 
 func testCreatePathParentMayNotExist(t * testing.T, pathToCreate string) {
