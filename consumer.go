@@ -471,7 +471,12 @@ func (c *Consumer) subscribeForChanges(group string) {
 												filter = NewBlackList(regex)
 											}
 
-											for _, topic := range c.config.Coordinator.GetAllTopics() {
+											allTopics, _ := c.config.Coordinator.GetAllTopics()
+											if err != nil {
+												Warn(c, err)
+												continue
+											}
+											for _, topic := range allTopics {
 												if filter.topicAllowed(topic, c.config.ExcludeInternalTopics) {
 													topics = append(topics, topic)
 												}
