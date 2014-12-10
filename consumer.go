@@ -321,7 +321,6 @@ func (c *Consumer) Close() <-chan bool {
 			panic("Graceful shutdown failed")
 		}
 
-		Info(c, "Stopping offsets committer...")
 		c.stopStreams <- true
 		c.closeFinished <- true
 	}()
@@ -333,10 +332,6 @@ func (c *Consumer) applyNewDeployedTopics() {
 		Debug(c, "Releasing parition ownership")
 		c.releasePartitionOwnership(c.topicRegistry)
 		Debug(c, "Released parition ownership")
-
-		Debug(c, "Disconnecting message buffers and worker managers")
-		c.stopStreams <- true
-		Debug(c, "Disconnected message buffers and worker managers")
 
 		Debug(c, "About to stop worker managers")
 		if len(c.workerManagers) > 0 {
@@ -456,6 +451,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 							panic(err)
 						}
 						c.newDeployedTopics = deployedTopics
+						c.fetcher.switchTopic <- true
 					} else {
 						inLock(&c.rebalanceLock, func() { c.rebalance() })
 					}

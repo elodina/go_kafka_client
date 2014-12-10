@@ -48,6 +48,7 @@ type consumerFetcherManager struct {
 	idleTimer metrics.Timer
 	fetchDurationTimer metrics.Timer
 
+	switchTopic chan bool
 	fetcherBarrier *barrier
 }
 
@@ -65,6 +66,7 @@ func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPart
 		askNext : askNext,
 		askNextStopper : make(chan bool),
 		askNextFetchers : make(map[TopicAndPartition]chan TopicAndPartition),
+		switchTopic : make(chan bool),
 		fetcherBarrier : fetcherBarrier,
 	}
 	manager.leaderCond = sync.NewCond(&manager.partitionMapLock)
@@ -155,6 +157,11 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 func (m *consumerFetcherManager) waitForNextRequests() {
 	for {
 		select {
+			case <-m.switchTopic: {
+				for _, routine := range m.fetcherRoutineMap {
+					routine.switchRequested = true
+				}
+			}
 			case topicPartition := <-m.askNext: {
 				Tracef(m, "WaitForNextRequests: got asknext for partition=%d", topicPartition.Partition)
 				inReadLock(&m.isReadyLock, func() {
@@ -411,6 +418,8 @@ type consumerFetcherRoutine struct {
 	fetchStopper     chan bool
 	askNext          chan TopicAndPartition
 	fetcherBarrier *barrier
+	switchRequested bool
+	switchFetchesUsed int
 }
 
 func (f *consumerFetcherRoutine) String() string {
@@ -441,7 +450,7 @@ func (f *consumerFetcherRoutine) start() {
 		case nextTopicPartition := <-f.askNext: {
 			f.manager.idleTimer.Update(time.Since(ts))
 			Debugf(f, "Received asknext for %s", &nextTopicPartition)
-			switchRequired := false
+			config := f.manager.config
 			inReadLock(&f.manager.isReadyLock, func() {
 				if f.manager.isReady {
 					Debug(f, "Next asked")
@@ -454,7 +463,6 @@ func (f *consumerFetcherRoutine) start() {
 					})
 					if isOffsetInvalid(offset) { return }
 
-					config := f.manager.config
 					fetchRequest := new(sarama.FetchRequest)
 					fetchRequest.MinBytes = config.FetchMinBytes
 					fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
@@ -462,28 +470,27 @@ func (f *consumerFetcherRoutine) start() {
 					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, f.manager.config.FetchMessageMaxBytes)
 
 					var hasMessages bool
-					f.manager.fetchDurationTimer.Time(func() {
-						hasMessages = f.processFetchRequest(fetchRequest, offset)
-						for i := 0; i <= config.FetchMaxRetries && !hasMessages; i++ {
-							time.Sleep(config.RequeueAskNextBackoff)
-							Debug(f, "Asknext received no messages, requeue request")
-							hasMessages = f.processFetchRequest(fetchRequest, offset)
-							Debug(f, "Requeued request")
-						}
-					})
+					f.manager.fetchDurationTimer.Time(func() { hasMessages = f.processFetchRequest(fetchRequest, offset) })
+
 					if !hasMessages {
-						f.removePartitions([]TopicAndPartition{nextTopicPartition})
-						inLock(&f.manager.partitionMapLock, func(){
-							delete(f.manager.partitionMap, nextTopicPartition)
-						})
-						if len(f.partitionMap) == 0 {
-							switchRequired = true
+						if f.switchRequested {
+							f.switchFetchesUsed++
+							if config.FetchMaxRetries > f.switchFetchesUsed {
+								f.removePartitions([]TopicAndPartition{nextTopicPartition})
+							} else {
+								go f.requeue(nextTopicPartition)
+							}
+						} else {
+							go f.requeue(nextTopicPartition)
 						}
 					}
 				}
 			})
-			if switchRequired {
-				f.fetcherBarrier.await()
+			if f.switchRequested && config.FetchMaxRetries > f.switchFetchesUsed {
+				if len(f.partitionMap) == 0 {
+					Debug(f, "fetcher started awaiting for barrier break")
+					f.fetcherBarrier.await()
+				}
 			}
 			time.Sleep(f.manager.config.FetchRequestBackoff)
 		}
@@ -493,6 +500,13 @@ func (f *consumerFetcherRoutine) start() {
 		}
 		}
 	}
+}
+
+func (f *consumerFetcherRoutine) requeue(topicPartition TopicAndPartition) {
+	Debug(f, "Asknext received no messages, requeue request")
+	time.Sleep(f.manager.config.RequeueAskNextBackoff)
+	f.askNext <- topicPartition
+	Debug(f, "Requeued request")
 }
 
 func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
