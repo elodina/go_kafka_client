@@ -137,7 +137,7 @@ func testNewDeployedTopics(t *testing.T) {
 	group := fmt.Sprintf("group-%d", time.Now().Unix())
 	coordinator.ensureZkPathsExist(group)
 	topics := DeployedTopics {
-		Topics : "topic1,topic2",
+		Topics : "topic1",
 		Pattern: "static",
 	}
 
@@ -159,7 +159,9 @@ func testNewDeployedTopics(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			assert(t, *deployedTopics[0], topics)
+			var deployedTopic *DeployedTopics
+			for _, deployedTopic = range deployedTopics { break }
+			assert(t, *deployedTopic, topics)
 		}
 		case <-time.After(5 * time.Second): t.Error("Failed to receive a Deployed Topic event from Zookeeper")
 	}
