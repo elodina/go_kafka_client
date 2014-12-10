@@ -17,6 +17,8 @@
 
 package go_kafka_client
 
+import "strings"
+
 // Constructs a new TopicsToNumStreams for consumer with Consumerid id that works within consumer group Groupid.
 // Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator.
 func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator ConsumerCoordinator, ExcludeInternalTopics bool) (TopicsToNumStreams, error) {
@@ -51,6 +53,46 @@ func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator Consum
 			NumStreams: numStreams,
 			ExcludeInternalTopics: ExcludeInternalTopics,
 		}, nil
+	}
+}
+
+func NewStaticTopicsToNumStreams(consumerId string,
+								 topics string,
+								 pattern string,
+								 numStreams int,
+								 excludeInternalTopics bool,
+								 coordinator ConsumerCoordinator) TopicsToNumStreams {
+	hasWhiteList := whiteListPattern == pattern
+	hasBlackList := blackListPattern == pattern
+	if hasWhiteList || hasBlackList {
+		regex := topics
+		var filter TopicFilter
+		if (hasWhiteList) {
+			filter = NewWhiteList(regex)
+		} else {
+			filter = NewBlackList(regex)
+		}
+
+		return &WildcardTopicsToNumStreams{
+			Coordinator: coordinator,
+			ConsumerId: consumerId,
+			TopicFilter: filter,
+			NumStreams: numStreams,
+			ExcludeInternalTopics: excludeInternalTopics,
+		}
+	} else {
+		topicsToNumStreamsMap := make(map[string]int)
+		partitionsForTopic, err := coordinator.GetPartitionsForTopics(strings.Split(topics, ","))
+		if err != nil {
+			panic(err)
+		}
+		for topic := range partitionsForTopic {
+			topicsToNumStreamsMap[topic] = numStreams
+		}
+		return &StaticTopicsToNumStreams {
+			ConsumerId : consumerId,
+			TopicsToNumStreamsMap : topicsToNumStreamsMap,
+		}
 	}
 }
 

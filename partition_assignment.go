@@ -45,13 +45,6 @@ const (
 	RoundRobinStrategy = "roundrobin"
 )
 
-type consumerGroupContextState struct {
-	IsGroupTopicSwitchInProgress bool
-	IsGroupTopicSwitchInSync     bool
-	DesiredPattern               string
-	DesiredTopicCountMap map[string]int
-}
-
 type assignStrategy func(*assignmentContext) map[TopicAndPartition]ConsumerThreadId
 
 func newPartitionAssignor(strategy string) assignStrategy {
@@ -159,13 +152,10 @@ type assignmentContext struct {
 	PartitionsForTopic map[string][]int32
 	ConsumersForTopic map[string][]ConsumerThreadId
 	Consumers           []string
-	InTopicSwitch       bool
-	State *consumerGroupContextState
 }
 
 func newAssignmentContext(group string, consumerId string, excludeInternalTopics bool, coordinator ConsumerCoordinator) (*assignmentContext, error) {
 	topicCount, _ := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
-	_, inTopicSwitch := topicCount.(*TopicSwitch)
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 	topics := make([]string, 0)
 	for topic, _ := range myTopicThreadIds {
@@ -175,25 +165,6 @@ func newAssignmentContext(group string, consumerId string, excludeInternalTopics
 	consumersForTopic, _ := coordinator.GetConsumersPerTopic(group, excludeInternalTopics)
 	consumers, _ := coordinator.GetConsumersInGroup(group)
 
-	isGroupTopicSwitchInProgress := false
-	isGroupTopicSwitchInSync := true
-	desiredPattern := ""
-	desiredTopicCountMap := make(map[string]int)
-	for _, consumerId := range consumers {
-		tc, err := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
-		topicSwitch, inTopicSwitch := tc.(*TopicSwitch)
-		if (err != nil) {
-			return nil, err
-		}
-		if !inTopicSwitch {
-			isGroupTopicSwitchInSync = false
-		} else if !isGroupTopicSwitchInProgress && inTopicSwitch {
-			isGroupTopicSwitchInProgress = true
-			desiredTopicCountMap = topicSwitch.GetTopicsToNumStreamsMap()
-			desiredPattern = topicSwitch.Pattern()
-		}
-	}
-
 	return &assignmentContext{
 		ConsumerId: consumerId,
 		Group: group,
@@ -202,18 +173,20 @@ func newAssignmentContext(group string, consumerId string, excludeInternalTopics
 		PartitionsForTopic: partitionsForTopic,
 		ConsumersForTopic: consumersForTopic,
 		Consumers: consumers,
-		State: &consumerGroupContextState{
-			IsGroupTopicSwitchInProgress: isGroupTopicSwitchInProgress,
-			IsGroupTopicSwitchInSync: isGroupTopicSwitchInSync,
-			DesiredPattern: desiredPattern,
-			DesiredTopicCountMap: desiredTopicCountMap,
-		},
-		InTopicSwitch: inTopicSwitch,
 	}, nil
 }
 
-func newStaticAssignmentContext(group string, consumerId string, topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *assignmentContext {
+func newStaticAssignmentContext(group string, consumerId string, consumersInGroup []string, topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *assignmentContext {
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
+	consumersForTopic := make(map[string][]ConsumerThreadId)
+	for topic := range topicPartitionMap {
+		for _, consumer := range consumersInGroup {
+			threadIdsPerTopic := makeConsumerThreadIdsPerTopic(consumer, topicCount.GetTopicsToNumStreamsMap())
+			var threadIds []ConsumerThreadId
+			for _, threadIds = range threadIdsPerTopic { break }
+			consumersForTopic[topic] = append(consumersForTopic[topic], threadIds...)
+		}
+	}
 
 	return &assignmentContext{
 		ConsumerId: consumerId,
@@ -221,7 +194,7 @@ func newStaticAssignmentContext(group string, consumerId string, topicCount Topi
 		MyTopicThreadIds: myTopicThreadIds,
 		MyTopicToNumStreams: topicCount,
 		PartitionsForTopic: topicPartitionMap,
-		ConsumersForTopic: myTopicThreadIds,
-		Consumers: []string{consumerId},
+		ConsumersForTopic: consumersForTopic,
+		Consumers: consumersInGroup,
 	}
 }

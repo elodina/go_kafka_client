@@ -47,13 +47,16 @@ type consumerFetcherManager struct {
 	numFetchRoutinesCounter metrics.Counter
 	idleTimer metrics.Timer
 	fetchDurationTimer metrics.Timer
+
+	switchTopic chan bool
+	fetcherBarrier *barrier
 }
 
 func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.Consumerid)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPartition) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPartition, fetcherBarrier *barrier) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config : config,
 		closeFinished : make(chan bool),
@@ -63,6 +66,8 @@ func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPart
 		askNext : askNext,
 		askNextStopper : make(chan bool),
 		askNextFetchers : make(map[TopicAndPartition]chan TopicAndPartition),
+		switchTopic : make(chan bool),
+		fetcherBarrier : fetcherBarrier,
 	}
 	manager.leaderCond = sync.NewCond(&manager.partitionMapLock)
 	manager.numFetchRoutinesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("NumFetchRoutines-%s", manager.String()), metrics.DefaultRegistry)
@@ -152,6 +157,11 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 func (m *consumerFetcherManager) waitForNextRequests() {
 	for {
 		select {
+			case <-m.switchTopic: {
+				for _, routine := range m.fetcherRoutineMap {
+					routine.switchRequested = true
+				}
+			}
 			case topicPartition := <-m.askNext: {
 				Tracef(m, "WaitForNextRequests: got asknext for partition=%d", topicPartition.Partition)
 				inReadLock(&m.isReadyLock, func() {
@@ -304,7 +314,7 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 				fetcherRoutine := newConsumerFetcher(m,
 					fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.Consumerid, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
 					brokerAndFetcherId.Broker,
-					m.partitionMap)
+					m.partitionMap, m.fetcherBarrier)
 				m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
 				go fetcherRoutine.start()
 			}
@@ -351,6 +361,7 @@ func (m *consumerFetcherManager) shutdownIdleFetchers() {
 				if len(fetcher.partitionMap) <= 0 {
 					<-fetcher.close()
 					delete(m.fetcherRoutineMap, key)
+					m.fetcherBarrier.reset(m.fetcherBarrier.size - 1)
 				}
 			}
 		})
@@ -406,13 +417,16 @@ type consumerFetcherRoutine struct {
 	closeFinished    chan bool
 	fetchStopper     chan bool
 	askNext          chan TopicAndPartition
+	fetcherBarrier *barrier
+	switchRequested bool
+	switchFetchesUsed int
 }
 
 func (f *consumerFetcherRoutine) String() string {
 	return f.name
 }
 
-func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerInfo, allPartitionMap map[TopicAndPartition]*partitionTopicInfo) *consumerFetcherRoutine {
+func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerInfo, allPartitionMap map[TopicAndPartition]*partitionTopicInfo, fetcherBarrier *barrier) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
 		manager : m,
 		name : name,
@@ -423,6 +437,7 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerIn
 		closeFinished : make(chan bool),
 		fetchStopper : make(chan bool),
 		askNext : make(chan TopicAndPartition),
+		fetcherBarrier: fetcherBarrier,
 	}
 }
 
@@ -435,6 +450,7 @@ func (f *consumerFetcherRoutine) start() {
 		case nextTopicPartition := <-f.askNext: {
 			f.manager.idleTimer.Update(time.Since(ts))
 			Debugf(f, "Received asknext for %s", &nextTopicPartition)
+			config := f.manager.config
 			inReadLock(&f.manager.isReadyLock, func() {
 				if f.manager.isReady {
 					Debug(f, "Next asked")
@@ -447,7 +463,6 @@ func (f *consumerFetcherRoutine) start() {
 					})
 					if isOffsetInvalid(offset) { return }
 
-					config := f.manager.config
 					fetchRequest := new(sarama.FetchRequest)
 					fetchRequest.MinBytes = config.FetchMinBytes
 					fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
@@ -455,22 +470,28 @@ func (f *consumerFetcherRoutine) start() {
 					fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, f.manager.config.FetchMessageMaxBytes)
 
 					var hasMessages bool
-					f.manager.fetchDurationTimer.Time(func() {
-						hasMessages = f.processFetchRequest(fetchRequest, offset)
-						for i := 0; i <= config.FetchMaxRetries && !hasMessages; i++ {
-							time.Sleep(config.RequeueAskNextBackoff)
-							Debug(f, "Asknext received no messages, requeue request")
-							hasMessages = f.processFetchRequest(fetchRequest, offset)
-							Debug(f, "Requeued request")
-						}
-					})
+					f.manager.fetchDurationTimer.Time(func() { hasMessages = f.processFetchRequest(fetchRequest, offset) })
 
 					if !hasMessages {
-						//TODO uncomment when topic switch is done
-//							delete(f.partitionMap, nextTopicPartition)
+						if f.switchRequested {
+							f.switchFetchesUsed++
+							if config.FetchMaxRetries > f.switchFetchesUsed {
+								f.removePartitions([]TopicAndPartition{nextTopicPartition})
+							} else {
+								go f.requeue(nextTopicPartition)
+							}
+						} else {
+							go f.requeue(nextTopicPartition)
+						}
 					}
 				}
 			})
+			if f.switchRequested && config.FetchMaxRetries > f.switchFetchesUsed {
+				if len(f.partitionMap) == 0 {
+					Debug(f, "fetcher started awaiting for barrier break")
+					f.fetcherBarrier.await()
+				}
+			}
 			time.Sleep(f.manager.config.FetchRequestBackoff)
 		}
 		case <-f.fetchStopper: {
@@ -479,6 +500,13 @@ func (f *consumerFetcherRoutine) start() {
 		}
 		}
 	}
+}
+
+func (f *consumerFetcherRoutine) requeue(topicPartition TopicAndPartition) {
+	Debug(f, "Asknext received no messages, requeue request")
+	time.Sleep(f.manager.config.RequeueAskNextBackoff)
+	f.askNext <- topicPartition
+	Debug(f, "Requeued request")
 }
 
 func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndPartition]int64) {

@@ -19,7 +19,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/samuel/go-zookeeper/zk"
 	"sync"
 	"testing"
 	"time"
@@ -27,118 +26,99 @@ import (
 
 var numMessages = 1000
 var consumeTimeout = 20 * time.Second
+var localZk = "localhost:2181"
+var localBroker = "localhost:9092"
 
+func TestConsumerWithInconsistentProducing(t *testing.T) {
+	consumeStatus := make(chan int)
+	produceMessages := 1
+	consumeMessages := 2
+	sleepTime := 10 * time.Second
+	timeout := 30 * time.Second
+	topic := fmt.Sprintf("inconsistent-producing-%d", time.Now().Unix())
+
+	//create topic
+	CreateMultiplePartitionsTopic("localhost:2181", topic, 1)
+
+	Infof("test", "Produce %d message", produceMessages)
+	go produceN(t, produceMessages, topic, "localhost:9092")
+
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, consumeMessages, timeout, consumeStatus)
+	consumer := NewConsumer(config)
+	Info("test", "Starting consumer")
+	go consumer.StartStatic(map[string]int{topic: 1})
+	//produce one more message after 10 seconds
+	Infof("test", "Waiting for %s before producing another message", sleepTime)
+	time.Sleep(sleepTime)
+	Infof("test", "Produce %d message", produceMessages)
+	go produceN(t, produceMessages, topic, "localhost:9092")
+
+	//make sure we get 2 messages
+	if actual := <-consumeStatus; actual != consumeMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, timeout, actual)
+	}
+
+	closeWithin(t, 10 * time.Second, consumer)
+}
 
 func TestStaticConsumingSinglePartition(t *testing.T) {
-	t.Skip() //Remove when CI is ready
-	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-		consumeStatus := make(chan int)
-		topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
+	consumeStatus := make(chan int)
+	topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
 
-		CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic, 1)
-		go produceN(t, numMessages, topic, kafkaServer.Addr())
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	go produceN(t, numMessages, topic, localBroker)
 
-		config := testConsumerConfig(zkServer)
-		config.Strategy = newCountingStrategy(t, numMessages, consumeTimeout, consumeStatus)
-		consumer := NewConsumer(config)
-		go consumer.StartStatic(map[string]int{topic: 1})
-		if actual := <-consumeStatus; actual != numMessages {
-			t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
-		}
-		closeWithin(t, 10 * time.Second, consumer)
-	})
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, numMessages, consumeTimeout, consumeStatus)
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 1})
+	if actual := <-consumeStatus; actual != numMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
+	}
+	closeWithin(t, 10 * time.Second, consumer)
 }
 
 func TestStaticConsumingMultiplePartitions(t *testing.T) {
-	t.Skip() //Remove when CI is ready
-	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-			consumeStatus := make(chan int)
-			topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
+	consumeStatus := make(chan int)
+	topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
 
-			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic, 5)
-			go produceN(t, numMessages, topic, kafkaServer.Addr())
+	CreateMultiplePartitionsTopic(localZk, topic, 5)
+	go produceN(t, numMessages, topic, localBroker)
 
-			config := testConsumerConfig(zkServer)
-			config.Strategy = newCountingStrategy(t, numMessages, consumeTimeout, consumeStatus)
-			consumer := NewConsumer(config)
-			go consumer.StartStatic(map[string]int{topic: 3})
-			if actual := <-consumeStatus; actual != numMessages {
-				t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
-			}
-			closeWithin(t, 10 * time.Second, consumer)
-		})
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, numMessages, consumeTimeout, consumeStatus)
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 3})
+	if actual := <-consumeStatus; actual != numMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
+	}
+	closeWithin(t, 10 * time.Second, consumer)
 }
 
 func TestWhitelistConsumingSinglePartition(t *testing.T) {
-	t.Skip() //Remove when CI is ready
-	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-			consumeStatus := make(chan int)
-			topic1 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix())
-			topic2 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix()+1)
+	consumeStatus := make(chan int)
+	topic1 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix())
+	topic2 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix()+1)
 
-			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic1, 1)
-			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic2, 1)
-			go produceN(t, numMessages, topic1, kafkaServer.Addr())
-			go produceN(t, numMessages, topic2, kafkaServer.Addr())
+	CreateMultiplePartitionsTopic(localZk, topic1, 1)
+	CreateMultiplePartitionsTopic(localZk, topic2, 1)
+	go produceN(t, numMessages, topic1, localBroker)
+	go produceN(t, numMessages, topic2, localBroker)
 
-			expectedMessages := numMessages * 2
+	expectedMessages := numMessages * 2
 
-			config := testConsumerConfig(zkServer)
-			config.Strategy = newCountingStrategy(t, expectedMessages, consumeTimeout, consumeStatus)
-			consumer := NewConsumer(config)
-			go consumer.StartWildcard(NewWhiteList("test-whitelist-.+"), 1)
-			if actual := <-consumeStatus; actual != expectedMessages {
-				t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
-			}
-			closeWithin(t, 10 * time.Second, consumer)
-		})
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, expectedMessages, consumeTimeout, consumeStatus)
+	consumer := NewConsumer(config)
+	go consumer.StartWildcard(NewWhiteList("test-whitelist-.+"), 1)
+	if actual := <-consumeStatus; actual != expectedMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
+	}
+	closeWithin(t, 10 * time.Second, consumer)
 }
 
-func TestWhitelistConsumingMultiplePartitions(t *testing.T) {
-	t.Skip() //Remove when CI is ready
-	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-			consumeStatus := make(chan int)
-			topic1 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix())
-			topic2 := fmt.Sprintf("test-whitelist-%d-2", time.Now().Unix())
-
-			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic1, 5)
-			CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic2, 5)
-			go produceN(t, numMessages, topic1, kafkaServer.Addr())
-			go produceN(t, numMessages, topic2, kafkaServer.Addr())
-
-			expectedMessages := numMessages * 2
-
-			config := testConsumerConfig(zkServer)
-			config.Strategy = newCountingStrategy(t, expectedMessages, consumeTimeout, consumeStatus)
-			consumer := NewConsumer(config)
-			go consumer.StartWildcard(NewWhiteList("test-whitelist-.+"), 10)
-			if actual := <-consumeStatus; actual != expectedMessages {
-				t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
-			}
-			closeWithin(t, 10 * time.Second, consumer)
-		})
-}
-
-//func TestBlueGreenDeployment(t *testing.T) {
-//	config := DefaultConsumerConfig()
-//	config.BlueGreenDeploymentEnabled = true
-//	config.PartitionAssignmentStrategy = RoundRobinStrategy
-//	assertNot(t, config.Validate(), nil)
-//
-//	withKafka(t, func(zkServer *zk.TestServer, kafkaServer *TestKafkaServer) {
-//		topic := fmt.Sprintf("test-%d", time.Now().Unix())
-//		CreateMultiplePartitionsTopic(fmt.Sprintf("localhost:%d", zkServer.Port), topic, 3)
-//
-//		config = testConsumerConfig(zkServer)
-//		consumer := NewConsumer(config)
-//		go consumer.StartStatic(map[string]int{topic: 3})
-//		time.Sleep(5 * time.Second)
-//		//			consumer.S
-//		//			config.Coordinator.(*ZookeeperCoordinator).
-//	})
-//}
-
-func testConsumerConfig(zkServer *zk.TestServer) *ConsumerConfig {
+func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset
 	config.WorkerFailureCallback = func(_ *WorkerManager) FailedDecision {
@@ -150,7 +130,7 @@ func testConsumerConfig(zkServer *zk.TestServer) *ConsumerConfig {
 	config.Strategy = goodStrategy
 
 	zkConfig := NewZookeeperConfig()
-	zkConfig.ZookeeperConnect = []string{fmt.Sprintf("localhost:%d", zkServer.Port)}
+	zkConfig.ZookeeperConnect = []string{"localhost:2181"}
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 
 	return config
