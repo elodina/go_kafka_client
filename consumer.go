@@ -463,7 +463,19 @@ func (c *Consumer) subscribeForChanges(group string) {
 										hasWhiteList := whiteListPattern == deployedTopic.Pattern
 										hasBlackList := blackListPattern == deployedTopic.Pattern
 										if hasWhiteList || hasBlackList {
-											topics = []string{deployedTopic.Topics}
+											regex := deployedTopic.Topics
+											var filter TopicFilter
+											if (hasWhiteList) {
+												filter = NewWhiteList(regex)
+											} else {
+												filter = NewBlackList(regex)
+											}
+
+											for _, topic := range c.config.Coordinator.GetAllTopics() {
+												if filter.topicAllowed(topic, c.config.ExcludeInternalTopics) {
+													topics = append(topics, topic)
+												}
+											}
 										} else {
 											topics = strings.Split(deployedTopic.Topics, ",")
 										}
