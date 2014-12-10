@@ -333,12 +333,6 @@ func (c *Consumer) applyNewDeployedTopics() {
 		c.releasePartitionOwnership(c.topicRegistry)
 		Debug(c, "Released parition ownership")
 
-		Debug(c, "About to stop worker managers")
-		if len(c.workerManagers) > 0 {
-			c.stopWorkerManagers()
-		}
-		Debug(c, "Successfully stopped worker managers")
-
 		currentDeployedTopics := c.newDeployedTopics[0]
 		topicCount := NewStaticTopicsToNumStreams(c.config.Consumerid,
 												  currentDeployedTopics.Topics,
@@ -369,7 +363,6 @@ func (c *Consumer) applyNewDeployedTopics() {
 		for topicPartition, _ := range partitionOwnershipDecision {
 			topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 		}
-
 		currentTopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
 		for _, topicPartition := range topicPartitions {
 			threadId := partitionOwnershipDecision[*topicPartition]
@@ -546,7 +539,6 @@ func tryRebalance(c *Consumer, partitionAssignor assignStrategy) bool {
 }
 
 func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) {
-	c.initializeWorkerManagers()
 	switch topicCount := assignmentContext.MyTopicToNumStreams.(type) {
 	case *StaticTopicsToNumStreams: {
 		var numStreams int
@@ -560,6 +552,7 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 		c.updateFetcher(topicCount.NumStreams)
 	}
 	}
+	c.initializeWorkerManagers()
 }
 
 func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.OffsetFetchResponse, error) {

@@ -182,7 +182,9 @@ func newStaticAssignmentContext(group string, consumerId string, consumersInGrou
 	for topic := range topicPartitionMap {
 		for _, consumer := range consumersInGroup {
 			threadIdsPerTopic := makeConsumerThreadIdsPerTopic(consumer, topicCount.GetTopicsToNumStreamsMap())
-			consumersForTopic[topic] = append(consumersForTopic[topic], threadIdsPerTopic[topic]...)
+			var threadIds []ConsumerThreadId
+			for _, threadIds = range threadIdsPerTopic { break }
+			consumersForTopic[topic] = append(consumersForTopic[topic], threadIds...)
 		}
 	}
 
