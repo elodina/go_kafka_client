@@ -85,6 +85,12 @@ func (zc *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid stri
 			return err
 		}
 		_, err = zc.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	} else if err == zk.ErrNodeExists {
+		_, stat, err := zc.zkConn.Get(pathToConsumer)
+		if err != nil {
+			return err
+		}
+		_, err := zc.zkConn.Set(pathToConsumer, data, stat.Version)
 	}
 
 	return err
