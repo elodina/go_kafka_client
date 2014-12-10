@@ -21,3 +21,6 @@ Apache Kafka Client Library for Go
 4. `docker run -v $(pwd):/go_kafka_client stealthly/go_kafka_client`
 
 After this is done you're ready to write some code!
+
+For email support https://groups.google.com/forum/#!forum/kafka-clients
+
