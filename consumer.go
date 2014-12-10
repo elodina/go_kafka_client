@@ -456,7 +456,9 @@ func (c *Consumer) subscribeForChanges(group string) {
 								Debug(c, "Started notification cleaner thread")
 								for notificationId, deployedTopic := range deployedTopics {
 									done := false
-									for consumersPerTopic, _ := c.config.Coordinator.GetConsumersPerTopic(group, c.config.ExcludeInternalTopics); !done; time.Sleep(5 * time.Second) {
+									for ;!done; time.Sleep(5 * time.Second) {
+										consumersPerTopic, _ := c.config.Coordinator.GetConsumersPerTopic(group, c.config.ExcludeInternalTopics)
+										Tracef(c, "Consumers per topic %s", consumersPerTopic)
 										topics := make([]string, 0)
 										hasWhiteList := whiteListPattern == deployedTopic.Pattern
 										hasBlackList := blackListPattern == deployedTopic.Pattern
