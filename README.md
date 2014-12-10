@@ -3,6 +3,8 @@ go_kafka_client
 
 Apache Kafka Client Library for Go
 
+[![Build Status](https://travis-ci.org/stealthly/go_kafka_client.svg)](https://travis-ci.org/stealthly/go_kafka_client)
+
 ***Prerequisites:***
 
 1. Install Golang [http://golang.org/doc/install](http://golang.org/doc/install)
