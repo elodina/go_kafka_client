@@ -471,7 +471,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 												filter = NewBlackList(regex)
 											}
 
-											allTopics, _ := c.config.Coordinator.GetAllTopics()
+											allTopics, err := c.config.Coordinator.GetAllTopics()
 											if err != nil {
 												Warn(c, err)
 												continue
