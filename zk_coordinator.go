@@ -233,13 +233,14 @@ func (zc *ZookeeperCoordinator) GetOffsetForTopicPartition(Groupid string, Topic
 	return int64(offsetNum), nil
 }
 
-//TODO not sure if we need this
+// Notifies consumer group about new deployed topic, which should be taken after current one is exhausted
 func (zc *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId string) error {
 	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(Groupid).ConsumerChangesDir, ConsumerId, time.Now().Nanosecond())
 	Debugf(zc, "Sending notification to consumer group at %s", path)
 	return zc.createOrUpdatePathParentMayNotExist(path, make([]byte, 0))
 }
 
+// Removes a notification notificationId for consumer group Group
 func (zc *ZookeeperCoordinator) PurgeNotificationForGroup(Groupid string, notificationId string) error {
 	pathToDelete := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerChangesDir, notificationId)
 	_, stat, err := zc.zkConn.Get(pathToDelete)

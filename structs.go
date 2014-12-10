@@ -216,7 +216,7 @@ type ConsumerCoordinator interface {
 	/* Notifies consumer group about new deployed topic, which should be taken after current one is exhausted */
 	NotifyConsumerGroup(Group string, ConsumerId string) error
 
-	/* Removes */
+	/* Removes a notification notificationId for consumer group Group */
 	PurgeNotificationForGroup(Group string, notificationId string) error
 
 	/* Subscribes for any change that should trigger consumer rebalance on consumer group Group in this ConsumerCoordinator or trigger topic switch.
