@@ -90,7 +90,7 @@ func (zc *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid stri
 		if err != nil {
 			return err
 		}
-		_, err := zc.zkConn.Set(pathToConsumer, data, stat.Version)
+		_, err = zc.zkConn.Set(pathToConsumer, data, stat.Version)
 	}
 
 	return err
