@@ -30,6 +30,8 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	metrics "github.com/rcrowley/go-metrics"
+	"reflect"
+	"strings"
 )
 
 const (
@@ -439,12 +441,60 @@ func (c *Consumer) subscribeForChanges(group string) {
 					if eventType == NewTopicDeployed {
 						Info(c, "New topic deployed")
 						deployedTopics, err := c.config.Coordinator.GetNewDeployedTopics(group)
-						Info(c, "There are new deployed topics")
-						if err != nil {
-							panic(err)
+						if len(deployedTopics) > 0 {
+							Info(c, "There are new deployed topics")
+							if err != nil {
+								panic(err)
+							}
+							newTopics := make([]*DeployedTopics, 0)
+							for _, topics := range deployedTopics {
+								newTopics = append(newTopics, topics)
+							}
+							c.newDeployedTopics = newTopics
+							c.fetcher.switchTopic <- true
+							go func() {
+								Debug(c, "Started notification cleaner thread")
+								for notificationId, deployedTopic := range deployedTopics {
+									done := false
+									for consumersPerTopic, _ := c.config.Coordinator.GetConsumersPerTopic(group, c.config.ExcludeInternalTopics); !done; time.Sleep(5 * time.Second) {
+										topics := make([]string, 0)
+										hasWhiteList := whiteListPattern == deployedTopic.Pattern
+										hasBlackList := blackListPattern == deployedTopic.Pattern
+										if hasWhiteList || hasBlackList {
+											topics = []string{deployedTopic.Topics}
+										} else {
+											topics = strings.Split(deployedTopic.Topics, ",")
+										}
+
+										deployedTopicsPresent := true
+										for _, topic := range topics {
+											if _, exists := consumersPerTopic[topic]; !exists {
+												deployedTopicsPresent = false
+												break
+											}
+										}
+
+										if deployedTopicsPresent {
+											var headThreadIds []ConsumerThreadId
+											for _, headThreadIds = range consumersPerTopic { break }
+											for _, threadIds := range consumersPerTopic {
+												if (!reflect.DeepEqual(threadIds, headThreadIds)) {
+													done = false
+													break
+												} else {
+													done = true
+												}
+											}
+										} else {
+											Tracef(c, "Topics %s are not present in all consumers in group %s yet", topics, group)
+										}
+									}
+
+									c.config.Coordinator.PurgeNotificationForGroup(group, notificationId)
+									Trace(c, "Notification has been successfully handled by all consumers in group")
+								}
+							}()
 						}
-						c.newDeployedTopics = deployedTopics
-						c.fetcher.switchTopic <- true
 					} else {
 						inLock(&c.rebalanceLock, func() { c.rebalance() })
 					}

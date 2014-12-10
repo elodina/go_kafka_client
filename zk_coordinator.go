@@ -234,6 +234,20 @@ func (zc *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId s
 	return zc.createOrUpdatePathParentMayNotExist(path, make([]byte, 0))
 }
 
+func (zc *ZookeeperCoordinator) PurgeNotificationForGroup(Groupid string, notificationId string) error {
+	pathToDelete := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerChangesDir, notificationId)
+	_, stat, err := zc.zkConn.Get(pathToDelete)
+	if err != nil && err != zk.ErrNoNode {
+		return err
+	}
+	err = zc.zkConn.Delete(pathToDelete, stat.Version)
+	if err != nil && err != zk.ErrNoNode {
+		return err
+	}
+
+	return nil
+}
+
 // Subscribes for any change that should trigger consumer rebalance on consumer group Groupid in this ConsumerCoordinator.
 // Returns a read-only channel of booleans that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe.
 func (zc *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
@@ -312,15 +326,15 @@ func (zc *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan Coor
 	return changes, nil
 }
 
-func (zc *ZookeeperCoordinator) GetNewDeployedTopics(Group string) ([]*DeployedTopics, error) {
+func (zc *ZookeeperCoordinator) GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error) {
 	changesPath := newZKGroupDirs(Group).ConsumerChangesDir
 	children, _, err := zc.zkConn.Children(changesPath)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("Unable to get new deployed topics: %s", err.Error()))
 	}
 
-	deployedTopics := make([]*DeployedTopics, len(children))
-	for i, child := range children {
+	deployedTopics := make(map[string]*DeployedTopics)
+	for _, child := range children {
 		entryPath := fmt.Sprintf("%s/%s", changesPath, child)
 		rawDeployedTopicsEntry, _, err := zc.zkConn.Get(entryPath)
 		if err != nil {
@@ -332,7 +346,7 @@ func (zc *ZookeeperCoordinator) GetNewDeployedTopics(Group string) ([]*DeployedT
 			return nil, errors.New(fmt.Sprintf("Unable to parse deployed topic entry %s: %s", rawDeployedTopicsEntry, err.Error()))
 		}
 
-		deployedTopics[i] = deployedTopicsEntry
+		deployedTopics[child] = deployedTopicsEntry
 	}
 
 	return deployedTopics, nil
@@ -649,6 +663,7 @@ func (mzk *mockZookeeperCoordinator) GetPartitionsForTopics(topics []string) (ma
 func (mzk *mockZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) NotifyConsumerGroup(group string, consumerId string) error { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) PurgeNotificationForGroup(Group string, notificationId string) error { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan CoordinatorEvent, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) GetNewDeployedTopics(Group string) ([]*DeployedTopics, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }
