@@ -45,7 +45,8 @@ func (zc *ZookeeperCoordinator) String() string {
 	return "zk"
 }
 
-/* Creates a new ZookeeperCoordinator with a given configuration. */
+// Creates a new ZookeeperCoordinator with a given configuration.
+// The new created ZookeeperCoordinator does NOT automatically connect to zookeeper, you should call Connect() explicitly
 func NewZookeeperCoordinator(Config *ZookeeperConfig) *ZookeeperCoordinator {
 	return &ZookeeperCoordinator{
 		config: Config,
@@ -110,6 +111,19 @@ func (zc *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid st
 // Gets the information about consumer with Consumerid id that is a part of consumer group Groupid from this ConsumerCoordinator.
 // Returns ConsumerInfo on success and error otherwise (For example if consumer with given Consumerid does not exist).
 func (zc *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
+	var err error
+	for i := 0; i <= zc.config.MaxGetConsumerInfoRetries; i++ {
+		info, err := zc.tryGetConsumerInfo(Consumerid, Groupid)
+		if err == nil {
+			return info, err
+		}
+		Tracef(zc, "GetConsumerInfo failed for consumer %s in group %s after %d-th retry", Consumerid, Groupid, i)
+		time.Sleep(zc.config.GetConsumerInfoBackoff)
+	}
+	return nil, err
+}
+
+func (zc *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
 	data, _, err := zc.zkConn.Get(fmt.Sprintf("%s/%s",
 		newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid))
 	if (err != nil) {
@@ -594,6 +608,12 @@ type ZookeeperConfig struct {
 
 	/* Backoff to retry to claim partition */
 	ClaimPartitionBackoff time.Duration
+
+	/* Max retries to get consumer info */
+	MaxGetConsumerInfoRetries int
+
+	/* Backoff to get consumer info */
+	GetConsumerInfoBackoff time.Duration
 }
 
 /* Created a new ZookeeperConfig with sane defaults. Default ZookeeperConnect points to localhost. */
@@ -603,6 +623,8 @@ func NewZookeeperConfig() *ZookeeperConfig {
 	config.ZookeeperTimeout = 1*time.Second
 	config.MaxClaimPartitionRetries = 3
 	config.ClaimPartitionBackoff = 150 * time.Millisecond
+	config.MaxGetConsumerInfoRetries = 3
+	config.GetConsumerInfoBackoff = 150 * time.Millisecond
 
 	return config
 }

@@ -193,3 +193,37 @@ func CreateMultiplePartitionsTopic(zk string, topicName string, numPartitions in
 		Debug("create topic", out)
 	}
 }
+
+//blocks until the leader for every partition of a given topic appears
+//this is used by tests only to avoid "In the middle of a leadership election, there is currently no leader for this partition and hence it is unavailable for writes"
+func EnsureHasLeader(zkConnect string, topic string) error {
+	zkConfig := NewZookeeperConfig()
+	zkConfig.ZookeeperConnect = []string{zkConnect}
+	zookeeper := NewZookeeperCoordinator(zkConfig)
+	zookeeper.Connect()
+	hasLeader := false
+
+	for !hasLeader {
+		var topicInfo *TopicInfo
+		var err error
+		for i := 0; i < 3; i++ {
+			topicInfo, err = zookeeper.getTopicInfo(topic)
+			if topicInfo != nil { break }
+		}
+		if err != nil { return err }
+
+		hasLeader = true
+		for partition, leaders := range topicInfo.Partitions {
+			if len(leaders) == 0 {
+				Debugf(zookeeper, "Partition %s has no leader, waiting...", partition)
+				hasLeader = false
+				break
+			}
+		}
+
+		if !hasLeader {
+			time.Sleep(1 * time.Second)
+		}
+	}
+	return nil
+}

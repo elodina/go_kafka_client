@@ -38,10 +38,11 @@ func TestConsumerWithInconsistentProducing(t *testing.T) {
 	topic := fmt.Sprintf("inconsistent-producing-%d", time.Now().Unix())
 
 	//create topic
-	CreateMultiplePartitionsTopic("localhost:2181", topic, 1)
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
 
 	Infof("test", "Produce %d message", produceMessages)
-	go produceN(t, produceMessages, topic, "localhost:9092")
+	go produceN(t, produceMessages, topic, localBroker)
 
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, consumeMessages, timeout, consumeStatus)
@@ -52,7 +53,7 @@ func TestConsumerWithInconsistentProducing(t *testing.T) {
 	Infof("test", "Waiting for %s before producing another message", sleepTime)
 	time.Sleep(sleepTime)
 	Infof("test", "Produce %d message", produceMessages)
-	go produceN(t, produceMessages, topic, "localhost:9092")
+	go produceN(t, produceMessages, topic, localBroker)
 
 	//make sure we get 2 messages
 	if actual := <-consumeStatus; actual != consumeMessages {
@@ -130,7 +131,7 @@ func testConsumerConfig() *ConsumerConfig {
 	config.Strategy = goodStrategy
 
 	zkConfig := NewZookeeperConfig()
-	zkConfig.ZookeeperConnect = []string{"localhost:2181"}
+	zkConfig.ZookeeperConnect = []string{localZk}
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 
 	return config
