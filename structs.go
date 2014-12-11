@@ -243,6 +243,11 @@ type ConsumerCoordinator interface {
 
 type CoordinatorEvent string
 
+type StateSnapshot struct {
+	Metrics map[string]map[string]float64
+	Offsets map[string]map[int32]int64
+}
+
 const (
 	Regular = "Regular"
 	NewTopicDeployed = "NewTopicDeployed"
