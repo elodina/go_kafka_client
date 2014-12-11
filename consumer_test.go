@@ -68,6 +68,7 @@ func TestStaticConsumingSinglePartition(t *testing.T) {
 	topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
 
 	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
 	go produceN(t, numMessages, topic, localBroker)
 
 	config := testConsumerConfig()
@@ -85,6 +86,7 @@ func TestStaticConsumingMultiplePartitions(t *testing.T) {
 	topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
 
 	CreateMultiplePartitionsTopic(localZk, topic, 5)
+	EnsureHasLeader(localZk, topic)
 	go produceN(t, numMessages, topic, localBroker)
 
 	config := testConsumerConfig()
@@ -103,7 +105,9 @@ func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	topic2 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix()+1)
 
 	CreateMultiplePartitionsTopic(localZk, topic1, 1)
+	EnsureHasLeader(localZk, topic1)
 	CreateMultiplePartitionsTopic(localZk, topic2, 1)
+	EnsureHasLeader(localZk, topic2)
 	go produceN(t, numMessages, topic1, localBroker)
 	go produceN(t, numMessages, topic2, localBroker)
 
