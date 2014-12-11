@@ -25,7 +25,7 @@ import (
 )
 
 var numMessages = 1000
-var consumeTimeout = 20 * time.Second
+var consumeTimeout = 1 * time.Minute
 var localZk = "localhost:2181"
 var localBroker = "localhost:9092"
 
