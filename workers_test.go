@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,15 +18,18 @@
 package go_kafka_client
 
 import (
+	"fmt"
+	metrics "github.com/rcrowley/go-metrics"
 	"testing"
 	"time"
-	metrics "github.com/rcrowley/go-metrics"
-	"fmt"
 )
 
-var goodStrategy = func (_ *Worker, _ *Message, id TaskId) WorkerResult { return NewSuccessfulResult(id) }
-var failStrategy = func (_ *Worker, _ *Message, id TaskId) WorkerResult { return NewProcessingFailedResult(id) }
-var slowStrategy = func (_ *Worker, _ *Message, id TaskId) WorkerResult { time.Sleep(5 * time.Second); return NewSuccessfulResult(id) }
+var goodStrategy = func(_ *Worker, _ *Message, id TaskId) WorkerResult { return NewSuccessfulResult(id) }
+var failStrategy = func(_ *Worker, _ *Message, id TaskId) WorkerResult { return NewProcessingFailedResult(id) }
+var slowStrategy = func(_ *Worker, _ *Message, id TaskId) WorkerResult {
+	time.Sleep(5 * time.Second)
+	return NewSuccessfulResult(id)
+}
 
 func TestFailureCounter(t *testing.T) {
 	threshold := int32(5)
@@ -45,7 +48,7 @@ func TestFailureCounter(t *testing.T) {
 
 	counter = NewFailureCounter(threshold, failTimeWindow)
 	failed = false
-	for i := 0; i < int(threshold) - 1; i++ {
+	for i := 0; i < int(threshold)-1; i++ {
 		failed = failed || counter.Failed()
 	}
 	time.Sleep(failTimeWindow + (100 * time.Millisecond))
@@ -67,7 +70,7 @@ func TestWorker(t *testing.T) {
 	//test good case
 	worker := &Worker{
 		OutputChannel: outChannel,
-		TaskTimeout: taskTimeout,
+		TaskTimeout:   taskTimeout,
 	}
 	worker.Start(task, goodStrategy)
 
@@ -79,7 +82,7 @@ func TestWorker(t *testing.T) {
 	//test fail case
 	worker2 := &Worker{
 		OutputChannel: outChannel,
-		TaskTimeout: taskTimeout,
+		TaskTimeout:   taskTimeout,
 	}
 	worker2.Start(task, failStrategy)
 	result = <-outChannel
@@ -90,7 +93,7 @@ func TestWorker(t *testing.T) {
 	//test timeout
 	worker3 := &Worker{
 		OutputChannel: outChannel,
-		TaskTimeout: taskTimeout,
+		TaskTimeout:   taskTimeout,
 	}
 	worker3.Start(task, slowStrategy)
 	result = <-outChannel
@@ -99,10 +102,11 @@ func TestWorker(t *testing.T) {
 	}
 
 	select {
-		case <-outChannel: {
+	case <-outChannel:
+		{
 			t.Error("Worker should not produce any result after timeout")
 		}
-		case <-time.After(taskTimeout + time.Second):
+	case <-time.After(taskTimeout + time.Second):
 	}
 }
 
@@ -132,12 +136,12 @@ func TestWorkerManager(t *testing.T) {
 	checkAllWorkersAvailable(t, manager)
 
 	batch := []*Message{
-		&Message{Offset:0},
-		&Message{Offset:1},
-		&Message{Offset:2},
-		&Message{Offset:3},
-		&Message{Offset:4},
-		&Message{Offset:5},
+		&Message{Offset: 0},
+		&Message{Offset: 1},
+		&Message{Offset: 2},
+		&Message{Offset: 3},
+		&Message{Offset: 4},
+		&Message{Offset: 5},
 	}
 
 	manager.InputChannel <- batch
@@ -160,7 +164,8 @@ func checkAllWorkersAvailable(t *testing.T, wm *WorkerManager) {
 	Trace("test", "Checking all workers availability")
 	//if all workers are available we shouldn't be able to insert one more available worker
 	select {
-		case wm.AvailableWorkers <- &Worker{}: t.Error("Not all workers are available")
-		case <-time.After(1 * time.Second):
+	case wm.AvailableWorkers <- &Worker{}:
+		t.Error("Not all workers are available")
+	case <-time.After(1 * time.Second):
 	}
 }

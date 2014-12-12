@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,9 +18,9 @@
 package go_kafka_client
 
 import (
-	"testing"
 	"github.com/Shopify/sarama"
 	"math/rand"
+	"testing"
 	"time"
 )
 
@@ -37,8 +37,10 @@ func TestFilterPartitionData(t *testing.T) {
 
 	requestedOffset = startOffset + rand.Int63n(100)
 	filterPartitionData(data, requestedOffset)
-	expectedMessages := numMessages - int(requestedOffset - startOffset)
-	if expectedMessages < 0 { expectedMessages = 0 }
+	expectedMessages := numMessages - int(requestedOffset-startOffset)
+	if expectedMessages < 0 {
+		expectedMessages = 0
+	}
 	//check the filtering itself
 	assert(t, len(data.MsgSet.Messages), expectedMessages)
 
@@ -50,11 +52,11 @@ func TestFilterPartitionData(t *testing.T) {
 }
 
 func getFetchResponseBlock(startOffset int64, numMessages int) *sarama.FetchResponseBlock {
-	return &sarama.FetchResponseBlock {
+	return &sarama.FetchResponseBlock{
 		HighWaterMarkOffset: startOffset + int64(numMessages),
 		MsgSet: sarama.MessageSet{
 			PartialTrailingMessage: false,
-			Messages: generateMessages(startOffset, numMessages),
+			Messages:               generateMessages(startOffset, numMessages),
 		},
 	}
 }

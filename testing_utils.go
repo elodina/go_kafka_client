@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,15 +18,15 @@
 package go_kafka_client
 
 import (
-	"testing"
-	"github.com/samuel/go-zookeeper/zk"
-	"reflect"
-	"time"
-	"github.com/stealthly/go-kafka/producer"
 	"fmt"
-	"runtime"
+	"github.com/samuel/go-zookeeper/zk"
+	"github.com/stealthly/go-kafka/producer"
 	"os"
 	"os/exec"
+	"reflect"
+	"runtime"
+	"testing"
+	"time"
 )
 
 type logWriter struct {
@@ -78,21 +78,23 @@ func receiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 	numMessages := 0
 	for {
 		select {
-		case batch := <-from: {
-			if numMessages + len(batch) > n {
-				t.Error("Received more messages than expected")
+		case batch := <-from:
+			{
+				if numMessages+len(batch) > n {
+					t.Error("Received more messages than expected")
+					return
+				}
+				numMessages += len(batch)
+				if numMessages == n {
+					Infof("test", "Successfully consumed %d message[s]", n)
+					return
+				}
+			}
+		case <-time.After(timeout):
+			{
+				t.Errorf("Failed to receive a message within %d seconds", int(timeout.Seconds()))
 				return
 			}
-			numMessages += len(batch)
-			if numMessages == n {
-				Infof("test", "Successfully consumed %d message[s]", n)
-				return
-			}
-		}
-		case <-time.After(timeout): {
-			t.Errorf("Failed to receive a message within %d seconds", int(timeout.Seconds()))
-			return
-		}
 		}
 	}
 }
@@ -126,7 +128,7 @@ func receiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 		batchSize := len(batch)
 
 		Infof("test", "Received %d messages from channel %d", batchSize, chosen-1)
-		if numMessages + batchSize > n {
+		if numMessages+batchSize > n {
 			t.Error("Received more messages than expected")
 		}
 		numMessages += batchSize
@@ -143,13 +145,15 @@ func receiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Message) {
 	for {
 		select {
-		case batch := <-from: {
-			t.Errorf("Received %d messages when should receive none", len(batch))
-		}
-		case <-time.After(timeout): {
-			Info("test", "Received no messages as expected")
-			return
-		}
+		case batch := <-from:
+			{
+				t.Errorf("Received %d messages when should receive none", len(batch))
+			}
+		case <-time.After(timeout):
+			{
+				Info("test", "Received no messages as expected")
+				return
+			}
 		}
 	}
 }
@@ -167,12 +171,14 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 
 func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	select {
-	case <-consumer.Close(): {
-		Info("test", "Successfully closed consumer")
-	}
-	case <-time.After(timeout): {
-		t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
-	}
+	case <-consumer.Close():
+		{
+			Info("test", "Successfully closed consumer")
+		}
+	case <-time.After(timeout):
+		{
+			t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
+		}
 	}
 }
 
@@ -208,9 +214,13 @@ func EnsureHasLeader(zkConnect string, topic string) error {
 		var err error
 		for i := 0; i < 3; i++ {
 			topicInfo, err = zookeeper.getTopicInfo(topic)
-			if topicInfo != nil { break }
+			if topicInfo != nil {
+				break
+			}
 		}
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		hasLeader = true
 		for partition, leaders := range topicInfo.Partitions {

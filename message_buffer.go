@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,36 +18,36 @@
 package go_kafka_client
 
 import (
-	"time"
-	"sync"
 	"fmt"
+	"sync"
+	"time"
 )
 
 type messageBuffer struct {
-	OutputChannel chan []*Message
-	Messages      []*Message
-	Config *ConsumerConfig
-	Timer *time.Timer
-	MessageLock   sync.Mutex
-	Close         chan bool
-	stopSending   bool
-	TopicPartition TopicAndPartition
-	askNextBatch chan TopicAndPartition
+	OutputChannel                  chan []*Message
+	Messages                       []*Message
+	Config                         *ConsumerConfig
+	Timer                          *time.Timer
+	MessageLock                    sync.Mutex
+	Close                          chan bool
+	stopSending                    bool
+	TopicPartition                 TopicAndPartition
+	askNextBatch                   chan TopicAndPartition
 	disconnectChannelsForPartition chan TopicAndPartition
-	flush chan bool
+	flush                          chan bool
 }
 
 func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig, askNextBatch chan TopicAndPartition, disconnectChannelsForPartition chan TopicAndPartition) *messageBuffer {
 	buffer := &messageBuffer{
-		OutputChannel : outputChannel,
-		Messages : make([]*Message, 0),
-		Config : config,
-		Timer : time.NewTimer(config.FetchBatchTimeout),
-		Close : make(chan bool),
-		TopicPartition : topicPartition,
-		askNextBatch : askNextBatch,
-		disconnectChannelsForPartition : disconnectChannelsForPartition,
-		flush : make(chan bool),
+		OutputChannel:                  outputChannel,
+		Messages:                       make([]*Message, 0),
+		Config:                         config,
+		Timer:                          time.NewTimer(config.FetchBatchTimeout),
+		Close:                          make(chan bool),
+		TopicPartition:                 topicPartition,
+		askNextBatch:                   askNextBatch,
+		disconnectChannelsForPartition: disconnectChannelsForPartition,
+		flush: make(chan bool),
 	}
 
 	go buffer.autoFlush()
@@ -63,16 +63,18 @@ func (mb *messageBuffer) String() string {
 func (mb *messageBuffer) autoFlush() {
 	for {
 		select {
-		case <-mb.Close: return
-		case <-mb.Timer.C: {
-			Debug(mb, "Batch accumulation timed out. Flushing...")
-			mb.Timer.Reset(mb.Config.FetchBatchTimeout)
+		case <-mb.Close:
+			return
+		case <-mb.Timer.C:
+			{
+				Debug(mb, "Batch accumulation timed out. Flushing...")
+				mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 
-			select {
-			case mb.flush <- true:
-			default:
+				select {
+				case mb.flush <- true:
+				default:
+				}
 			}
-		}
 		}
 	}
 }
@@ -85,10 +87,12 @@ func (mb *messageBuffer) flushLoop() {
 		flushLoop:
 			for {
 				select {
-				case mb.OutputChannel <- mb.Messages: break flushLoop
-				case <-time.After(200 * time.Millisecond): if mb.stopSending {
-					return
-				}
+				case mb.OutputChannel <- mb.Messages:
+					break flushLoop
+				case <-time.After(200 * time.Millisecond):
+					if mb.stopSending {
+						return
+					}
 				}
 			}
 			Debug(mb, "Flushed")
@@ -115,12 +119,12 @@ func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 		}
 		if fetchResponseBlock != nil {
 			for _, message := range fetchResponseBlock.MsgSet.Messages {
-				mb.add(&Message {
-					Key : message.Msg.Key,
-					Value : message.Msg.Value,
-					Topic : topicPartition.Topic,
-					Partition : topicPartition.Partition,
-					Offset : message.Offset,
+				mb.add(&Message{
+					Key:       message.Msg.Key,
+					Value:     message.Msg.Value,
+					Topic:     topicPartition.Topic,
+					Partition: topicPartition.Partition,
+					Offset:    message.Offset,
 				})
 			}
 		}

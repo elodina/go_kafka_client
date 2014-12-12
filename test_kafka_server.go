@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,13 +18,13 @@
 package go_kafka_client
 
 import (
-	"runtime"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
-	"path/filepath"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -58,7 +58,7 @@ func StartTestKafkaCluster(size int, zookeeperPort int) (*TestKafkaCluster, erro
 
 	startPort := int(rand.Int31n(6000) + 20000)
 	success := false
-	cluster := &TestKafkaCluster { Path: tmpPath }
+	cluster := &TestKafkaCluster{Path: tmpPath}
 	defer func() {
 		if !success {
 			cluster.Stop()
@@ -108,10 +108,10 @@ func startTestKafkaServerNix(port int, configPath string) (*TestKafkaServer, err
 		return nil, err
 	}
 
-	return &TestKafkaServer {
-		Host : "localhost",
-		Port : port,
-		Path : configPath,
+	return &TestKafkaServer{
+		Host: "localhost",
+		Port: port,
+		Path: configPath,
 	}, nil
 }
 
@@ -122,10 +122,10 @@ func startTestKafkaServerWindows(port int, configPath string) (*TestKafkaServer,
 		return nil, err
 	}
 
-	return &TestKafkaServer {
-		Host : "localhost",
-		Port : port,
-		Path : configPath,
+	return &TestKafkaServer{
+		Host: "localhost",
+		Port: port,
+		Path: configPath,
 	}, nil
 }
 

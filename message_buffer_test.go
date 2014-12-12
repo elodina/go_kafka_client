@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,9 +18,9 @@
 package go_kafka_client
 
 import (
+	"github.com/Shopify/sarama"
 	"testing"
 	"time"
-	"github.com/Shopify/sarama"
 )
 
 func TestMessageBuffer(t *testing.T) {
@@ -28,7 +28,7 @@ func TestMessageBuffer(t *testing.T) {
 
 	config := DefaultConsumerConfig()
 	config.FetchBatchSize = 5
-	config.FetchBatchTimeout = 3*time.Second
+	config.FetchBatchTimeout = 3 * time.Second
 
 	out := make(chan []*Message)
 	topicPartition := TopicAndPartition{"fakeTopic", 0}
@@ -52,7 +52,8 @@ func TestMessageBuffer(t *testing.T) {
 	go func() {
 		select {
 		case <-disconnectChannelsForPartition:
-		case <-time.After(2 * time.Second): t.Error("Failed to receive 'ask next'")
+		case <-time.After(2 * time.Second):
+			t.Error("Failed to receive 'ask next'")
 		}
 	}()
 	buffer.stop()
@@ -61,8 +62,10 @@ func TestMessageBuffer(t *testing.T) {
 
 func expectAskNext(t *testing.T, askNext chan TopicAndPartition, timeout time.Duration) {
 	select {
-	case <-askNext: Trace("test", "Got asknext")
-	case <-time.After(timeout): t.Error("Failed to receive 'ask next'")
+	case <-askNext:
+		Trace("test", "Got asknext")
+	case <-time.After(timeout):
+		t.Error("Failed to receive 'ask next'")
 	}
 }
 
@@ -73,8 +76,8 @@ func generateBatch(topicPartition TopicAndPartition, size int) *TopicPartitionDa
 	}
 
 	return &TopicPartitionData{
-		TopicPartition : topicPartition,
-		Data : &sarama.FetchResponseBlock{
+		TopicPartition: topicPartition,
+		Data: &sarama.FetchResponseBlock{
 			MsgSet: sarama.MessageSet{
 				Messages: messages,
 			},

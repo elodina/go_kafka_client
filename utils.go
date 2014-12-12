@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,16 +18,16 @@
 package go_kafka_client
 
 import (
-	"github.com/jimlawless/cfg"
-	"reflect"
-	"math/rand"
-	crand "crypto/rand"
-	"sync"
 	"container/ring"
-	"hash/fnv"
+	crand "crypto/rand"
 	"fmt"
-	"time"
 	"github.com/Shopify/sarama"
+	"github.com/jimlawless/cfg"
+	"hash/fnv"
+	"math/rand"
+	"reflect"
+	"sync"
+	"time"
 )
 
 //TODO we need a file -> ConsumerConfig parser, not a file -> map one
@@ -80,10 +80,10 @@ func circularIterator(src interface{}) *ring.Ring {
 	return circle
 }
 
-func position(haystack interface {}, needle interface {}) int {
+func position(haystack interface{}, needle interface{}) int {
 	rSrc := reflect.ValueOf(haystack).Elem()
 	for position := 0; position < rSrc.Len(); position++ {
-		if (reflect.DeepEqual(rSrc.Index(position).Interface(), needle)) {
+		if reflect.DeepEqual(rSrc.Index(position).Interface(), needle) {
 			return position
 		}
 	}
@@ -109,7 +109,6 @@ func notifyWhenThresholdIsReached(inputChannels interface{}, outputChannel inter
 	if output.Kind() != reflect.Chan {
 		panic("Incorrect output channel type")
 	}
-
 
 	cases := make([]reflect.SelectCase, input.Len())
 	for i := 0; i < input.Len(); i++ {
@@ -151,12 +150,12 @@ func notifyWhenThresholdIsReached(inputChannels interface{}, outputChannel inter
 }
 
 func redirectChannelsTo(inputChannels interface{}, outputChannel interface{}) chan bool {
-	killChannel, _ := redirectChannelsToWithTimeout(inputChannels, outputChannel, 0 * time.Second)
+	killChannel, _ := redirectChannelsToWithTimeout(inputChannels, outputChannel, 0*time.Second)
 	return killChannel
 }
 
-func pipe(from interface {}, to interface {}) chan bool {
-	return redirectChannelsTo([]interface {} {from}, to)
+func pipe(from interface{}, to interface{}) chan bool {
+	return redirectChannelsTo([]interface{}{from}, to)
 }
 
 func redirectChannelsToWithTimeout(inputChannels interface{}, outputChannel interface{}, timeout time.Duration) (chan bool, <-chan time.Time) {
@@ -178,7 +177,6 @@ func redirectChannelsToWithTimeout(inputChannels interface{}, outputChannel inte
 	if output.Kind() != reflect.Chan {
 		panic("Incorrect output channel type")
 	}
-
 
 	cases := make([]reflect.SelectCase, input.Len())
 	for i := 0; i < input.Len(); i++ {
@@ -236,10 +234,10 @@ func newSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
 }
 
 type barrier struct {
-	size int32
+	size               int32
 	barrierReachedLock sync.Mutex
 	barrierReachedCond *sync.Cond
-	callback func()
+	callback           func()
 }
 
 func newBarrier(size int32, callback func()) *barrier {
@@ -275,7 +273,7 @@ func (b *barrier) await() {
 }
 
 func (b *barrier) reset(size int32) {
-	inLock(&b.barrierReachedLock, func(){
+	inLock(&b.barrierReachedLock, func() {
 		if b.size != 0 {
 			panic("Barrier is not broken yet")
 		}

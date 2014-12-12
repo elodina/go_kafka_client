@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -22,17 +22,17 @@ import (
 )
 
 var (
-	consumers = []string { "consumerid1", "consumerid2" }
-	consumerThreadIds = []ConsumerThreadId {
+	consumers         = []string{"consumerid1", "consumerid2"}
+	consumerThreadIds = []ConsumerThreadId{
 		ConsumerThreadId{"consumerid1", 0},
 		ConsumerThreadId{"consumerid1", 1},
 		ConsumerThreadId{"consumerid2", 0},
 		ConsumerThreadId{"consumerid2", 1},
 	}
-	partitionsForTopic = map[string][]int32 {
-		"topic1": []int32{0, 1, 2 ,3, 4},
+	partitionsForTopic = map[string][]int32{
+		"topic1": []int32{0, 1, 2, 3, 4},
 	}
-	consumersForTopic = map[string][]ConsumerThreadId {
+	consumersForTopic = map[string][]ConsumerThreadId{
 		"topic1": consumerThreadIds,
 	}
 	totalPartitions = 5
@@ -42,23 +42,23 @@ func TestRoundRobinAssignor(t *testing.T) {
 	//basic scenario
 	assignor := newPartitionAssignor("roundrobin")
 	context := &assignmentContext{
-		Group: "group",
+		Group:              "group",
 		PartitionsForTopic: partitionsForTopic,
-		ConsumersForTopic: consumersForTopic,
-		Consumers: consumers,
+		ConsumersForTopic:  consumersForTopic,
+		Consumers:          consumers,
 	}
 
 	var totalDecisions = 0
 	for _, consumer := range consumers {
 		context.ConsumerId = consumer
-		context.MyTopicThreadIds = map[string][]ConsumerThreadId {
-			"topic1": []ConsumerThreadId {
+		context.MyTopicThreadIds = map[string][]ConsumerThreadId{
+			"topic1": []ConsumerThreadId{
 				ConsumerThreadId{consumer, 0},
-				ConsumerThreadId{consumer, 1}, },
+				ConsumerThreadId{consumer, 1}},
 		}
 		ownershipDecision := assignor(context)
 		decisionsNum := len(ownershipDecision)
-		if (decisionsNum == totalPartitions) {
+		if decisionsNum == totalPartitions {
 			t.Errorf("Too many partitions assigned to consumer %s", consumer)
 		}
 
@@ -72,20 +72,20 @@ func TestRoundRobinAssignor(t *testing.T) {
 	failed := false
 	defer func() {
 		r := recover()
-		if (r != nil) {
+		if r != nil {
 			failed = true
 		}
 	}()
 
 	context.ConsumerId = "consumerid1"
-	context.MyTopicThreadIds = map[string][]ConsumerThreadId {
-		"topic1": []ConsumerThreadId {
+	context.MyTopicThreadIds = map[string][]ConsumerThreadId{
+		"topic1": []ConsumerThreadId{
 			ConsumerThreadId{"consumerid1", 0},
-			ConsumerThreadId{"consumerid1", 1}, },
+			ConsumerThreadId{"consumerid1", 1}},
 	}
-	context.ConsumersForTopic = map[string][]ConsumerThreadId {
+	context.ConsumersForTopic = map[string][]ConsumerThreadId{
 		"topic1": consumerThreadIds,
-		"topic2": []ConsumerThreadId {
+		"topic2": []ConsumerThreadId{
 			ConsumerThreadId{"consumerid1", 0},
 			ConsumerThreadId{"consumerid1", 1},
 			ConsumerThreadId{"consumerid2", 0},
@@ -96,28 +96,27 @@ func TestRoundRobinAssignor(t *testing.T) {
 	assert(t, failed, true)
 }
 
-
 func TestRangeAssignor(t *testing.T) {
 	//basic scenario
 	assignor := newPartitionAssignor("range")
 	context := &assignmentContext{
-		Group: "group",
+		Group:              "group",
 		PartitionsForTopic: partitionsForTopic,
-		ConsumersForTopic: consumersForTopic,
-		Consumers: consumers,
+		ConsumersForTopic:  consumersForTopic,
+		Consumers:          consumers,
 	}
 
 	var totalDecisions = 0
 	for _, consumer := range consumers {
 		context.ConsumerId = consumer
-		context.MyTopicThreadIds = map[string][]ConsumerThreadId {
-			"topic1": []ConsumerThreadId {
+		context.MyTopicThreadIds = map[string][]ConsumerThreadId{
+			"topic1": []ConsumerThreadId{
 				ConsumerThreadId{consumer, 0},
-				ConsumerThreadId{consumer, 1}, },
+				ConsumerThreadId{consumer, 1}},
 		}
 		ownershipDecision := assignor(context)
 		decisionsNum := len(ownershipDecision)
-		if (decisionsNum == totalPartitions) {
+		if decisionsNum == totalPartitions {
 			t.Errorf("too many partitions assigned to consumer %s", consumer)
 		}
 

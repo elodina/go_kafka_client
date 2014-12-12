@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -23,61 +23,63 @@ import "strings"
 // Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator.
 func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator ConsumerCoordinator, ExcludeInternalTopics bool) (TopicsToNumStreams, error) {
 	consumerInfo, err := Coordinator.GetConsumerInfo(Consumerid, Groupid)
-	if (err != nil) {
+	if err != nil {
 		return nil, err
 	}
 
 	hasWhiteList := whiteListPattern == consumerInfo.Pattern
 	hasBlackList := blackListPattern == consumerInfo.Pattern
 
-	if (len(consumerInfo.Subscription) == 0 || !(hasWhiteList || hasBlackList)) {
+	if len(consumerInfo.Subscription) == 0 || !(hasWhiteList || hasBlackList) {
 		return &StaticTopicsToNumStreams{
-			ConsumerId: Consumerid,
+			ConsumerId:            Consumerid,
 			TopicsToNumStreamsMap: consumerInfo.Subscription,
 		}, nil
 	} else {
 		var regex string
 		var numStreams int
-		for regex, numStreams = range consumerInfo.Subscription { break }
+		for regex, numStreams = range consumerInfo.Subscription {
+			break
+		}
 		var filter TopicFilter
-		if (hasWhiteList) {
+		if hasWhiteList {
 			filter = NewWhiteList(regex)
 		} else {
 			filter = NewBlackList(regex)
 		}
 
 		return &WildcardTopicsToNumStreams{
-			Coordinator: Coordinator,
-			ConsumerId: Consumerid,
-			TopicFilter: filter,
-			NumStreams: numStreams,
+			Coordinator:           Coordinator,
+			ConsumerId:            Consumerid,
+			TopicFilter:           filter,
+			NumStreams:            numStreams,
 			ExcludeInternalTopics: ExcludeInternalTopics,
 		}, nil
 	}
 }
 
 func NewStaticTopicsToNumStreams(consumerId string,
-								 topics string,
-								 pattern string,
-								 numStreams int,
-								 excludeInternalTopics bool,
-								 coordinator ConsumerCoordinator) TopicsToNumStreams {
+	topics string,
+	pattern string,
+	numStreams int,
+	excludeInternalTopics bool,
+	coordinator ConsumerCoordinator) TopicsToNumStreams {
 	hasWhiteList := whiteListPattern == pattern
 	hasBlackList := blackListPattern == pattern
 	if hasWhiteList || hasBlackList {
 		regex := topics
 		var filter TopicFilter
-		if (hasWhiteList) {
+		if hasWhiteList {
 			filter = NewWhiteList(regex)
 		} else {
 			filter = NewBlackList(regex)
 		}
 
 		return &WildcardTopicsToNumStreams{
-			Coordinator: coordinator,
-			ConsumerId: consumerId,
-			TopicFilter: filter,
-			NumStreams: numStreams,
+			Coordinator:           coordinator,
+			ConsumerId:            consumerId,
+			TopicFilter:           filter,
+			NumStreams:            numStreams,
 			ExcludeInternalTopics: excludeInternalTopics,
 		}
 	} else {
@@ -89,9 +91,9 @@ func NewStaticTopicsToNumStreams(consumerId string,
 		for topic := range partitionsForTopic {
 			topicsToNumStreamsMap[topic] = numStreams
 		}
-		return &StaticTopicsToNumStreams {
-			ConsumerId : consumerId,
-			TopicsToNumStreamsMap : topicsToNumStreamsMap,
+		return &StaticTopicsToNumStreams{
+			ConsumerId:            consumerId,
+			TopicsToNumStreamsMap: topicsToNumStreamsMap,
 		}
 	}
 }
@@ -100,19 +102,19 @@ func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[
 	result := make(map[string][]ConsumerThreadId)
 	for topic, numConsumers := range TopicsToNumStreamsMap {
 		consumers := make([]ConsumerThreadId, numConsumers)
-		if (numConsumers < 1) {
+		if numConsumers < 1 {
 			panic("Number of consumers should be greater than 0")
 		}
 		for i := 0; i < numConsumers; i++ {
 			consumerThreadId := ConsumerThreadId{consumerId, i}
 			exists := false
 			for i := 0; i < numConsumers; i++ {
-				if (consumers[i] == consumerThreadId) {
+				if consumers[i] == consumerThreadId {
 					exists = true
 					break
 				}
 			}
-			if (!exists) {
+			if !exists {
 				consumers[i] = consumerThreadId
 			}
 		}
@@ -124,7 +126,7 @@ func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[
 
 //TopicsToNumStreams implementation representing a static consumer subscription.
 type StaticTopicsToNumStreams struct {
-	ConsumerId string
+	ConsumerId            string
 	TopicsToNumStreamsMap map[string]int
 }
 
@@ -156,11 +158,11 @@ type WildcardTopicsToNumStreams struct {
 func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
 	topicsToNumStreams := make(map[string]int)
 	topics, err := tc.Coordinator.GetAllTopics()
-	if (err != nil) {
+	if err != nil {
 		panic(err)
 	}
 	for _, topic := range topics {
-		if (tc.TopicFilter.topicAllowed(topic, tc.ExcludeInternalTopics)) {
+		if tc.TopicFilter.topicAllowed(topic, tc.ExcludeInternalTopics) {
 			topicsToNumStreams[topic] = tc.NumStreams
 		}
 	}
@@ -188,8 +190,8 @@ func (tc *WildcardTopicsToNumStreams) Pattern() string {
 
 //TODO ???
 type TopicSwitch struct {
-	ConsumerId string
-	DesiredPattern string
+	ConsumerId            string
+	DesiredPattern        string
 	TopicsToNumStreamsMap map[string]int
 }
 

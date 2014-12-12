@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -17,7 +17,7 @@
 
 package go_kafka_client
 
-import(
+import (
 	"regexp"
 )
 
@@ -27,7 +27,7 @@ const (
 
 //WhiteList is a topic filter that will match every topic for a given regex
 type WhiteList struct {
-	rawRegex string
+	rawRegex      string
 	compiledRegex *regexp.Regexp
 }
 
@@ -42,18 +42,18 @@ func (wl *WhiteList) topicAllowed(topic string, excludeInternalTopics bool) bool
 //Creates a new WhiteList topic filter for a given regex
 func NewWhiteList(regex string) *WhiteList {
 	cregexp, err := regexp.Compile(regex)
-	if (err != nil) {
+	if err != nil {
 		panic(err)
 	}
 	return &WhiteList{
-		rawRegex: regex,
+		rawRegex:      regex,
 		compiledRegex: cregexp,
 	}
 }
 
 //BlackList is a topic filter that will match every topic that does not match a given regex
 type BlackList struct {
-	rawRegex string
+	rawRegex      string
 	compiledRegex *regexp.Regexp
 }
 
@@ -68,11 +68,11 @@ func (bl *BlackList) topicAllowed(topic string, excludeInternalTopics bool) bool
 //Creates a new BlackList topic filter for a given regex
 func NewBlackList(regex string) *BlackList {
 	cregexp, err := regexp.Compile(regex)
-	if (err != nil) {
+	if err != nil {
 		panic(err)
 	}
 	return &BlackList{
-		rawRegex: regex,
+		rawRegex:      regex,
 		compiledRegex: cregexp,
 	}
 }

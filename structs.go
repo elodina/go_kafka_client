@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -51,31 +51,31 @@ type BrokerInfo struct {
 
 func (b *BrokerInfo) String() string {
 	return fmt.Sprintf("{Version: %d, Id: %d, Host: %s, Port: %d}",
-						b.Version, b.Id, b.Host, b.Port)
+		b.Version, b.Id, b.Host, b.Port)
 }
 
 //General information about Kafka consumer. Used to keep it in consumer coordinator.
 type ConsumerInfo struct {
-	Version   int16
+	Version      int16
 	Subscription map[string]int
-	Pattern   string
-	Timestamp int64
+	Pattern      string
+	Timestamp    int64
 }
 
 func (c *ConsumerInfo) String() string {
 	return fmt.Sprintf("{Version: %d, Subscription: %v, Pattern: %s, Timestamp: %d}",
-						c.Version, c.Subscription, c.Pattern, c.Timestamp)
+		c.Version, c.Subscription, c.Pattern, c.Timestamp)
 }
 
 //General information about Kafka topic. Used to keep it in consumer coordinator.
 type TopicInfo struct {
-	Version int16
+	Version    int16
 	Partitions map[string][]int32
 }
 
 func (t *TopicInfo) String() string {
 	return fmt.Sprintf("{Version: %d, Partitions: %v}",
-						t.Version, t.Partitions)
+		t.Version, t.Partitions)
 }
 
 //Information on Consumer subscription. Used to keep it in consumer coordinator.
@@ -102,7 +102,7 @@ func (c *ConsumerThreadId) String() string {
 
 type byName []ConsumerThreadId
 
-func (a byName) Len() int { return len(a) }
+func (a byName) Len() int      { return len(a) }
 func (a byName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a byName) Less(i, j int) bool {
 	this := fmt.Sprintf("%s-%d", a[i].Consumer, a[i].ThreadId)
@@ -118,7 +118,7 @@ type TopicFilter interface {
 
 //Type representing a single Kafka topic and partition
 type TopicAndPartition struct {
-	Topic string
+	Topic     string
 	Partition int32
 }
 
@@ -127,19 +127,19 @@ func (tp *TopicAndPartition) String() string {
 }
 
 type partitionTopicInfo struct {
-	Topic string
-	Partition int32
-	Buffer *messageBuffer
+	Topic         string
+	Partition     int32
+	Buffer        *messageBuffer
 	FetchedOffset int64
 }
 
 func (p *partitionTopicInfo) String() string {
 	return fmt.Sprintf("{Topic: %s, Partition: %d, FetchedOffset: %d, Buffer: %s}",
-						p.Topic, p.Partition, p.FetchedOffset, p.Buffer)
+		p.Topic, p.Partition, p.FetchedOffset, p.Buffer)
 }
 
 type brokerAndInitialOffset struct {
-	Broker *BrokerInfo
+	Broker     *BrokerInfo
 	InitOffset int64
 }
 
@@ -148,7 +148,7 @@ func (b *brokerAndInitialOffset) String() string {
 }
 
 type brokerAndFetcherId struct {
-	Broker *BrokerInfo
+	Broker    *BrokerInfo
 	FetcherId int
 }
 
@@ -159,7 +159,7 @@ func (b *brokerAndFetcherId) String() string {
 //Fetched data from Kafka broker for a particular topic and partition
 type TopicPartitionData struct {
 	TopicPartition TopicAndPartition
-	Data *sarama.FetchResponseBlock
+	Data           *sarama.FetchResponseBlock
 }
 
 type DeployedTopics struct {
@@ -170,8 +170,9 @@ type DeployedTopics struct {
 }
 
 type intArray []int32
-func (s intArray) Len() int { return len(s) }
-func (s intArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+func (s intArray) Len() int           { return len(s) }
+func (s intArray) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s intArray) Less(i, j int) bool { return s[i] < s[j] }
 
 // ConsumerCoordinator is used to coordinate actions of multiple consumers within the same consumer group.
@@ -244,6 +245,6 @@ type ConsumerCoordinator interface {
 type CoordinatorEvent string
 
 const (
-	Regular = "Regular"
+	Regular          = "Regular"
 	NewTopicDeployed = "NewTopicDeployed"
 )

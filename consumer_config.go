@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,9 +18,9 @@
 package go_kafka_client
 
 import (
-	"time"
-	"fmt"
 	"errors"
+	"fmt"
+	"time"
 )
 
 //ConsumerConfig defines configuration options for Consumer
@@ -29,7 +29,7 @@ type ConsumerConfig struct {
 	Groupid string
 
 	/* A string that uniquely identifies a consumer within a group. Generated automatically if not set.
-   	Set this explicitly for only testing purpose. */
+	Set this explicitly for only testing purpose. */
 	Consumerid string
 
 	/* The socket timeout for network requests. Its value should be at least FetchWaitMaxMs. */
@@ -167,7 +167,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.AutoOffsetReset = LargestOffset
 	config.Clientid = "go-client"
 	config.ExcludeInternalTopics = true
-	config.PartitionAssignmentStrategy = RangeStrategy/* select between "RangeStrategy", and "RoundRobinStrategy" */
+	config.PartitionAssignmentStrategy = RangeStrategy /* select between "RangeStrategy", and "RoundRobinStrategy" */
 
 	config.NumWorkers = 10
 	config.MaxWorkerRetries = 3
@@ -222,16 +222,16 @@ Strategy %v
 FetchBatchSize %d
 FetchBatchTimeout %v
 `, c.Groupid, c.SocketTimeout,
-   c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.QueuedMaxMessages, c.RebalanceMaxRetries,
-   c.FetchMinBytes, c.FetchWaitMaxMs,
-   c.RebalanceBackoff, c.RefreshLeaderBackoff,
-   c.OffsetsCommitMaxRetries, c.OffsetsStorage,
-   c.AutoOffsetReset, c.Clientid, c.Consumerid,
-   c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.NumWorkers,
-   c.MaxWorkerRetries, c.WorkerRetryThreshold,
-   c.WorkerThresholdTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
-   c.WorkerTaskTimeout, c.WorkerBackoff,
-   c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)
+		c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.QueuedMaxMessages, c.RebalanceMaxRetries,
+		c.FetchMinBytes, c.FetchWaitMaxMs,
+		c.RebalanceBackoff, c.RefreshLeaderBackoff,
+		c.OffsetsCommitMaxRetries, c.OffsetsStorage,
+		c.AutoOffsetReset, c.Clientid, c.Consumerid,
+		c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.NumWorkers,
+		c.MaxWorkerRetries, c.WorkerRetryThreshold,
+		c.WorkerThresholdTimeWindow, c.WorkerFailureCallback, c.WorkerFailedAttemptCallback,
+		c.WorkerTaskTimeout, c.WorkerBackoff,
+		c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)
 }
 
 //Validates this ConsumerConfig. Returns a corresponding error if the ConsumerConfig is invalid and nil otherwise.

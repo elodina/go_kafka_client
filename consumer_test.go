@@ -60,7 +60,7 @@ func TestConsumerWithInconsistentProducing(t *testing.T) {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, timeout, actual)
 	}
 
-	closeWithin(t, 10 * time.Second, consumer)
+	closeWithin(t, 10*time.Second, consumer)
 }
 
 func TestStaticConsumingSinglePartition(t *testing.T) {
@@ -78,7 +78,7 @@ func TestStaticConsumingSinglePartition(t *testing.T) {
 	if actual := <-consumeStatus; actual != numMessages {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
 	}
-	closeWithin(t, 10 * time.Second, consumer)
+	closeWithin(t, 10*time.Second, consumer)
 }
 
 func TestStaticConsumingMultiplePartitions(t *testing.T) {
@@ -96,7 +96,7 @@ func TestStaticConsumingMultiplePartitions(t *testing.T) {
 	if actual := <-consumeStatus; actual != numMessages {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
 	}
-	closeWithin(t, 10 * time.Second, consumer)
+	closeWithin(t, 10*time.Second, consumer)
 }
 
 func TestWhitelistConsumingSinglePartition(t *testing.T) {
@@ -120,7 +120,7 @@ func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	if actual := <-consumeStatus; actual != expectedMessages {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
 	}
-	closeWithin(t, 10 * time.Second, consumer)
+	closeWithin(t, 10*time.Second, consumer)
 }
 
 func testConsumerConfig() *ConsumerConfig {
@@ -151,16 +151,16 @@ func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Durati
 		case <-time.After(timeout):
 		}
 		inLock(&consumedMessagesLock, func() {
-				notify <- consumedMessages
-			})
+			notify <- consumedMessages
+		})
 	}()
 	return func(_ *Worker, _ *Message, id TaskId) WorkerResult {
 		inLock(&consumedMessagesLock, func() {
-				consumedMessages++
-				if consumedMessages == expectedMessages {
-					consumeFinished <- true
-				}
-			})
+			consumedMessages++
+			if consumedMessages == expectedMessages {
+				consumeFinished <- true
+			}
+		})
 		return NewSuccessfulResult(id)
 	}
 }

@@ -18,24 +18,24 @@
 package go_kafka_client
 
 import (
-	"testing"
-	"fmt"
-	"time"
-	"github.com/samuel/go-zookeeper/zk"
 	"encoding/json"
+	"fmt"
+	"github.com/samuel/go-zookeeper/zk"
+	"testing"
+	"time"
 )
 
 var (
-	coordinator *ZookeeperCoordinator = nil
-	zkConnection *zk.Conn   = nil
-	consumerGroup           = "testGroup"
-	consumerIdPattern       = "go-consumer-%d"
-	broker                  = &BrokerInfo{
-								Version: 1,
-								Id: 0,
-								Host: "localhost",
-								Port: 9092,
-							}
+	coordinator       *ZookeeperCoordinator = nil
+	zkConnection      *zk.Conn              = nil
+	consumerGroup                           = "testGroup"
+	consumerIdPattern                       = "go-consumer-%d"
+	broker                                  = &BrokerInfo{
+		Version: 1,
+		Id:      0,
+		Host:    "localhost",
+		Port:    9092,
+	}
 )
 
 func TestZkAPI(t *testing.T) {
@@ -54,18 +54,18 @@ func TestZkAPI(t *testing.T) {
 	testNewDeployedTopics(t)
 }
 
-func testCreatePathParentMayNotExist(t * testing.T, pathToCreate string) {
+func testCreatePathParentMayNotExist(t *testing.T, pathToCreate string) {
 	err := coordinator.createOrUpdatePathParentMayNotExist(pathToCreate, make([]byte, 0))
-	if (err != nil) {
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	exists, _, existsErr := zkConnection.Exists(pathToCreate)
-	if (existsErr != nil) {
+	if existsErr != nil {
 		t.Fatal(err)
 	}
 
-	if (!exists) {
+	if !exists {
 		t.Fatalf("Failed to create path %s in Zookeeper", pathToCreate)
 	}
 }
@@ -74,7 +74,7 @@ func testGetBrokerInfo(t *testing.T) {
 	jsonBroker, _ := json.Marshal(broker)
 	coordinator.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", brokerIdsPath, broker.Id), []byte(jsonBroker))
 	brokerInfo, err := coordinator.getBrokerInfo(broker.Id)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 	assert(t, *brokerInfo, *broker)
@@ -92,22 +92,22 @@ func testRegisterConsumer(t *testing.T) {
 	subscription["topic1"] = 1
 
 	consumerInfo := &ConsumerInfo{
-		Version : int16(1),
-		Subscription : subscription,
-		Pattern : whiteListPattern,
-		Timestamp : time.Now().Unix(),
+		Version:      int16(1),
+		Subscription: subscription,
+		Pattern:      whiteListPattern,
+		Timestamp:    time.Now().Unix(),
 	}
 
 	topicCount := &WildcardTopicsToNumStreams{
-		Coordinator : coordinator,
-		ConsumerId : fmt.Sprintf(consumerIdPattern, 0),
-		TopicFilter : NewWhiteList("topic1"),
-		NumStreams : 1,
-		ExcludeInternalTopics : true,
+		Coordinator:           coordinator,
+		ConsumerId:            fmt.Sprintf(consumerIdPattern, 0),
+		TopicFilter:           NewWhiteList("topic1"),
+		NumStreams:            1,
+		ExcludeInternalTopics: true,
 	}
 
 	err := coordinator.RegisterConsumer(fmt.Sprintf(consumerIdPattern, 0), consumerGroup, topicCount)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 	actualConsumerInfo, err := coordinator.GetConsumerInfo(fmt.Sprintf(consumerIdPattern, 0), consumerGroup)
@@ -117,7 +117,7 @@ func testRegisterConsumer(t *testing.T) {
 
 func testGetConsumersInGroup(t *testing.T) {
 	consumers, err := coordinator.GetConsumersInGroup(consumerGroup)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 	assert(t, len(consumers), 1)
@@ -127,7 +127,7 @@ func testDeregisterConsumer(t *testing.T) {
 	consumerId := fmt.Sprintf(consumerIdPattern, 0)
 	coordinator.DeregisterConsumer(consumerId, consumerGroup)
 	exists, _, err := zkConnection.Exists(fmt.Sprintf("%s/%s", newZKGroupDirs(consumerGroup).ConsumerRegistryDir, consumerId))
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 	assert(t, exists, false)
@@ -136,8 +136,8 @@ func testDeregisterConsumer(t *testing.T) {
 func testNewDeployedTopics(t *testing.T) {
 	group := fmt.Sprintf("group-%d", time.Now().Unix())
 	coordinator.ensureZkPathsExist(group)
-	topics := DeployedTopics {
-		Topics : "topic1",
+	topics := DeployedTopics{
+		Topics:  "topic1",
 		Pattern: "static",
 	}
 
@@ -151,7 +151,8 @@ func testNewDeployedTopics(t *testing.T) {
 		coordinator.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", newZKGroupDirs(group).ConsumerChangesDir, time.Now().Unix()), data)
 	}()
 	select {
-		case event := <-events: {
+	case event := <-events:
+		{
 			if event != NewTopicDeployed {
 				t.Errorf("Expected %s, actual %s", NewTopicDeployed, event)
 			}
@@ -160,9 +161,12 @@ func testNewDeployedTopics(t *testing.T) {
 				panic(err)
 			}
 			var deployedTopic *DeployedTopics
-			for _, deployedTopic = range deployedTopics { break }
+			for _, deployedTopic = range deployedTopics {
+				break
+			}
 			assert(t, *deployedTopic, topics)
 		}
-		case <-time.After(5 * time.Second): t.Error("Failed to receive a Deployed Topic event from Zookeeper")
+	case <-time.After(5 * time.Second):
+		t.Error("Failed to receive a Deployed Topic event from Zookeeper")
 	}
 }
