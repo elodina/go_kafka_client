@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"sync"
 	metrics "github.com/rcrowley/go-metrics"
+	"sync/atomic"
 )
 
 type WorkerManager struct {
@@ -36,7 +37,7 @@ type WorkerManager struct {
 	CurrentBatch map[TaskId]*Task //TODO inspect for race conditions
 	InputChannel      chan [] *Message
 	TopicPartition TopicAndPartition
-	LargestOffset int64
+	largestOffset int64
 	lastCommittedOffset int64
 	FailCounter *FailureCounter
 	batchProcessed    chan bool
@@ -75,7 +76,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		InputChannel: make(chan [] *Message),
 		CurrentBatch: make(map[TaskId]*Task),
 		TopicPartition: topicPartition,
-		LargestOffset: InvalidOffset,
+		largestOffset: InvalidOffset,
 		FailCounter: NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
 		batchProcessed: make(chan bool),
 		managerStop: make(chan bool),
@@ -167,7 +168,7 @@ func (wm *WorkerManager) commitBatch() {
 }
 
 func (wm *WorkerManager) commitOffset() {
-	largestOffset := wm.LargestOffset
+	largestOffset := wm.GetLargestOffset()
 	Tracef(wm, "Inside commit offset with largest %d and last %d", largestOffset, wm.lastCommittedOffset)
 	if largestOffset <= wm.lastCommittedOffset || isOffsetInvalid(largestOffset) { return }
 
@@ -278,10 +279,18 @@ func (wm *WorkerManager) stopBatch() {
 
 func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	Tracef(wm, "Task is done: %d", result.Id().Offset)
-	wm.LargestOffset = int64(math.Max(float64(wm.LargestOffset), float64(result.Id().Offset)))
+	wm.UpdateLargestOffset(result.Id().Offset)
 	wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
 	wm.activeWorkersCounter.Dec(1)
 	delete(wm.CurrentBatch, result.Id())
+}
+
+func (wm *WorkerManager) GetLargestOffset() int64 {
+	return atomic.LoadInt64(&wm.largestOffset)
+}
+
+func (wm *WorkerManager) UpdateLargestOffset(offset int64) {
+	atomic.StoreInt64(&wm.largestOffset, int64(math.Max(float64(wm.largestOffset), float64(offset))))
 }
 
 type Worker struct {
