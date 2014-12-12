@@ -25,7 +25,7 @@ import (
 )
 
 var numMessages = 1000
-var consumeTimeout = 20 * time.Second
+var consumeTimeout = 1 * time.Minute
 var localZk = "localhost:2181"
 var localBroker = "localhost:9092"
 
@@ -38,10 +38,11 @@ func TestConsumerWithInconsistentProducing(t *testing.T) {
 	topic := fmt.Sprintf("inconsistent-producing-%d", time.Now().Unix())
 
 	//create topic
-	CreateMultiplePartitionsTopic("localhost:2181", topic, 1)
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
 
 	Infof("test", "Produce %d message", produceMessages)
-	go produceN(t, produceMessages, topic, "localhost:9092")
+	go produceN(t, produceMessages, topic, localBroker)
 
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, consumeMessages, timeout, consumeStatus)
@@ -52,7 +53,7 @@ func TestConsumerWithInconsistentProducing(t *testing.T) {
 	Infof("test", "Waiting for %s before producing another message", sleepTime)
 	time.Sleep(sleepTime)
 	Infof("test", "Produce %d message", produceMessages)
-	go produceN(t, produceMessages, topic, "localhost:9092")
+	go produceN(t, produceMessages, topic, localBroker)
 
 	//make sure we get 2 messages
 	if actual := <-consumeStatus; actual != consumeMessages {
@@ -67,6 +68,7 @@ func TestStaticConsumingSinglePartition(t *testing.T) {
 	topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
 
 	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
 	go produceN(t, numMessages, topic, localBroker)
 
 	config := testConsumerConfig()
@@ -84,6 +86,7 @@ func TestStaticConsumingMultiplePartitions(t *testing.T) {
 	topic := fmt.Sprintf("test-static-%d", time.Now().Unix())
 
 	CreateMultiplePartitionsTopic(localZk, topic, 5)
+	EnsureHasLeader(localZk, topic)
 	go produceN(t, numMessages, topic, localBroker)
 
 	config := testConsumerConfig()
@@ -102,7 +105,9 @@ func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	topic2 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix()+1)
 
 	CreateMultiplePartitionsTopic(localZk, topic1, 1)
+	EnsureHasLeader(localZk, topic1)
 	CreateMultiplePartitionsTopic(localZk, topic2, 1)
+	EnsureHasLeader(localZk, topic2)
 	go produceN(t, numMessages, topic1, localBroker)
 	go produceN(t, numMessages, topic2, localBroker)
 
@@ -130,7 +135,7 @@ func testConsumerConfig() *ConsumerConfig {
 	config.Strategy = goodStrategy
 
 	zkConfig := NewZookeeperConfig()
-	zkConfig.ZookeeperConnect = []string{"localhost:2181"}
+	zkConfig.ZookeeperConnect = []string{localZk}
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 
 	return config
