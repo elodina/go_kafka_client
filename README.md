@@ -10,7 +10,7 @@ Apache Kafka Client Library for Go
 
 ***1) Partition Ownership***
 
-We decided on implementing multiple strategies for this including static assignment. The concept of re-balancing is preserved but now there are a few different strategies to re-balancing and they can run at different times depending on what is going on (like a blue/green deploy is happening). For more on blue/green deployments check out this video with Jim Plush and Sean Berry from 2014 AWS re:Invent.
+We decided on implementing multiple strategies for this including static assignment. The concept of re-balancing is preserved but now there are a few different strategies to re-balancing and they can run at different times depending on what is going on (like a blue/green deploy is happening). For more on blue/green deployments check out [this video](https://www.youtube.com/watch?v=abK2Q_aecxY).
  
 ***2) Fetch Management***
 
