@@ -1,4 +1,4 @@
-Go Kafka CLient
+Go Kafka Client
 ===============
 
 Apache Kafka Client Library for Go
