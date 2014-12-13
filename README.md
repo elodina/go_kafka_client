@@ -1,9 +1,28 @@
-go_kafka_client
+Go Kafka CLient
 ===============
 
 Apache Kafka Client Library for Go
 
 [![Build Status](https://travis-ci.org/stealthly/go_kafka_client.svg?branch=master)](https://travis-ci.org/stealthly/go_kafka_client)
+
+***Ideas and goals behind the Go Kafka Client:***
+ 
+
+***1) Partition Ownership***
+
+We decided on implementing multiple strategies for this including static assignment. The concept of re-balancing is preserved but now there are a few different strategies to re-balancing and they can run at different times depending on what is going on (like a blue/green deploy is happening). For more on blue/green deployments check out this video with Jim Plush and Sean Berry from 2014 AWS re:Invent.
+ 
+***2) Fetch Management***
+
+This is what “fills up the reservoir” as I like to call it so the processing (either sequential or in batch) will always have data if there is data for it to have without making a network hop. The fetcher has to stay ahead here keeping the processing tap full (or if empty that is controlled) pulling the data for the Kafka partition(s) it is owning.
+ 
+***3) Work Management***
+
+For the Go consumer we currently only support “fan out” using go routines and channels. If you have ever used go this will be familiar to you if not you should drop everything and learn Go.
+ 
+***4) Offset Management***
+
+Our offset management is based on a per batch basis with each highest offset from the batch committed on a per partition basis.
 
 ***Prerequisites:***
 
