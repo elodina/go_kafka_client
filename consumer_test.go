@@ -165,7 +165,7 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	//this happens if we get a duplicate
 	case <-consumeFinished:
 	//and this happens normally
-	case <-time.After(consumeTimeout):
+	case <-time.After(10 * time.Second):
 	}
 	closeWithin(t, 10*time.Second, consumer)
 }
