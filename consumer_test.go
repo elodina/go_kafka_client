@@ -124,6 +124,7 @@ func TestWhitelistConsumingSinglePartition(t *testing.T) {
 }
 
 func TestMessagesProcessedOnce(t *testing.T) {
+	closeTimeout := 15 * time.Second
 	consumeFinished := make(chan bool)
 	messages := 100
 	topic := fmt.Sprintf("test-processing-%d", time.Now().Unix())
@@ -155,7 +156,7 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	case <-consumeFinished:
 	case <-time.After(consumeTimeout): t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", messages, consumeTimeout, len(messagesMap))
 	}
-	closeWithin(t, 10*time.Second, consumer)
+	closeWithin(t, closeTimeout, consumer)
 
 	//restart consumer
 	consumer = NewConsumer(config)
@@ -165,9 +166,9 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	//this happens if we get a duplicate
 	case <-consumeFinished:
 	//and this happens normally
-	case <-time.After(10 * time.Second):
+	case <-time.After(closeTimeout):
 	}
-	closeWithin(t, 10*time.Second, consumer)
+	closeWithin(t, closeTimeout, consumer)
 }
 
 func testConsumerConfig() *ConsumerConfig {
