@@ -123,6 +123,54 @@ func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	closeWithin(t, 10*time.Second, consumer)
 }
 
+func TestMessagesProcessedOnce(t *testing.T) {
+	closeTimeout := 15 * time.Second
+	consumeFinished := make(chan bool)
+	messages := 100
+	topic := fmt.Sprintf("test-processing-%d", time.Now().Unix())
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+	go produceN(t, messages, topic, localBroker)
+
+	config := testConsumerConfig()
+	messagesMap := make(map[string]bool)
+	var messagesMapLock sync.Mutex
+	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		value := string(msg.Value)
+		inLock(&messagesMapLock, func() {
+				if _, exists := messagesMap[value]; exists {
+					t.Errorf("Duplicate message: %s", value)
+				}
+				messagesMap[value] = true
+				if len(messagesMap) == messages {
+					consumeFinished <- true
+				}
+			})
+		return NewSuccessfulResult(id)
+	}
+	consumer := NewConsumer(config)
+
+	go consumer.StartStatic(map[string]int{topic:1})
+
+	select {
+	case <-consumeFinished:
+	case <-time.After(consumeTimeout): t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", messages, consumeTimeout, len(messagesMap))
+	}
+	closeWithin(t, closeTimeout, consumer)
+
+	//restart consumer
+	consumer = NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic:1})
+
+	select {
+	//this happens if we get a duplicate
+	case <-consumeFinished:
+	//and this happens normally
+	case <-time.After(closeTimeout):
+	}
+	closeWithin(t, closeTimeout, consumer)
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset

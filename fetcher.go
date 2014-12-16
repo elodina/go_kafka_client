@@ -524,8 +524,8 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 	inLock(&f.partitionMapLock, func() {
 		for topicAndPartition, offset := range partitionAndOffsets {
 			if _, contains := f.partitionMap[topicAndPartition]; !contains {
-				validOffset := offset
-				if isOffsetInvalid(validOffset) {
+				validOffset := offset + 1
+				if isOffsetInvalid(offset) {
 					validOffset = f.handleOffsetOutOfRange(&topicAndPartition)
 				}
 				f.partitionMap[topicAndPartition] = validOffset
