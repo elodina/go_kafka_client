@@ -1,27 +1,22 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License. */
 
 /* Package go_kafka_client provides a high-level Kafka consumer implementation and introduces different approach than Java/Scala high-level consumer.
-Primary differences include:
-- workers concept enforcing at least once processing before committing offsets;
-- improved rebalancing algorithm - closes obsolete connections and opens new connections without stopping the whole consumer;
-- supports graceful shutdown notifying client when it is over;
-- batch processing;
-- supports static partitions configuration allowing to start a consumer with a predefined set of partitions never caring about rebalancing; */
+
+ Primary differences include workers concept enforcing at least once processing before committing offsets, improved rebalancing algorithm - closing obsolete connections and opening new connections without stopping the whole consumer,
+ graceful shutdown support notifying client when it is over, batch processing, static partitions configuration support allowing to start a consumer with a predefined set of partitions never caring about rebalancing. */
 package go_kafka_client
 
 import (
@@ -35,16 +30,17 @@ import (
 )
 
 const (
+	// Offset with invalid value
 	InvalidOffset int64 = -1
 
-	//Reset the offset to the smallest offset if it is out of range
+	// Reset the offset to the smallest offset if it is out of range
 	SmallestOffset = "smallest"
-	//Reset the offset to the largest offset if it is out of range
+	// Reset the offset to the largest offset if it is out of range
 	LargestOffset = "largest"
 
-	//Zookeeper offset storage configuration string
+	// Zookeeper offset storage configuration string
 	ZookeeperOffsetStorage = "zookeeper"
-	//Kafka offset storage configuration string
+	// Kafka offset storage configuration string
 	KafkaOffsetStorage = "kafka"
 )
 
@@ -209,7 +205,7 @@ func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 						continue
 					}
 					Tracef(c, "Piping %s", topicPartition)
-					stopRedirects[topicPartition] = pipe(info.Buffer.OutputChannel, to.InputChannel)
+					stopRedirects[topicPartition] = pipe(info.Buffer.OutputChannel, to.inputChannel)
 				}
 			}
 		}
@@ -234,16 +230,6 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 }
 
 func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) {
-	allTopics, err := c.config.Coordinator.GetAllTopics()
-	if err != nil {
-		panic(err)
-	}
-	filteredTopics := make([]string, 0)
-	for _, topic := range allTopics {
-		if topicFilter.topicAllowed(topic, c.config.ExcludeInternalTopics) {
-			filteredTopics = append(filteredTopics, topic)
-		}
-	}
 	topicCount := &WildcardTopicsToNumStreams{
 		Coordinator:           c.config.Coordinator,
 		ConsumerId:            c.config.Consumerid,
@@ -254,8 +240,6 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
 	c.reinitializeConsumer()
-
-	//TODO subscriptions?
 }
 
 func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) {
@@ -263,7 +247,6 @@ func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) {
 }
 
 func (c *Consumer) reinitializeConsumer() {
-	//TODO more subscriptions
 	c.rebalance()
 	c.subscribeForChanges(c.config.Groupid)
 }
@@ -730,6 +713,7 @@ func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[i
 	}
 }
 
+// Returns a state snapshot for this consumer. State snapshot contains a set of metrics splitted by topics and partitions.
 func (c *Consumer) StateSnapshot() *StateSnapshot {
 	metricsMap := make(map[string]map[string]float64)
 	metrics.DefaultRegistry.Each(func(name string, metric interface{}) {
