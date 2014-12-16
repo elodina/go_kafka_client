@@ -1,19 +1,17 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License. */
 
 package go_kafka_client
 
@@ -30,10 +28,17 @@ const (
 
 //Single Kafka message that is sent to user-defined Strategy
 type Message struct {
+	// Partition key.
 	Key       []byte
+	// Message value.
 	Value     []byte
+	// Topic this message came from.
 	Topic     string
+
+	// Partition this message came from.
 	Partition int32
+
+	// Message offset.
 	Offset    int64
 }
 
@@ -162,10 +167,12 @@ type TopicPartitionData struct {
 	Data           *sarama.FetchResponseBlock
 }
 
+// DeployedTopics contain information needed to do a successful blue-green deployment.
+// It contains a comma-separated list of new topics to consume if the pattern is static and regex for wildcard consuming.
 type DeployedTopics struct {
-	//comma separated list of topics to consume from
+	// Comma separated list of topics to consume from
 	Topics string
-	//either black_list, white_list or static
+	// Either black_list, white_list or static
 	Pattern string
 }
 
@@ -224,6 +231,8 @@ type ConsumerCoordinator interface {
 	Returns a read-only channel of CoordinatorEvent that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
 	SubscribeForChanges(Group string) (<-chan CoordinatorEvent, error)
 
+	/* Gets all deployed topics for consume group Group from consumer coordinator.
+	Returns a map where keys are notification ids and values are DeployedTopics. May also return an error (e.g. if failed to reach coordinator). */
 	GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error)
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
@@ -242,14 +251,21 @@ type ConsumerCoordinator interface {
 	CommitOffset(Group string, TopicPartition *TopicAndPartition, Offset int64) error
 }
 
+// CoordinatorEvent is sent by consumer coordinator representing some state change.
 type CoordinatorEvent string
 
 const (
-	Regular          = "Regular"
-	NewTopicDeployed = "NewTopicDeployed"
+	// A regular coordinator event that should normally trigger consumer rebalance.
+	Regular CoordinatorEvent          = "Regular"
+
+	// A coordinator event that informs a consumer group of new deployed topics.
+	NewTopicDeployed CoordinatorEvent = "NewTopicDeployed"
 )
 
+// Represents a consumer state snapshot.
 type StateSnapshot struct {
+	// Metrics are a map where keys are event names and values are maps holding event values grouped by meters (count, min, max, etc.).
 	Metrics map[string]map[string]float64
+	// Offsets are a map where keys are topics and values are maps where keys are partitions and values are offsets for these topic-partitions.
 	Offsets map[string]map[int32]int64
 }

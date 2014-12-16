@@ -1,19 +1,17 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License. */
 
 package go_kafka_client
 
@@ -26,20 +24,19 @@ import (
 	"sync/atomic"
 )
 
+// WorkerManager is responsible for splitting the incomming batches of messages between a configured amount of workers.
+// It also keeps track of highest processed offsets and commits them to offset storage with a configurable frequency.
 type WorkerManager struct {
-	Id                  string
-	Config              *ConsumerConfig
-	Strategy            WorkerStrategy
-	FailureHook         FailedCallback
-	FailedAttemptHook   FailedAttemptCallback
-	Workers             []*Worker
-	AvailableWorkers    chan *Worker
-	CurrentBatch        map[TaskId]*Task //TODO inspect for race conditions
-	InputChannel        chan []*Message
-	TopicPartition      TopicAndPartition
+	id                  string
+	config              *ConsumerConfig
+	workers             []*Worker
+	availableWorkers    chan *Worker
+	currentBatch        map[TaskId]*Task //TODO inspect for race conditions
+	inputChannel        chan []*Message
+	topicPartition      TopicAndPartition
 	largestOffset       int64
 	lastCommittedOffset int64
-	FailCounter         *FailureCounter
+	failCounter         *FailureCounter
 	batchProcessed      chan bool
 	stopLock            sync.Mutex
 	managerStop         chan bool
@@ -52,6 +49,7 @@ type WorkerManager struct {
 	idleTimer            metrics.Timer
 }
 
+// Creates a new WorkerManager with given id using a given ConsumerConfig and responsible for managing given TopicAndPartition.
 func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition,
 	wmsIdleTimer metrics.Timer, batchDurationTimer metrics.Timer, activeWorkersCounter metrics.Counter,
 	pendingWMsTasksCounter metrics.Counter) *WorkerManager {
@@ -66,18 +64,15 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	}
 
 	return &WorkerManager{
-		Id:                   id,
-		Config:               config,
-		Strategy:             config.Strategy,
-		FailureHook:          config.WorkerFailureCallback,
-		FailedAttemptHook:    config.WorkerFailedAttemptCallback,
-		AvailableWorkers:     availableWorkers,
-		Workers:              workers,
-		InputChannel:         make(chan []*Message),
-		CurrentBatch:         make(map[TaskId]*Task),
-		TopicPartition:       topicPartition,
+		id:                   id,
+		config:               config,
+		availableWorkers:     availableWorkers,
+		workers:              workers,
+		inputChannel:         make(chan []*Message),
+		currentBatch:         make(map[TaskId]*Task),
+		topicPartition:       topicPartition,
 		largestOffset:        InvalidOffset,
-		FailCounter:          NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
+		failCounter:          NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
 		batchProcessed:       make(chan bool),
 		managerStop:          make(chan bool),
 		processingStop:       make(chan bool),
@@ -90,16 +85,19 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 }
 
 func (wm *WorkerManager) String() string {
-	return wm.Id
+	return wm.id
 }
 
+// Starts processing incoming batches with this WorkerManager. Processing is possible only in batch-at-once mode.
+// It also launches an offset committer routine.
+// Call to this method blocks.
 func (wm *WorkerManager) Start() {
 	go wm.processBatch()
 	go wm.commitBatch()
 	for {
 		startIdle := time.Now()
 		select {
-		case batch := <-wm.InputChannel:
+		case batch := <-wm.inputChannel:
 			{
 				wm.idleTimer.Update(time.Since(startIdle))
 				Debug(wm, "WorkerManager got batch")
@@ -114,6 +112,8 @@ func (wm *WorkerManager) Start() {
 	}
 }
 
+// Tells this WorkerManager to finish processing current batch, stop accepting new work and shut down.
+// This method returns immediately and returns a channel which will get the value once the shut down is finished.
 func (wm *WorkerManager) Stop() chan bool {
 	finished := make(chan bool)
 	go func() {
@@ -140,14 +140,14 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 	inLock(&wm.stopLock, func() {
 		for _, message := range batch {
 			topicPartition := TopicAndPartition{message.Topic, message.Partition}
-			wm.CurrentBatch[TaskId{topicPartition, message.Offset}] = &Task{Msg: message}
+			wm.currentBatch[TaskId{topicPartition, message.Offset}] = &Task{Msg: message}
 		}
-		wm.pendingTasksCounter.Inc(int64(len(wm.CurrentBatch)))
-		for _, task := range wm.CurrentBatch {
-			worker := <-wm.AvailableWorkers
+		wm.pendingTasksCounter.Inc(int64(len(wm.currentBatch)))
+		for _, task := range wm.currentBatch {
+			worker := <-wm.availableWorkers
 			wm.activeWorkersCounter.Inc(1)
 			wm.pendingTasksCounter.Dec(1)
-			worker.Start(task, wm.Strategy)
+			worker.Start(task, wm.config.Strategy)
 		}
 
 		<-wm.batchProcessed
@@ -162,8 +162,7 @@ func (wm *WorkerManager) commitBatch() {
 				wm.commitOffset()
 				return
 			}
-		//TODO I don't like that. think think think!
-		case <-time.After(wm.Config.OffsetCommitInterval):
+		case <-time.After(wm.config.OffsetCommitInterval):
 			{
 				wm.commitOffset()
 			}
@@ -179,32 +178,33 @@ func (wm *WorkerManager) commitOffset() {
 	}
 
 	success := false
-	for i := 0; i <= wm.Config.OffsetsCommitMaxRetries; i++ {
-		err := wm.Config.Coordinator.CommitOffset(wm.Config.Groupid, &wm.TopicPartition, largestOffset)
+	for i := 0; i <= wm.config.OffsetsCommitMaxRetries; i++ {
+		err := wm.config.Coordinator.CommitOffset(wm.config.Groupid, &wm.topicPartition, largestOffset)
 		if err == nil {
 			success = true
-			Debugf(wm, "Successfully committed offset %d for %s", largestOffset, wm.TopicPartition)
+			Debugf(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
 			break
 		} else {
-			Infof(wm, "Failed to commit offset %d for %s. Retying...", largestOffset, &wm.TopicPartition)
+			Infof(wm, "Failed to commit offset %d for %s. Retying...", largestOffset, &wm.topicPartition)
 		}
 	}
 
 	if !success {
-		Errorf(wm, "Failed to commit offset %d for %s after %d retries", largestOffset, &wm.TopicPartition, wm.Config.OffsetsCommitMaxRetries)
+		Errorf(wm, "Failed to commit offset %d for %s after %d retries", largestOffset, &wm.topicPartition, wm.config.OffsetsCommitMaxRetries)
 		//TODO: what to do next?
 	} else {
 		wm.lastCommittedOffset = largestOffset
 	}
 }
 
+// Asks this WorkerManager whether the current batch is fully processed. Returns true if so, false otherwise.
 func (wm *WorkerManager) IsBatchProcessed() bool {
-	return len(wm.CurrentBatch) == 0
+	return len(wm.currentBatch) == 0
 }
 
 func (wm *WorkerManager) processBatch() {
-	outputChannels := make([]*chan WorkerResult, wm.Config.NumWorkers)
-	for i, worker := range wm.Workers {
+	outputChannels := make([]*chan WorkerResult, wm.config.NumWorkers)
+	for i, worker := range wm.workers {
 		outputChannels[i] = &worker.OutputChannel
 	}
 
@@ -218,7 +218,7 @@ func (wm *WorkerManager) processBatch() {
 					stopRedirecting <- true
 				}()
 
-				task := wm.CurrentBatch[result.Id()]
+				task := wm.currentBatch[result.Id()]
 				if result.Success() {
 					wm.taskIsDone(result)
 				} else {
@@ -228,14 +228,14 @@ func (wm *WorkerManager) processBatch() {
 
 					Warnf(wm, "Worker task %s has failed", result.Id())
 					task.Retries++
-					if task.Retries > wm.Config.MaxWorkerRetries {
-						Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.Config.MaxWorkerRetries)
+					if task.Retries > wm.config.MaxWorkerRetries {
+						Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.config.MaxWorkerRetries)
 
 						var decision FailedDecision
-						if wm.FailCounter.Failed() {
-							decision = wm.FailureHook(wm)
+						if wm.failCounter.Failed() {
+							decision = wm.config.WorkerFailureCallback(wm)
 						} else {
-							decision = wm.FailedAttemptHook(task, result)
+							decision = wm.config.WorkerFailedAttemptCallback(task, result)
 						}
 						switch decision {
 						case CommitOffsetAndContinue:
@@ -244,8 +244,8 @@ func (wm *WorkerManager) processBatch() {
 							}
 						case DoNotCommitOffsetAndContinue:
 							{
-								wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
-								delete(wm.CurrentBatch, result.Id())
+								wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
+								delete(wm.currentBatch, result.Id())
 							}
 						case CommitOffsetAndStop:
 							{
@@ -259,8 +259,8 @@ func (wm *WorkerManager) processBatch() {
 						}
 					} else {
 						Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
-						time.Sleep(wm.Config.WorkerBackoff)
-						go task.Callee.Start(task, wm.Strategy)
+						time.Sleep(wm.config.WorkerBackoff)
+						go task.Callee.Start(task, wm.config.Strategy)
 					}
 				}
 
@@ -283,8 +283,8 @@ func (wm *WorkerManager) processBatch() {
 }
 
 func (wm *WorkerManager) stopBatch() {
-	wm.CurrentBatch = make(map[TaskId]*Task)
-	for _, worker := range wm.Workers {
+	wm.currentBatch = make(map[TaskId]*Task)
+	for _, worker := range wm.workers {
 		worker.OutputChannel = make(chan WorkerResult)
 	}
 }
@@ -292,22 +292,30 @@ func (wm *WorkerManager) stopBatch() {
 func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	Tracef(wm, "Task is done: %d", result.Id().Offset)
 	wm.UpdateLargestOffset(result.Id().Offset)
-	wm.AvailableWorkers <- wm.CurrentBatch[result.Id()].Callee
+	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
 	wm.activeWorkersCounter.Dec(1)
-	delete(wm.CurrentBatch, result.Id())
+	delete(wm.currentBatch, result.Id())
 }
 
+// Gets the highest offset that has been processed by this WorkerManager.
 func (wm *WorkerManager) GetLargestOffset() int64 {
 	return atomic.LoadInt64(&wm.largestOffset)
 }
 
+// Updates the highest offset that has been processed by this WorkerManager with a new value.
 func (wm *WorkerManager) UpdateLargestOffset(offset int64) {
 	atomic.StoreInt64(&wm.largestOffset, int64(math.Max(float64(wm.largestOffset), float64(offset))))
 }
 
+// Represents a worker that is able to process a single message.
 type Worker struct {
+	// Channel to write processing results to.
 	OutputChannel chan WorkerResult
+
+	// Timeout for a single worker task.
 	TaskTimeout   time.Duration
+
+	// Indicates whether this worker is closed and cannot accept new work.
 	Closed        bool
 }
 
@@ -315,6 +323,8 @@ func (w *Worker) String() string {
 	return "worker"
 }
 
+// Starts processing a given task using given strategy with this worker.
+// Call to this method blocks until the task is done or timed out.
 func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	task.Callee = w
 	go func() {
@@ -333,12 +343,16 @@ func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	}()
 }
 
+// Defines what to do with a single Kafka message. Returns a WorkerResult to distinguish successful and unsuccessful processings.
 type WorkerStrategy func(*Worker, *Message, TaskId) WorkerResult
 
+// A callback that is triggered when a worker fails to process ConsumerConfig.WorkerRetryThreshold messages within ConsumerConfig.WorkerThresholdTimeWindow
 type FailedCallback func(*WorkerManager) FailedDecision
 
+// A callback that is triggered when a worker fails to process a single message.
 type FailedAttemptCallback func(*Task, WorkerResult) FailedDecision
 
+// A counter used to track whether we reached the configurable threshold of failed messages within a given time window.
 type FailureCounter struct {
 	count           int32
 	failed          bool
@@ -346,6 +360,7 @@ type FailureCounter struct {
 	failedThreshold int32
 }
 
+// Creates a new FailureCounter with threshold FailedThreshold and time window WorkerThresholdTimeWindow.
 func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Duration) *FailureCounter {
 	counter := &FailureCounter{
 		failedThreshold: FailedThreshold,
@@ -370,30 +385,45 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 	return counter
 }
 
+// Tells this FailureCounter to increment a number of failures by one.
+// Returns true if threshold is reached, false otherwise.
 func (f *FailureCounter) Failed() bool {
 	inLock(&f.countLock, func() { f.count++ })
 	return f.count >= f.failedThreshold || f.failed
 }
 
+// Represents a single task for a worker.
 type Task struct {
+	// A message that should be processed.
 	Msg     *Message
+
+	// Number of retries used for this task.
 	Retries int
+
+	// A worker that is responsible for processing this task.
 	Callee  *Worker
 }
 
+// Returns an id for this Task.
 func (t *Task) Id() TaskId {
 	return TaskId{TopicAndPartition{t.Msg.Topic, t.Msg.Partition}, t.Msg.Offset}
 }
 
+// Interface that represents a result of processing incoming message.
 type WorkerResult interface {
+	// Returns an id of task that was processed.
 	Id() TaskId
+
+	// Returns true if processing succeeded, false otherwise.
 	Success() bool
 }
 
+// An implementation of WorkerResult interface representing a successfully processed incoming message.
 type SuccessfulResult struct {
 	id TaskId
 }
 
+// Creates a new SuccessfulResult for given TaskId.
 func NewSuccessfulResult(id TaskId) *SuccessfulResult {
 	return &SuccessfulResult{id}
 }
@@ -402,18 +432,22 @@ func (sr *SuccessfulResult) String() string {
 	return fmt.Sprintf("{Success: %s}", sr.Id())
 }
 
+// Returns an id of task that was processed.
 func (wr *SuccessfulResult) Id() TaskId {
 	return wr.id
 }
 
+// Always returns true for SuccessfulResult.
 func (wr *SuccessfulResult) Success() bool {
 	return true
 }
 
+// An implementation of WorkerResult interface representing a failure to process incoming message.
 type ProcessingFailedResult struct {
 	id TaskId
 }
 
+// Creates a new ProcessingFailedResult for given TaskId.
 func NewProcessingFailedResult(id TaskId) *ProcessingFailedResult {
 	return &ProcessingFailedResult{id}
 }
@@ -422,14 +456,17 @@ func (sr *ProcessingFailedResult) String() string {
 	return fmt.Sprintf("{Failed: %s}", sr.Id())
 }
 
+// Returns an id of task that was processed.
 func (wr *ProcessingFailedResult) Id() TaskId {
 	return wr.id
 }
 
+// Always returns false for ProcessingFailedResult.
 func (wr *ProcessingFailedResult) Success() bool {
 	return false
 }
 
+// An implementation of WorkerResult interface representing a timeout to process incoming message.
 type TimedOutResult struct {
 	id TaskId
 }
@@ -438,16 +475,22 @@ func (sr *TimedOutResult) String() string {
 	return fmt.Sprintf("{Timed out: %s}", sr.Id())
 }
 
+// Returns an id of task that was processed.
 func (wr *TimedOutResult) Id() TaskId {
 	return wr.id
 }
 
+// Always returns false for TimedOutResult.
 func (wr *TimedOutResult) Success() bool {
 	return false
 }
 
+// Type representing a task id. Consists from topic, partition and offset of a message being processed.
 type TaskId struct {
+	// Message's topic and partition
 	TopicPartition TopicAndPartition
+
+	// Message's offset
 	Offset         int64
 }
 
@@ -455,11 +498,19 @@ func (tid TaskId) String() string {
 	return fmt.Sprintf("%s, Offset: %d", &tid.TopicPartition, tid.Offset)
 }
 
+// Defines what to do when worker fails to process a message.
 type FailedDecision int32
 
 const (
+	// Tells the worker manager to ignore the failure and continue normally.
 	CommitOffsetAndContinue FailedDecision = iota
+
+	// Tells the worker manager to continue processing new messages but not to commit offset that failed.
 	DoNotCommitOffsetAndContinue
+
+	// Tells the worker manager to commit offset and stop processing the current batch.
 	CommitOffsetAndStop
+
+	// Tells the worker manager not to commit offset and stop processing the current batch.
 	DoNotCommitOffsetAndStop
 )

@@ -1,19 +1,17 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License. */
 
 package go_kafka_client
 
@@ -58,6 +56,8 @@ func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator Consum
 	}
 }
 
+// Constructs a new TopicsToNumStreams for consumer with Consumerid id that works within consumer group Groupid.
+// Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator.
 func NewStaticTopicsToNumStreams(consumerId string,
 	topics string,
 	pattern string,
@@ -124,9 +124,11 @@ func makeConsumerThreadIdsPerTopic(consumerId string, TopicsToNumStreamsMap map[
 	return result
 }
 
-//TopicsToNumStreams implementation representing a static consumer subscription.
+// TopicsToNumStreams implementation representing a static consumer subscription.
 type StaticTopicsToNumStreams struct {
+	// Consumer id string.
 	ConsumerId            string
+	// Map where keys are topic names and values are number of fetcher routines responsible for processing these topics.
 	TopicsToNumStreamsMap map[string]int
 }
 
@@ -186,23 +188,4 @@ func (tc *WildcardTopicsToNumStreams) Pattern() string {
 	default:
 		panic("unknown topic filter")
 	}
-}
-
-//TODO ???
-type TopicSwitch struct {
-	ConsumerId            string
-	DesiredPattern        string
-	TopicsToNumStreamsMap map[string]int
-}
-
-func (tc *TopicSwitch) GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId {
-	return makeConsumerThreadIdsPerTopic(tc.ConsumerId, tc.TopicsToNumStreamsMap)
-}
-
-func (tc *TopicSwitch) GetTopicsToNumStreamsMap() map[string]int {
-	return tc.TopicsToNumStreamsMap
-}
-
-func (tc *TopicSwitch) Pattern() string {
-	return tc.DesiredPattern
 }
