@@ -225,7 +225,7 @@ func EnsureHasLeader(zkConnect string, topic string) {
 		hasLeader = true
 		for partition, leaders := range topicInfo.Partitions {
 			if len(leaders) == 0 {
-				Debugf(zookeeper, "Partition %s has no leader, waiting...", partition)
+				Warnf(zookeeper, "Partition %s has no leader, waiting...", partition)
 				hasLeader = false
 				break
 			}
