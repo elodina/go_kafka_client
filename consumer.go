@@ -730,6 +730,64 @@ func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[i
 	}
 }
 
+func (c *Consumer) StateSnapshot() *StateSnapshot {
+	metricsMap := make(map[string]map[string]float64)
+	metrics.DefaultRegistry.Each(func(name string, metric interface{}) {
+		metricsMap[name] = make(map[string]float64)
+		switch entry := metric.(type) {
+		case metrics.Counter: {
+			metricsMap[name]["count"] = float64(entry.Count())
+		}
+		case metrics.Gauge: {
+			metricsMap[name]["value"] = float64(entry.Value())
+		}
+		case metrics.Histogram: {
+			metricsMap[name]["count"] = float64(entry.Count())
+			metricsMap[name]["max"] = float64(entry.Max())
+			metricsMap[name]["min"] = float64(entry.Min())
+			metricsMap[name]["mean"] = entry.Mean()
+			metricsMap[name]["stdDev"] = entry.StdDev()
+			metricsMap[name]["sum"] = float64(entry.Sum())
+			metricsMap[name]["variance"] = entry.Variance()
+		}
+		case metrics.Meter: {
+			metricsMap[name]["count"] = float64(entry.Count())
+			metricsMap[name]["rate1"] = entry.Rate1()
+			metricsMap[name]["rate5"] = entry.Rate5()
+			metricsMap[name]["rate15"] = entry.Rate15()
+			metricsMap[name]["rateMean"] = entry.RateMean()
+		}
+		case metrics.Timer: {
+			metricsMap[name]["count"] = float64(entry.Count())
+			metricsMap[name]["max"] = float64(entry.Max())
+			metricsMap[name]["min"] = float64(entry.Min())
+			metricsMap[name]["mean"] = entry.Mean()
+			metricsMap[name]["rate1"] = entry.Rate1()
+			metricsMap[name]["rate5"] = entry.Rate5()
+			metricsMap[name]["rate15"] = entry.Rate15()
+			metricsMap[name]["rateMean"] = entry.RateMean()
+			metricsMap[name]["stdDev"] = entry.StdDev()
+			metricsMap[name]["sum"] = float64(entry.Sum())
+			metricsMap[name]["variance"] = entry.Variance()
+		}
+		}
+	})
+
+	offsetsMap := make(map[string]map[int32]int64)
+	for topicAndPartition, workerManager := range c.workerManagers {
+		if _, exists := offsetsMap[topicAndPartition.Topic]; !exists {
+			offsetsMap[topicAndPartition.Topic] = make(map[int32]int64)
+		}
+
+		offsetsMap[topicAndPartition.Topic][topicAndPartition.Partition] = workerManager.GetLargestOffset()
+	}
+
+	return &StateSnapshot{
+		Metrics: metricsMap,
+		Offsets: offsetsMap,
+	}
+}
+
 func isOffsetInvalid(offset int64) bool {
 	return offset <= InvalidOffset
 }

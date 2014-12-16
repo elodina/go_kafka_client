@@ -248,3 +248,8 @@ const (
 	Regular          = "Regular"
 	NewTopicDeployed = "NewTopicDeployed"
 )
+
+type StateSnapshot struct {
+	Metrics map[string]map[string]float64
+	Offsets map[string]map[int32]int64
+}
