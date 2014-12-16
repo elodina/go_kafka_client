@@ -159,6 +159,9 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	closeWithin(t, closeTimeout, consumer)
 
 	//restart consumer
+	zkConfig := NewZookeeperConfig()
+	zkConfig.ZookeeperConnect = []string{localZk}
+	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 	consumer = NewConsumer(config)
 	go consumer.StartStatic(map[string]int{topic:1})
 
