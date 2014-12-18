@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"strconv"
 )
 
 //ConsumerConfig defines configuration options for Consumer
@@ -314,5 +315,93 @@ func (c *ConsumerConfig) Validate() error {
 		return errors.New("In order to use Blue-Green deployment Range partition assignment strategy should be used")
 	}
 
+	return nil
+}
+
+func ConsumerConfigFromFile(filename string) (*ConsumerConfig, error) {
+	c, err := LoadConfiguration(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	config := DefaultConsumerConfig()
+	setStringEntry(&config.Groupid, c["group.id"])
+	setStringEntry(&config.Consumerid, c["consumer.id"])
+	if setDurationEntry(&config.SocketTimeout, c["socket.timeout"]) != nil { return nil, err }
+	if setInt32Entry(&config.FetchMessageMaxBytes, c["fetch.message.max.bytes"]) != nil { return nil, err }
+	if setIntEntry(&config.NumConsumerFetchers, c["num.consumer.fetchers"]) != nil { return nil, err }
+	if setInt32Entry(&config.QueuedMaxMessages, c["queued.max.message.chunks"]) != nil { return nil, err }
+	if setInt32Entry(&config.RebalanceMaxRetries, c["rebalance.max.retries"]) != nil { return nil, err }
+	if setInt32Entry(&config.FetchMinBytes, c["fetch.min.bytes"]) != nil { return nil, err }
+	if setInt32Entry(&config.FetchWaitMaxMs, c["fetch.wait.max.ms"]) != nil { return nil, err }
+	if setDurationEntry(&config.RebalanceBackoff, c["rebalance.backoff"]) != nil { return nil, err }
+	if setDurationEntry(&config.RefreshLeaderBackoff, c["refresh.leader.backoff"]) != nil { return nil, err }
+	if setIntEntry(&config.OffsetsCommitMaxRetries, c["offset.commit.max.retries"]) != nil { return nil, err }
+	if setDurationEntry(&config.OffsetCommitInterval, c["offset.commit.interval"]) != nil { return nil, err }
+	setStringEntry(&config.OffsetsStorage, c["offsets.storage"])
+	setStringEntry(&config.AutoOffsetReset, c["auto.offset.reset"])
+	setBoolEntry(&config.ExcludeInternalTopics, c["exclude.internal.topics"])
+	setStringEntry(&config.PartitionAssignmentStrategy, c["partition.assignment.strategy"])
+	if setIntEntry(&config.NumWorkers, c["num.workers"]) != nil { return nil, err }
+	if setIntEntry(&config.MaxWorkerRetries, c["max.worker.retries"]) != nil { return nil, err }
+	if setInt32Entry(&config.WorkerRetryThreshold, c["worker.retry.threshold"]) != nil { return nil, err }
+	if setDurationEntry(&config.WorkerThresholdTimeWindow, c["worker.threshold.time.window"]) != nil { return nil, err }
+	if setDurationEntry(&config.WorkerTaskTimeout, c["worker.task.timeout"]) != nil { return nil, err }
+	if setDurationEntry(&config.WorkerBackoff, c["worker.backoff"]) != nil { return nil, err }
+	if setDurationEntry(&config.WorkerManagersStopTimeout, c["worker.managers.stop.timeout"]) != nil { return nil, err }
+	if setIntEntry(&config.FetchBatchSize, c["fetch.batch.size"]) != nil { return nil, err }
+	if setDurationEntry(&config.FetchBatchTimeout, c["fetch.batch.timeout"]) != nil { return nil, err }
+	if setDurationEntry(&config.RequeueAskNextBackoff, c["requeue.ask.next.backoff"]) != nil { return nil, err }
+	if setIntEntry(&config.FetchMaxRetries, c["fetch.max.retries"]) != nil { return nil, err }
+	if setIntEntry(&config.FetchTopicMetadataRetries, c["fetch.topic.metadata.retries"]) != nil { return nil, err }
+	if setDurationEntry(&config.FetchTopicMetadataBackoff, c["fetch.topic.metadata.backoff"]) != nil { return nil, err }
+	if setDurationEntry(&config.FetchRequestBackoff, c["fetch.request.backoff"]) != nil { return nil, err }
+	setBoolEntry(&config.BlueGreenDeploymentEnabled, c["blue.green.deployment.enabled"])
+
+	return config, nil
+}
+
+func setStringEntry(where *string, what string) {
+	if what != "" {
+		*where = what
+	}
+}
+
+func setBoolEntry(where *bool, what string) {
+	if what != "" {
+		*where = what == "true"
+	}
+}
+
+func setDurationEntry(where *time.Duration, what string) error {
+	if what != "" {
+		value, err := time.ParseDuration(what)
+		if err == nil {
+			*where = value
+		}
+		return err
+	}
+	return nil
+}
+
+func setIntEntry(where *int, what string) error {
+	if what != "" {
+		value, err := strconv.Atoi(what)
+		if err == nil {
+			*where = value
+		}
+		return err
+	}
+	return nil
+}
+
+func setInt32Entry(where *int32, what string) error {
+	if what != "" {
+		value, err := strconv.Atoi(what)
+		if err == nil {
+			*where = int32(value)
+		}
+		return err
+	}
 	return nil
 }
