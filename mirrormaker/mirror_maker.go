@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	kafka "github.com/stealthly/go_kafka_client"
+	"os/signal"
 )
 
 type consumerConfigs []string
@@ -52,8 +53,44 @@ func main() {
 	parseAndValidateArgs()
 
 	startConsumers()
+
+	ctrlc := make(chan os.Signal, 1)
+	signal.Notify(ctrlc, os.Interrupt)
+	<-ctrlc
+	shutdown()
 }
 
 func startConsumers() {
+	for _, consumerConfigFile := range consumerConfig {
+		config, err := kafka.ConsumerConfigFromFile(consumerConfigFile)
+		if err != nil {
+			panic(err)
+		}
+		zkConfig, err := kafka.ZookeeperConfigFromFile(consumerConfigFile)
+		if err != nil {
+			panic(err)
+		}
+		config.Coordinator = kafka.NewZookeeperCoordinator(zkConfig)
 
+		//TODO strategy, worker callbacks
+
+		consumer := kafka.NewConsumer(config)
+		consumers = append(consumers, consumer)
+		if *whitelist != "" {
+			go consumer.StartWildcard(kafka.NewWhiteList(*whitelist), *numStreams)
+		} else {
+			go consumer.StartWildcard(kafka.NewBlackList(*blacklist), *numStreams)
+		}
+	}
+}
+
+func shutdown() {
+	consumerCloseChannels := make([]<-chan bool, 0)
+	for _, consumer := range consumers {
+		consumerCloseChannels = append(consumerCloseChannels, consumer.Close())
+	}
+
+	for _, ch := range consumerCloseChannels {
+		<-ch
+	}
 }
