@@ -274,9 +274,10 @@ func (b *barrier) await() {
 
 func (b *barrier) reset(size int32) {
 	inLock(&b.barrierReachedLock, func() {
-		if b.watchers > 0 {
+		if b.watchers > 0 && b.watchers != b.size {
 			panic("Barrier is not broken yet")
 		}
 		b.size = size
+		b.watchers = 0
 	})
 }
