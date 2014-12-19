@@ -31,16 +31,16 @@ import (
 	"time"
 )
 
-func resolveConfig() (string, string, string, int, time.Duration, string, time.Duration, int, time.Duration, int) {
+func resolveConfig() (string, string, time.Duration, string, time.Duration, int, time.Duration, int) {
 	rawConfig, err := kafkaClient.LoadConfiguration("producers.properties")
 	if err != nil {
 		panic(err)
 	}
 
-	zkConnect := rawConfig["zookeeper_connect"]
+	//zkConnect := rawConfig["zookeeper_connect"]
 	brokerConnect := rawConfig["broker_connect"]
 	topic := rawConfig["topic"]
-	numPartitions, _ := strconv.Atoi(rawConfig["num_partitions"])
+	//numPartitions, _ := strconv.Atoi(rawConfig["num_partitions"])
 	sleepTime, _ := time.ParseDuration(rawConfig["sleep_time"])
 	flushInterval, _ := time.ParseDuration(rawConfig["flush_interval"])
 
@@ -48,7 +48,7 @@ func resolveConfig() (string, string, string, int, time.Duration, string, time.D
 	flushFrequency, _ := time.ParseDuration(rawConfig["flush_frequency"])
 	producerCount, _ := strconv.Atoi(rawConfig["producer_count"])
 
-	return zkConnect, brokerConnect, topic, numPartitions, sleepTime, rawConfig["graphite_connect"], flushInterval, flushMsgCount, flushFrequency, producerCount
+	return brokerConnect, topic, sleepTime, rawConfig["graphite_connect"], flushInterval, flushMsgCount, flushFrequency, producerCount
 }
 
 func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
@@ -71,7 +71,7 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	numMessage := 0
 
-	zkConnect, brokerConnect, topic, numPartitions, sleepTime, graphiteConnect, graphiteFlushInterval, flushMsgCount, flushFrequency, producerCount := resolveConfig()
+	brokerConnect, topic, sleepTime, graphiteConnect, graphiteFlushInterval, flushMsgCount, flushFrequency, producerCount := resolveConfig()
 
 	_ = graphiteConnect
 	_ = graphiteFlushInterval
