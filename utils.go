@@ -233,6 +233,7 @@ func newSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
 
 type barrier struct {
 	size               int32
+	watchers		   int32
 	barrierReachedLock sync.Mutex
 	barrierReachedCond *sync.Cond
 	callback           func()
@@ -245,6 +246,7 @@ func newBarrier(size int32, callback func()) *barrier {
 
 	barrier := &barrier{}
 	barrier.size = size
+	barrier.watchers = 0
 	barrier.barrierReachedCond = sync.NewCond(&barrier.barrierReachedLock)
 	barrier.callback = callback
 
@@ -253,13 +255,13 @@ func newBarrier(size int32, callback func()) *barrier {
 
 func (b *barrier) await() {
 	inLock(&b.barrierReachedLock, func() {
-		if b.size == 0 {
+		if b.watchers == b.size {
 			panic("Barrier has been broken")
 		}
 
-		b.size--
-		if b.size != 0 {
-			for b.size != 0 {
+		b.watchers++
+		if b.size != b.watchers {
+			for b.size != b.watchers {
 				b.barrierReachedCond.Wait()
 			}
 			return
@@ -272,7 +274,7 @@ func (b *barrier) await() {
 
 func (b *barrier) reset(size int32) {
 	inLock(&b.barrierReachedLock, func() {
-		if b.size != 0 {
+		if b.watchers > 0 {
 			panic("Barrier is not broken yet")
 		}
 		b.size = size
