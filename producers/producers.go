@@ -99,9 +99,10 @@ func main() {
 		config.FlushMsgCount = flushMsgCount
 		config.FlushFrequency = flushFrequency
 		config.AckSuccesses = true
-		config.RequiredAcks = sarama.WaitForAll
+		config.RequiredAcks = sarama.NoResponse //WaitForAll
 		config.MaxMessagesPerReq = maxMessagesPerReq
 		config.Timeout = 1000 * time.Millisecond
+		config.Compression = 2
 		producer, err := sarama.NewProducer(client, config)
 		go func() {
 			if err != nil {
