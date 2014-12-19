@@ -139,6 +139,9 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+
+	time.Sleep(c.config.DeploymentTimeout)
+
 	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, topicCount, topicPartitionMap)
 	partitionOwnershipDecision := newPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
@@ -226,6 +229,9 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+
+	time.Sleep(c.config.DeploymentTimeout)
+
 	c.reinitializeConsumer()
 }
 
@@ -239,6 +245,9 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+
+	time.Sleep(c.config.DeploymentTimeout)
+
 	c.reinitializeConsumer()
 }
 

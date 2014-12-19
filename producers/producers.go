@@ -64,10 +64,11 @@ func main() {
 	numMessage := 0
 
 	zkConnect, brokerConnect, topic, numPartitions, sleepTime, graphiteConnect, graphiteFlushInterval := resolveConfig()
-
-	_ = graphiteConnect
-	_ = graphiteFlushInterval
-	startMetrics(graphiteConnect, graphiteFlushInterval)
+	metricsEnabled := false
+	if graphiteConnect != "" {
+		metricsEnabled = true
+		startMetrics(graphiteConnect, graphiteFlushInterval)
+	}
 	produceRate := metrics.NewRegisteredMeter("ProduceRate", metrics.DefaultRegistry)
 
 	kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
@@ -80,7 +81,9 @@ func main() {
 				panic(err)
 			}
 			numMessage++
-			produceRate.Mark(1)
+			if metricsEnabled {
+				produceRate.Mark(1)
+			}
 			time.Sleep(sleepTime)
 		}
 	}()
