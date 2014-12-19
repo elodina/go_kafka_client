@@ -78,7 +78,7 @@ func main() {
 	startMetrics(graphiteConnect, graphiteFlushInterval)
 	produceRate := metrics.NewRegisteredMeter("ProduceRate", metrics.DefaultRegistry)
 
-	kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
+	//kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
 
 	//p := producer.NewKafkaProducer(topic, []string{brokerConnect})
 
