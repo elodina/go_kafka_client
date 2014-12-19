@@ -134,8 +134,8 @@ func main() {
 		count := 0
 		for {
 			select {
-			case <-saramaError:
-				fmt.Println("eeesh")
+			case err := <-saramaError:
+				fmt.Println(err)
 			case <-saramaSuccess:
 				produceRate.Mark(1)
 				count++
