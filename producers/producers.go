@@ -82,23 +82,27 @@ func main() {
 
 	//p := producer.NewKafkaProducer(topic, []string{brokerConnect})
 
-	client, err := sarama.NewClient(uuid.New(), []string{brokerConnect}, sarama.NewClientConfig())
-	if err != nil {
-		panic(err)
-	}
-
-	config := sarama.NewProducerConfig()
-	config.FlushMsgCount = flushMsgCount
-	config.FlushFrequency = flushFrequency
-	config.AckSuccesses = true
-	producer, err := sarama.NewProducer(client, config)
-	if err != nil {
-		panic(err)
-	}
 	//defer producer.Close()
 	//defer p.Close()
+
+	saramaError := make(chan *sarama.ProduceError)
+	saramaSuccess := make(chan *sarama.MessageToSend)
+
 	for i := 0; i < producerCount; i++ {
+		client, err := sarama.NewClient(uuid.New(), []string{brokerConnect}, sarama.NewClientConfig())
+		if err != nil {
+			panic(err)
+		}
+
+		config := sarama.NewProducerConfig()
+		config.FlushMsgCount = flushMsgCount
+		config.FlushFrequency = flushFrequency
+		config.AckSuccesses = true
+		producer, err := sarama.NewProducer(client, config)
 		go func() {
+			if err != nil {
+				panic(err)
+			}
 			for {
 				message := &sarama.MessageToSend{Topic: topic, Key: sarama.StringEncoder(fmt.Sprintf("%d", numMessage)), Value: sarama.StringEncoder(fmt.Sprintf("message %d!", numMessage))}
 				//if err := p.SendStringSync(fmt.Sprintf("message %d!", numMessage)); err != nil {
@@ -107,6 +111,17 @@ func main() {
 				numMessage++
 				producer.Input() <- message
 				time.Sleep(sleepTime)
+			}
+		}()
+
+		go func() {
+			for {
+				select {
+				case error := <-producer.Errors():
+					saramaError <- error
+				case success := <-producer.Successes():
+					saramaSuccess <- success
+				}
 			}
 		}()
 	}
@@ -118,10 +133,9 @@ func main() {
 		count := 0
 		for {
 			select {
-			case error := <-producer.Errors():
-				fmt.Println(error)
-				produceRate.Mark(1)
-			case <-producer.Successes():
+			case <-saramaError:
+				fmt.Println("eeesh")
+			case <-saramaSuccess:
 				produceRate.Mark(1)
 				count++
 				elapsed := time.Since(start)
