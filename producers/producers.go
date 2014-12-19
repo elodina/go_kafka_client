@@ -98,6 +98,7 @@ func main() {
 		config.FlushMsgCount = flushMsgCount
 		config.FlushFrequency = flushFrequency
 		config.AckSuccesses = true
+		config.RequiredAcks = sarama.WaitForAll
 		producer, err := sarama.NewProducer(client, config)
 		go func() {
 			if err != nil {
