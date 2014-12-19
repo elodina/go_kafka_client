@@ -101,6 +101,7 @@ func main() {
 		config.AckSuccesses = true
 		config.RequiredAcks = sarama.WaitForAll
 		config.MaxMessagesPerReq = maxMessagesPerReq
+		config.Timeout = 1000
 		producer, err := sarama.NewProducer(client, config)
 		go func() {
 			if err != nil {
