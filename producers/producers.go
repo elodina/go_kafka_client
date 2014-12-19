@@ -31,7 +31,7 @@ import (
 	"time"
 )
 
-func resolveConfig() (string, string, time.Duration, string, time.Duration, int, time.Duration, int) {
+func resolveConfig() (string, string, time.Duration, string, time.Duration, int, time.Duration, int, int) {
 	rawConfig, err := kafkaClient.LoadConfiguration("producers.properties")
 	if err != nil {
 		panic(err)
@@ -47,8 +47,9 @@ func resolveConfig() (string, string, time.Duration, string, time.Duration, int,
 	flushMsgCount, _ := strconv.Atoi(rawConfig["flush_msg_count"])
 	flushFrequency, _ := time.ParseDuration(rawConfig["flush_frequency"])
 	producerCount, _ := strconv.Atoi(rawConfig["producer_count"])
+	maxMessagesPerReq, _ := strconv.Atoi(rawConfig["max_messages_per_req"])
 
-	return brokerConnect, topic, sleepTime, rawConfig["graphite_connect"], flushInterval, flushMsgCount, flushFrequency, producerCount
+	return brokerConnect, topic, sleepTime, rawConfig["graphite_connect"], flushInterval, flushMsgCount, flushFrequency, producerCount, maxMessagesPerReq
 }
 
 func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
@@ -71,7 +72,7 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	numMessage := 0
 
-	brokerConnect, topic, sleepTime, graphiteConnect, graphiteFlushInterval, flushMsgCount, flushFrequency, producerCount := resolveConfig()
+	brokerConnect, topic, sleepTime, graphiteConnect, graphiteFlushInterval, flushMsgCount, flushFrequency, producerCount, maxMessagesPerReq := resolveConfig()
 
 	_ = graphiteConnect
 	_ = graphiteFlushInterval
@@ -99,6 +100,7 @@ func main() {
 		config.FlushFrequency = flushFrequency
 		config.AckSuccesses = true
 		config.RequiredAcks = sarama.WaitForAll
+		config.MaxMessagesPerReq = maxMessagesPerReq
 		producer, err := sarama.NewProducer(client, config)
 		go func() {
 			if err != nil {
