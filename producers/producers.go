@@ -31,7 +31,7 @@ import (
 	"time"
 )
 
-func resolveConfig() (string, string, string, int, time.Duration, string, time.Duration) {
+func resolveConfig() (string, string, string, int, time.Duration, string, time.Duration, int, time.Duration, int) {
 	rawConfig, err := kafkaClient.LoadConfiguration("producers.properties")
 	if err != nil {
 		panic(err)
@@ -44,7 +44,11 @@ func resolveConfig() (string, string, string, int, time.Duration, string, time.D
 	sleepTime, _ := time.ParseDuration(rawConfig["sleep_time"])
 	flushInterval, _ := time.ParseDuration(rawConfig["flush_interval"])
 
-	return zkConnect, brokerConnect, topic, numPartitions, sleepTime, rawConfig["graphite_connect"], flushInterval
+	flushMsgCount, _ := strconv.Atoi(rawConfig["flush_msg_count"])
+	flushFrequency, _ := time.ParseDuration(rawConfig["flush_frequency"])
+	producerCount, _ := strconv.Atoi(rawConfig["producer_count"])
+
+	return zkConnect, brokerConnect, topic, numPartitions, sleepTime, rawConfig["graphite_connect"], flushInterval, flushMsgCount, flushFrequency, producerCount
 }
 
 func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
@@ -67,7 +71,7 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	numMessage := 0
 
-	zkConnect, brokerConnect, topic, numPartitions, sleepTime, graphiteConnect, graphiteFlushInterval := resolveConfig()
+	zkConnect, brokerConnect, topic, numPartitions, sleepTime, graphiteConnect, graphiteFlushInterval, flushMsgCount, flushFrequency, producerCount := resolveConfig()
 
 	_ = graphiteConnect
 	_ = graphiteFlushInterval
@@ -84,8 +88,8 @@ func main() {
 	}
 
 	config := sarama.NewProducerConfig()
-	config.FlushMsgCount = 8000
-	config.FlushFrequency = 30 * time.Millisecond
+	config.FlushMsgCount = flushMsgCount
+	config.FlushFrequency = flushFrequency
 	config.AckSuccesses = true
 	producer, err := sarama.NewProducer(client, config)
 	if err != nil {
@@ -93,10 +97,10 @@ func main() {
 	}
 	//defer producer.Close()
 	//defer p.Close()
-	for i := 0; i < 1; i++ {
+	for i := 0; i < producerCount; i++ {
 		go func() {
 			for {
-				message := &sarama.MessageToSend{Topic: topic, Key: numMessage, Value: sarama.StringEncoder(fmt.Sprintf("message %d!", numMessage))}
+				message := &sarama.MessageToSend{Topic: topic, Key: sarama.StringEncoder(fmt.Sprintf("%d", numMessage)), Value: sarama.StringEncoder(fmt.Sprintf("message %d!", numMessage))}
 				//if err := p.SendStringSync(fmt.Sprintf("message %d!", numMessage)); err != nil {
 				//	panic(err)
 				//}

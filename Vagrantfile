@@ -28,8 +28,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       vb.customize ["modifyvm", :id, "--memory", "3072"]
     end
 
-    precise64.vm.provision "docker",
-    images: ["ubuntu"]
+#    precise64.vm.provision "docker",
+#    images: ["ubuntu"]
   end
 end
 
