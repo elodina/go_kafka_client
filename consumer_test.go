@@ -172,6 +172,41 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	closeWithin(t, closeTimeout, consumer)
 }
 
+func TestSequentialConsuming(t *testing.T) {
+	topic := fmt.Sprintf("test-sequential-%d", time.Now().Unix())
+	messages := make([]string, 0)
+	for i := 0; i < numMessages; i++ {
+		messages = append(messages, fmt.Sprintf("test-message-%d", i))
+	}
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+	produce(t, messages, topic, localBroker)
+
+	config := testConsumerConfig()
+	config.NumWorkers = 1
+	successChan := make(chan bool)
+	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		value := string(msg.Value)
+		Debug("test", value)
+		message := messages[0]
+		assert(t, value, message)
+		messages = messages[1:]
+		if len(messages) == 0 {
+			successChan <- true
+		}
+		return NewSuccessfulResult(id)
+	}
+
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic:1})
+
+	select {
+	case <-successChan:
+	case <-time.After(consumeTimeout): t.Errorf("Failed to consume %d messages within %s", numMessages, consumeTimeout)
+	}
+	closeWithin(t, 10*time.Second, consumer)
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset

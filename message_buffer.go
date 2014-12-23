@@ -103,7 +103,9 @@ func (mb *messageBuffer) stop() {
 	Debug(mb, "Stopping message buffer")
 	mb.stopSending = true
 	mb.Close <- true
-	close(mb.flush)
+	inLock(&mb.MessageLock, func() {
+			close(mb.flush)
+		})
 	mb.disconnectChannelsForPartition <- mb.TopicPartition
 	Debug(mb, "Stopped message buffer")
 }
