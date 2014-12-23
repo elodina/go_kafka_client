@@ -17,6 +17,19 @@ package go_kafka_client
 
 import "strings"
 
+
+//Information on Consumer subscription. Used to keep it in consumer coordinator.
+type TopicsToNumStreams interface {
+	//Creates a map descibing consumer subscription where keys are topic names and values are number of fetchers used to fetch these topics.
+	GetTopicsToNumStreamsMap() map[string]int
+
+	//Creates a map describing consumer subscription where keys are topic names and values are slices of ConsumerThreadIds used to fetch these topics.
+	GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId
+
+	//Returns a pattern describing this TopicsToNumStreams.
+	Pattern() string
+}
+
 // Constructs a new TopicsToNumStreams for consumer with Consumerid id that works within consumer group Groupid.
 // Uses Coordinator to get consumer information. Returns error if fails to retrieve consumer information from Coordinator.
 func NewTopicsToNumStreams(Groupid string, Consumerid string, Coordinator ConsumerCoordinator, ExcludeInternalTopics bool) (TopicsToNumStreams, error) {

@@ -566,6 +566,103 @@ func (this *ZookeeperCoordinator) tryDeployTopics(Group string, Topics DeployedT
 	return this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerChangesDir, time.Now().Unix()), data)
 }
 
+func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
+	this.ensureZkPathsExist(group)
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
+	var err error
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		Infof(this, "Commencing assertion series at %s", path)
+		_, err = this.zkConn.Create(path, make([]byte, 0), 0, zk.WorldACL(zk.PermAll))
+		if err == nil || err == zk.ErrNodeExists {
+			Infof(this, "Joining state barrier %s", path)
+			_, _, zkWatcher, err := this.zkConn.ChildrenW(path)
+			watcher := make(chan CoordinatorEvent)
+			if err == nil {
+				go func() {
+					for {
+						select {
+						case <-finished: return
+						case <-zkWatcher: {
+							select {
+							case watcher <- Regular:
+							case <-finished: return
+							}
+						}
+						}
+					}
+				}()
+			}
+			err = this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
+			if err != nil {
+				panic(err)
+			}
+			Infof(this, "Successfully joined state barrier %s", path)
+
+			return watcher, err
+		}
+
+		Warnf(this, "Failed to join state barrier %s, retrying...", path)
+		time.Sleep(this.config.RequestBackoff)
+	}
+
+	Errorf(this, "Failed to join state barrier %s after %d retries", path, this.config.MaxRequestRetries)
+
+	return nil, err
+}
+
+func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
+	var children []string
+	var err error
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		children, _, err = this.zkConn.Children(path)
+		if err == nil {
+			return len(children) == expected, err
+		}
+		Warnf(this, "Failed to assert rebalance state %s, retrying...", path)
+		time.Sleep(this.config.RequestBackoff)
+	}
+	Errorf(this, "Failed to assert rebalance state %s after %d retries", path, this.config.MaxRequestRetries)
+
+	return false, err
+}
+
+func (this *ZookeeperCoordinator) StateAssertionSeriesFailed(group string, stateHash string) error {
+	var err error
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		err = this.tryStateAssertionSeriesFailed(group, stateHash)
+		if err == nil {
+			return err
+		}
+		Tracef(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
+		time.Sleep(this.config.RequestBackoff)
+	}
+	return err
+}
+
+func (this *ZookeeperCoordinator) tryStateAssertionSeriesFailed(group string, stateHash string) error {
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
+	Debugf(this, "Trying to fail rebalance at path: %s", path)
+
+	return this.deleteNode(path)
+}
+
+func (this *ZookeeperCoordinator) deleteNode(path string) error {
+	children, _, err := this.zkConn.Children(path)
+	if err != nil {
+		return err
+	}
+	for child := range children {
+		this.deleteNode(fmt.Sprintf("%s/%s", path, child))
+	}
+
+	_, stat, err := this.zkConn.Get(path)
+	if err != nil {
+		return err
+	}
+	return this.zkConn.Delete(path, stat.Version)
+}
+
 /* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 func (this *ZookeeperCoordinator) Unsubscribe() {
 	this.unsubscribe <- true
@@ -656,6 +753,7 @@ func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {
 	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerGroupDir, make([]byte, 0))
 	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerRegistryDir, make([]byte, 0))
 	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerChangesDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerRebalanceDir, make([]byte, 0))
 }
 
 func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Event, error) {
@@ -822,18 +920,20 @@ func NewZookeeperConfig() *ZookeeperConfig {
 }
 
 type zkGroupDirs struct {
-	Group               string
-	ConsumerDir         string
-	ConsumerGroupDir    string
-	ConsumerRegistryDir string
-	ConsumerChangesDir  string
-	ConsumerSyncDir     string
+	Group                string
+	ConsumerDir          string
+	ConsumerGroupDir     string
+	ConsumerRegistryDir  string
+	ConsumerChangesDir   string
+	ConsumerRebalanceDir string
+	ConsumerSyncDir      string
 }
 
 func newZKGroupDirs(group string) *zkGroupDirs {
 	consumerGroupDir := fmt.Sprintf("%s/%s", consumersPath, group)
 	consumerRegistryDir := fmt.Sprintf("%s/ids", consumerGroupDir)
 	consumerChangesDir := fmt.Sprintf("%s/changes", consumerGroupDir)
+	consumerRebalanceDir := fmt.Sprintf("%s/rebalance", consumerGroupDir)
 	consumerSyncDir := fmt.Sprintf("%s/sync", consumerGroupDir)
 	return &zkGroupDirs{
 		Group:               group,
@@ -841,6 +941,7 @@ func newZKGroupDirs(group string) *zkGroupDirs {
 		ConsumerGroupDir:    consumerGroupDir,
 		ConsumerRegistryDir: consumerRegistryDir,
 		ConsumerChangesDir:  consumerChangesDir,
+		ConsumerRebalanceDir: consumerRebalanceDir,
 		ConsumerSyncDir:     consumerSyncDir,
 	}
 }
@@ -907,6 +1008,15 @@ func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan C
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error) {
+	panic("Not implemented")
+}
+func (mzk *mockZookeeperCoordinator) CommenceStateAssertionSeries(group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
+	panic("Not implemented")
+}
+func (mzk *mockZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
+	panic("Not implemented")
+}
+func (mzk *mockZookeeperCoordinator) StateAssertionSeriesFailed(group string, stateHash string) error {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }

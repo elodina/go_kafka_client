@@ -139,10 +139,18 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	allTopics, err := c.config.Coordinator.GetAllTopics()
+	if err != nil {
+		panic(err)
+	}
+	brokers, err := c.config.Coordinator.GetAllBrokers()
+	if err != nil {
+		panic(err)
+	}
 
 	time.Sleep(c.config.DeploymentTimeout)
 
-	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, topicCount, topicPartitionMap)
+	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, allTopics, brokers, topicCount, topicPartitionMap)
 	partitionOwnershipDecision := newPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
 	topicPartitions := make([]*TopicAndPartition, 0)
@@ -229,9 +237,6 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
-
-	time.Sleep(c.config.DeploymentTimeout)
-
 	c.reinitializeConsumer()
 }
 
@@ -245,9 +250,6 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
-
-	time.Sleep(c.config.DeploymentTimeout)
-
 	c.reinitializeConsumer()
 }
 
@@ -353,7 +355,16 @@ func (c *Consumer) applyNewDeployedTopics() {
 		if err != nil {
 			panic(err)
 		}
-		assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, consumersInGroup, topicCount, topicPartitionMap)
+		allTopics, err := c.config.Coordinator.GetAllTopics()
+		if err != nil {
+			panic(err)
+		}
+		brokers, err := c.config.Coordinator.GetAllBrokers()
+		if err != nil {
+			panic(err)
+		}
+
+		assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, consumersInGroup, allTopics, brokers, topicCount, topicPartitionMap)
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 		partitionOwnershipDecision := partitionAssignor(assignmentContext)
 		topicPartitions := make([]*TopicAndPartition, 0)
