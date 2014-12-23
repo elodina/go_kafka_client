@@ -155,6 +155,16 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 	p.Close()
 }
 
+func produce(t *testing.T, messages []string, topic string, brokerAddr string) {
+	p := producer.NewKafkaProducer(topic, []string{brokerAddr})
+	for _, message := range messages {
+		if err := p.SendStringSync(message); err != nil {
+			t.Fatalf("Failed to produce message %s because: %s", message, err)
+		}
+	}
+	p.Close()
+}
+
 func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	select {
 	case <-consumer.Close():

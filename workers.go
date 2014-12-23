@@ -32,6 +32,7 @@ type WorkerManager struct {
 	workers             []*Worker
 	availableWorkers    chan *Worker
 	currentBatch        map[TaskId]*Task //TODO inspect for race conditions
+	batchOrder          []TaskId
 	inputChannel        chan []*Message
 	topicPartition      TopicAndPartition
 	largestOffset       int64
@@ -70,6 +71,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		workers:              workers,
 		inputChannel:         make(chan []*Message),
 		currentBatch:         make(map[TaskId]*Task),
+		batchOrder: 		  make([]TaskId, 0),
 		topicPartition:       topicPartition,
 		largestOffset:        InvalidOffset,
 		failCounter:          NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
@@ -138,12 +140,16 @@ func (wm *WorkerManager) Stop() chan bool {
 
 func (wm *WorkerManager) startBatch(batch []*Message) {
 	inLock(&wm.stopLock, func() {
+		wm.batchOrder = make([]TaskId, 0)
 		for _, message := range batch {
 			topicPartition := TopicAndPartition{message.Topic, message.Partition}
-			wm.currentBatch[TaskId{topicPartition, message.Offset}] = &Task{Msg: message}
+			id := TaskId{topicPartition, message.Offset}
+			wm.batchOrder = append(wm.batchOrder, id)
+			wm.currentBatch[id] = &Task{Msg: message}
 		}
 		wm.pendingTasksCounter.Inc(int64(len(wm.currentBatch)))
-		for _, task := range wm.currentBatch {
+		for _, id := range wm.batchOrder {
+			task := wm.currentBatch[id]
 			worker := <-wm.availableWorkers
 			wm.activeWorkersCounter.Inc(1)
 			wm.pendingTasksCounter.Dec(1)
