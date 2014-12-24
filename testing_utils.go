@@ -227,6 +227,7 @@ func EnsureHasLeader(zkConnect string, topic string) {
 	zookeeper.Connect()
 	hasLeader := false
 
+	numPartitions := 0
 	for !hasLeader {
 		var topicInfo *TopicInfo
 		var err error
@@ -239,6 +240,7 @@ func EnsureHasLeader(zkConnect string, topic string) {
 		if err != nil {
 			continue
 		}
+		numPartitions = len(topicInfo.Partitions)
 
 		hasLeader = true
 		for partition, leaders := range topicInfo.Partitions {
@@ -253,4 +255,5 @@ func EnsureHasLeader(zkConnect string, topic string) {
 			time.Sleep(1 * time.Second)
 		}
 	}
+	time.Sleep(time.Duration(numPartitions) * time.Second)
 }
