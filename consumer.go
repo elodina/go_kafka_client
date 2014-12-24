@@ -835,6 +835,3 @@ func (c *Consumer) StateSnapshot() *StateSnapshot {
 func isOffsetInvalid(offset int64) bool {
 	return offset <= InvalidOffset
 }
-
-2014-12-22/21:04:27 [INFO] [zk] Successfully joined state barrier /consumers/stress-test-group1/rebalance/252688a4d4cff5375fc6baebeee65abb
-2014-12-22/21:04:26 [INFO] [zk] Successfully joined state barrier /consumers/stress-test-group1/rebalance/252688a4d4cff5375fc6baebeee65abb
