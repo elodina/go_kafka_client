@@ -20,33 +20,56 @@ import (
 	"strings"
 	"time"
 	"fmt"
+	"bytes"
+	"encoding/binary"
 )
 
+// MirrorMakerConfig defines configuration options for MirrorMaker
 type MirrorMakerConfig struct {
+	// Whitelist of topics to mirror. Exactly one whitelist or blacklist is allowed.
 	Whitelist string
+
+	// Blacklist of topics to mirror. Exactly one whitelist or blacklist is allowed.
 	Blacklist string
+
+	// Consumer configurations to consume from a source cluster.
 	ConsumerConfigs []string
+
+	// Embedded producer config.
 	ProducerConfig string
+
+	// Number of producer instances.
 	NumProducers int
+
+	// Number of consumption streams.
 	NumStreams int
+
+	// Flag to preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5. Note that this can affect performance.
 	PreservePartitions bool
+
+	// Destination topic prefix. E.g. if message was read from topic "test" and prefix is "dc1_" it'll be written to topic "dc1_test".
 	TopicPrefix string
+
+	// Number of messages that are buffered between the consumer and producer.
 	ChannelSize int
 }
 
+// Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
 	return &MirrorMakerConfig{}
 }
 
+// MirrorMaker is a tool to mirror source Kafka cluster into a target (mirror) Kafka cluster.
+// It uses a Kafka consumer to consume messages from the source cluster, and re-publishes those messages to the target cluster.
 type MirrorMaker struct {
 	config *MirrorMakerConfig
 	consumers []*Consumer
 	producers []*sarama.Producer
-	producerRoutineStoppers []chan bool
 	messageChannel chan *Message
 	timestamp int64
 }
 
+// Creates a new MirrorMaker using given MirrorMakerConfig.
 func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 	return &MirrorMaker{
 		config: config,
@@ -55,11 +78,13 @@ func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 	}
 }
 
+// Starts the MirrorMaker. This method is blocking and should probably be run in a separate goroutine.
 func (this *MirrorMaker) Start() {
 	this.startConsumers()
 	this.startProducers()
 }
 
+// Gracefully stops the MirrorMaker.
 func (this *MirrorMaker) Stop() {
 	consumerCloseChannels := make([]<-chan bool, 0)
 	for _, consumer := range this.consumers {
@@ -70,10 +95,9 @@ func (this *MirrorMaker) Stop() {
 		<-ch
 	}
 
-	for _, stopper := range this.producerRoutineStoppers {
-		stopper <- true
-	}
+	close(this.messageChannel)
 
+	//TODO maybe drain message channel first?
 	for _, producer := range this.producers {
 		producer.Close()
 	}
@@ -108,8 +132,10 @@ func (this *MirrorMaker) startConsumers() {
 		this.consumers = append(this.consumers, consumer)
 		if this.config.Whitelist != "" {
 			go consumer.StartWildcard(NewWhiteList(this.config.Whitelist), this.config.NumStreams)
-		} else {
+		} else if this.config.Blacklist != "" {
 			go consumer.StartWildcard(NewBlackList(this.config.Blacklist), this.config.NumStreams)
+		} else {
+			panic("Consume pattern not specified")
 		}
 	}
 }
@@ -142,7 +168,7 @@ func (this *MirrorMaker) startProducers() {
 		config.MaxMessageBytes = conf.MaxMessageBytes
 		config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
 		if this.config.PreservePartitions {
-			config.Partitioner = sarama.NewHashPartitioner
+			config.Partitioner = NewIntPartitioner
 		} else {
 			config.Partitioner = sarama.NewRandomPartitioner
 		}
@@ -155,22 +181,67 @@ func (this *MirrorMaker) startProducers() {
 			panic(err)
 		}
 		this.producers = append(this.producers, producer)
-		stopper := make(chan bool)
-		this.producerRoutineStoppers = append(this.producerRoutineStoppers, stopper)
-		go this.produceRoutine(producer, stopper)
+		go this.produceRoutine(producer)
 	}
 }
 
-func (this *MirrorMaker) produceRoutine(producer *sarama.Producer, stopper chan bool) {
-	for {
-		select {
-			case <-stopper: {
-				Info("mirrormaker", "Producer stop triggered")
-				return
-			}
-			case msg := <-this.messageChannel: {
-				producer.Input() <- &sarama.MessageToSend{Topic: this.config.TopicPrefix + msg.Topic, Key: sarama.ByteEncoder(msg.Key), Value: sarama.ByteEncoder(msg.Value)}
-			}
+func (this *MirrorMaker) produceRoutine(producer *sarama.Producer) {
+	for msg := range this.messageChannel {
+		var key sarama.Encoder
+		if !this.config.PreservePartitions {
+			key = sarama.ByteEncoder(msg.Key)
+		} else {
+			key = Int32Encoder(msg.Partition)
 		}
+		producer.Input() <- &sarama.MessageToSend{Topic: this.config.TopicPrefix + msg.Topic, Key: key, Value: sarama.ByteEncoder(msg.Value)}
 	}
+}
+
+// IntPartitioner is used when we want to preserve partitions.
+// This partitioner should be used ONLY with Int32Encoder as it contains unsafe conversions (for performance reasons mostly).
+type IntPartitioner struct {}
+
+// PartitionerConstructor function used by Sarama library.
+func NewIntPartitioner() sarama.Partitioner {
+	return new(IntPartitioner)
+}
+
+// Partition takes the key and partition count and chooses a partition. IntPartitioner should ONLY receive Int32Encoder keys.
+// Passing it a Int32Encoder(2) key means it should assign the incoming message partition = 2 (assuming this partition exists, otherwise there's no guarantee which partition will be picked).
+func (this *IntPartitioner) Partition(key sarama.Encoder, numPartitions int32) (int32, error) {
+	if key == nil {
+		panic("IntPartitioner does not work without keys.")
+	}
+	b, err := key.Encode()
+	if err != nil {
+		return -1, err
+	}
+
+	buf := bytes.NewBuffer(b)
+	partition, err := binary.ReadUvarint(buf)
+	if err != nil {
+		return -1, err
+	}
+
+	return int32(partition) % numPartitions, nil
+}
+
+// Another Partitioner method used by Sarama.
+func (this *IntPartitioner) RequiresConsistency() bool {
+	return true
+}
+
+// Int32Encoder takes an int32 and is able to transform it into a []byte.
+type Int32Encoder int32
+
+// Encodes the current value into a []byte. Should never return an error.
+func (this Int32Encoder) Encode() ([]byte, error) {
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf, uint32(this))
+	return buf, nil
+}
+
+// Length for Int32Encoder is always 4.
+func (this Int32Encoder) Length() int {
+	return 4
 }
