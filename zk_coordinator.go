@@ -137,13 +137,9 @@ func (this *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid 
 }
 
 func (this *ZookeeperCoordinator) tryDeregisterConsumer(Consumerid string, Groupid string) error {
-	pathToConsumer := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
-	Debugf(this, "Trying to deregister consumer at path: %s", pathToConsumer)
-	_, stat, err := this.zkConn.Get(pathToConsumer)
-	if err != nil {
-		return err
-	}
-	return this.zkConn.Delete(pathToConsumer, stat.Version)
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
+	Debugf(this, "Trying to deregister consumer at path: %s", path)
+	return this.deleteNode(path)
 }
 
 // Gets the information about consumer with Consumerid id that is a part of consumer group Groupid from this ConsumerCoordinator.
@@ -398,17 +394,8 @@ func (this *ZookeeperCoordinator) PurgeNotificationForGroup(Groupid string, noti
 }
 
 func (this *ZookeeperCoordinator) tryPurgeNotificationForGroup(Groupid string, notificationId string) error {
-	pathToDelete := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerChangesDir, notificationId)
-	_, stat, err := this.zkConn.Get(pathToDelete)
-	if err != nil && err != zk.ErrNoNode {
-		return err
-	}
-	err = this.zkConn.Delete(pathToDelete, stat.Version)
-	if err != nil && err != zk.ErrNoNode {
-		return err
-	}
-
-	return nil
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerChangesDir, notificationId)
+	return this.deleteNode(path)
 }
 
 // Subscribes for any change that should trigger consumer rebalance on consumer group Groupid in this ConsumerCoordinator.
@@ -566,6 +553,8 @@ func (this *ZookeeperCoordinator) tryDeployTopics(Group string, Topics DeployedT
 	return this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerChangesDir, time.Now().Unix()), data)
 }
 
+/*
+*/
 func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
 	this.ensureZkPathsExist(group)
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
@@ -610,7 +599,10 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 	return nil, err
 }
 
+/*
+*/
 func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
+	Debugf(this, "Trying to assert rebalance state for group %s and hash %s with %d", group, stateHash, expected)
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
 	var children []string
 	var err error
@@ -627,20 +619,23 @@ func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash s
 	return false, err
 }
 
-func (this *ZookeeperCoordinator) StateAssertionSeriesFailed(group string, stateHash string) error {
+/*
+*/
+func (this *ZookeeperCoordinator) RemoveStateAssertionSeries(group string, stateHash string) error {
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err = this.tryStateAssertionSeriesFailed(group, stateHash)
-		if err == nil {
+		err = this.tryRemoveStateAssertionSeries(group, stateHash)
+		if err == nil || err == zk.ErrNoNode {
 			return err
 		}
 		Tracef(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
+
 	return err
 }
 
-func (this *ZookeeperCoordinator) tryStateAssertionSeriesFailed(group string, stateHash string) error {
+func (this *ZookeeperCoordinator) tryRemoveStateAssertionSeries(group string, stateHash string) error {
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
 	Debugf(this, "Trying to fail rebalance at path: %s", path)
 
@@ -652,8 +647,11 @@ func (this *ZookeeperCoordinator) deleteNode(path string) error {
 	if err != nil {
 		return err
 	}
-	for child := range children {
-		this.deleteNode(fmt.Sprintf("%s/%s", path, child))
+	for _, child := range children {
+		err := this.deleteNode(fmt.Sprintf("%s/%s", path, child))
+		if err != nil && err != zk.ErrNoNode {
+			return err
+		}
 	}
 
 	_, stat, err := this.zkConn.Get(path)
@@ -717,7 +715,7 @@ func (this *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic
 func (this *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topic string, Partition int32) error {
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err := this.tryReleasePartitionOwnership(Groupid, Topic, Partition)
+		err = this.tryReleasePartitionOwnership(Groupid, Topic, Partition)
 		if err == nil {
 			return err
 		}
@@ -727,17 +725,14 @@ func (this *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topi
 	return err
 }
 
-func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(Groupid string, Topic string, Partition int32) error {
-	err := this.deletePartitionOwnership(Groupid, Topic, Partition)
-	if err != nil {
-		if err == zk.ErrNoNode {
-			Warn(this, err)
-			return nil
-		} else {
-			return err
-		}
+func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(group string, topic string, partition int32) error {
+	path := fmt.Sprintf("%s/%d", newZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
+	err := this.deleteNode(path)
+	if err != nil && err != zk.ErrNoNode {
+		return err
+	} else {
+		return nil
 	}
-	return nil
 }
 
 // Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Groupid.
@@ -871,20 +866,6 @@ func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCrea
 	return err
 }
 
-func (this *ZookeeperCoordinator) deletePartitionOwnership(group string, topic string, partition int32) error {
-	pathToDelete := fmt.Sprintf("%s/%d", newZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
-	_, stat, err := this.zkConn.Get(pathToDelete)
-	if err != nil {
-		return err
-	}
-	err = this.zkConn.Delete(pathToDelete, stat.Version)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (this *ZookeeperCoordinator) updateRecord(pathToCreate string, dataToWrite []byte) error {
 	Debugf(this, "Trying to update path %s", pathToCreate)
 	_, stat, _ := this.zkConn.Get(pathToCreate)
@@ -1016,7 +997,7 @@ func (mzk *mockZookeeperCoordinator) CommenceStateAssertionSeries(consumerId str
 func (mzk *mockZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) StateAssertionSeriesFailed(group string, stateHash string) error {
+func (mzk *mockZookeeperCoordinator) RemoveStateAssertionSeries(group string, stateHash string) error {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }

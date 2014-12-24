@@ -71,6 +71,8 @@ type Consumer struct {
 	wmsIdleTimer                      metrics.Timer
 
 	newDeployedTopics []*DeployedTopics
+
+	lastSuccessfulRebalanceHash 	string
 }
 
 /* NewConsumer creates a new Consumer with a given configuration. Creating a Consumer does not start fetching immediately. */
@@ -555,70 +557,78 @@ func (c *Consumer) rebalance() {
 	if !c.isShuttingdown {
 		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
-		context := c.startStateAssertionSeries()
-		//TODO: should it be an infinite loop?
 		c.releasePartitionOwnership(c.topicRegistry)
+		context, rebalanceRequired := c.startStateAssertionSeries()
 		for context == nil {
-			context = c.startStateAssertionSeries()
+			context, rebalanceRequired = c.startStateAssertionSeries()
 		}
 
-		var success = false
-		for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-			if tryRebalance(c, context, partitionAssignor) {
-				success = true
-				break
-			} else {
-				time.Sleep(c.config.RebalanceBackoff)
+		if rebalanceRequired {
+			var success = false
+			for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
+				if tryRebalance(c, context, partitionAssignor) {
+					success = true
+					break
+				} else {
+					time.Sleep(c.config.RebalanceBackoff)
+				}
 			}
-		}
 
-		if !success && !c.isShuttingdown {
-			panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
+			if !success && !c.isShuttingdown {
+				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
+			}
 		}
 	} else {
 		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.Consumerid)
 	}
 }
 
-func (c *Consumer) startStateAssertionSeries() *assignmentContext {
-	context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
+func (c *Consumer) startStateAssertionSeries() (*assignmentContext, bool) {
+	context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid,
+										 c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
 		//TODO what to do next?
 		panic(err)
 	}
 
-	finished := make(chan bool)
-	newConsumerAdded, err := c.config.Coordinator.CommenceStateAssertionSeries(c.config.Consumerid, c.config.Groupid, context.hash(), finished)
-	if err != nil {
-		//TODO what to do next?
-		panic(err)
-	}
+	if context.hash() != c.lastSuccessfulRebalanceHash {
+		finished := make(chan bool)
+		newConsumerAdded, err := c.config.Coordinator.CommenceStateAssertionSeries(c.config.Consumerid, c.config.Groupid, context.hash(), finished)
+		if err != nil {
+			//TODO what to do next?
+			panic(err)
+		}
 
-	passed, err := c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
-	for !passed {
-		select {
-		case <-newConsumerAdded: {
-			passed, err = c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
-			if err != nil {
-				//TODO what to do next?
-				panic(err)
+		passed, err := c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
+		for !passed {
+			select {
+			case <-newConsumerAdded: {
+				passed, err = c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
+				if err != nil {
+					//TODO what to do next?
+					panic(err)
+				}
+			}
+			case <-time.After(c.config.RebalanceBarrierTimeout): {
+				err = c.config.Coordinator.RemoveStateAssertionSeries(c.config.Groupid, context.hash())
+				if err != nil {
+					//TODO what to do next?
+					panic(err)
+				}
+				return nil, true
+			}
 			}
 		}
-		case <-time.After(1 * time.Minute): {
-			err := c.config.Coordinator.StateAssertionSeriesFailed(c.config.Groupid, context.hash())
-			if err != nil {
-				//TODO what to do next?
-				panic(err)
-			}
-			return nil
-		}
-		}
+
+		finished <- true
+
+		c.lastSuccessfulRebalanceHash = context.hash()
+
+		return context, true
+	} else {
+		return context, false
 	}
-
-	finished <- true
-
-	return context
 }
 
 func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor assignStrategy) bool {

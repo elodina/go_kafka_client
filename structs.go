@@ -233,9 +233,7 @@ type ConsumerCoordinator interface {
 
 	/*
 	*/
-	StateAssertionSeriesFailed(group string, stateHash string) error
-
-
+	RemoveStateAssertionSeries(group string, stateHash string) error
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
