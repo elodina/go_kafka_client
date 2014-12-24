@@ -18,13 +18,14 @@ package go_kafka_client
 import (
 	"fmt"
 	"github.com/samuel/go-zookeeper/zk"
-	"github.com/stealthly/go-kafka/producer"
+//	"github.com/stealthly/go-kafka/producer"
 	"os"
 	"os/exec"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
+	"github.com/Shopify/sarama"
 )
 
 type logWriter struct {
@@ -145,24 +146,45 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 }
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
-	p := producer.NewKafkaProducer(topic, []string{brokerAddr})
-	for i := 0; i < n; i++ {
-		message := fmt.Sprintf("test-kafka-message-%d", i)
-		if err := p.SendStringSync(message); err != nil {
-			t.Fatalf("Failed to produce message %s because: %s", message, err)
-		}
+	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	if err != nil {
+		t.Fatal(err)
 	}
-	p.Close()
+	defer client.Close()
+
+	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	for i := 0; i < n; i++ {
+		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+	}
+	select {
+	case e := <-producer.Errors(): t.Fatalf("Failed to produce message: %s", e)
+	case <-time.After(5 * time.Second):
+	}
 }
 
 func produce(t *testing.T, messages []string, topic string, brokerAddr string) {
-	p := producer.NewKafkaProducer(topic, []string{brokerAddr})
-	for _, message := range messages {
-		if err := p.SendStringSync(message); err != nil {
-			t.Fatalf("Failed to produce message %s because: %s", message, err)
-		}
+	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	if err != nil {
+		t.Fatal(err)
 	}
-	p.Close()
+	defer client.Close()
+
+	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	for _, message := range messages {
+		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(message)}
+	}
+	select {
+	case e := <-producer.Errors(): t.Fatalf("Failed to produce message: %s", e)
+	case <-time.After(5 * time.Second):
+	}
 }
 
 func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
