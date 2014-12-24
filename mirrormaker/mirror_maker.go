@@ -21,8 +21,6 @@ import (
 	"os"
 	kafka "github.com/stealthly/go_kafka_client"
 	"os/signal"
-	"github.com/Shopify/sarama"
-	"strings"
 )
 
 type consumerConfigs []string
@@ -36,11 +34,6 @@ func (i *consumerConfigs) Set(value string) error {
 	return nil
 }
 
-var consumers []*kafka.Consumer
-var producers []*sarama.Producer
-var producerRoutineStoppers []chan bool
-var messageChannel chan *kafka.Message
-
 var whitelist = flag.String("whitelist", "", "regex pattern for whitelist. Providing both whitelist and blacklist is an error.")
 var blacklist = flag.String("blacklist", "", "regex pattern for blacklist. Providing both whitelist and blacklist is an error.")
 var consumerConfig consumerConfigs
@@ -51,7 +44,7 @@ var preservePartitions = flag.Bool("preserve.partitions", false, "preserve parti
 var prefix = flag.String("prefix", "", "Destination topic prefix.")
 var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffered between the consumer and producer.")
 
-func parseAndValidateArgs() {
+func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	flag.Var(&consumerConfig, "consumer.config", "Path to consumer configuration file.")
 	flag.Parse()
 
@@ -71,133 +64,28 @@ func parseAndValidateArgs() {
 		fmt.Println("Queue size should be equal or greater than 0")
 		os.Exit(1)
 	}
+
+	config := kafka.NewMirrorMakerConfig()
+	config.Blacklist = *blacklist
+	config.Whitelist = *whitelist
+	config.ChannelSize = *queueSize
+	config.ConsumerConfigs = []string(consumerConfig)
+	config.NumProducers = *numProducers
+	config.NumStreams = *numStreams
+	config.PreservePartitions = *preservePartitions
+	config.ProducerConfig = *producerConfig
+	config.TopicPrefix = *prefix
+
+	return config
 }
 
 func main() {
-	parseAndValidateArgs()
-	messageChannel = make(chan *kafka.Message, *queueSize)
-
-	startConsumers()
-	startProducers()
+	config := parseAndValidateArgs()
+	mirrorMaker := kafka.NewMirrorMaker(config)
+	go mirrorMaker.Start()
 
 	ctrlc := make(chan os.Signal, 1)
 	signal.Notify(ctrlc, os.Interrupt)
 	<-ctrlc
-	shutdown()
-}
-
-func startConsumers() {
-	for _, consumerConfigFile := range consumerConfig {
-		config, err := kafka.ConsumerConfigFromFile(consumerConfigFile)
-		if err != nil {
-			panic(err)
-		}
-		zkConfig, err := kafka.ZookeeperConfigFromFile(consumerConfigFile)
-		if err != nil {
-			panic(err)
-		}
-		config.NumWorkers = 1
-		config.Coordinator = kafka.NewZookeeperCoordinator(zkConfig)
-		config.WorkerFailureCallback = func(_ *kafka.WorkerManager) kafka.FailedDecision {
-			return kafka.CommitOffsetAndContinue
-		}
-		config.WorkerFailedAttemptCallback = func(_ *kafka.Task, _ kafka.WorkerResult) kafka.FailedDecision {
-			return kafka.CommitOffsetAndContinue
-		}
-		config.Strategy = func(_ *kafka.Worker, msg *kafka.Message, id kafka.TaskId) kafka.WorkerResult {
-			kafka.Info("mirrormaker", string(msg.Value))
-			messageChannel <- msg
-
-			return kafka.NewSuccessfulResult(id)
-		}
-
-		consumer := kafka.NewConsumer(config)
-		consumers = append(consumers, consumer)
-		if *whitelist != "" {
-			go consumer.StartWildcard(kafka.NewWhiteList(*whitelist), *numStreams)
-		} else {
-			go consumer.StartWildcard(kafka.NewBlackList(*blacklist), *numStreams)
-		}
-	}
-}
-
-func startProducers() {
-	for i := 0; i < *numProducers; i++ {
-		conf, err := kafka.ProducerConfigFromFile(*producerConfig)
-		if err != nil {
-			panic(err)
-		}
-		if err = conf.Validate(); err != nil {
-			panic(err)
-		}
-
-		client, err := sarama.NewClient(conf.Clientid, conf.BrokerList, sarama.NewClientConfig())
-		if err != nil {
-			panic(err)
-		}
-
-		config := sarama.NewProducerConfig()
-		config.ChannelBufferSize = conf.SendBufferSize
-		switch strings.ToLower(conf.CompressionCodec) {
-		case "none": config.Compression = sarama.CompressionNone
-		case "gzip": config.Compression = sarama.CompressionGZIP
-		case "snappy": config.Compression = sarama.CompressionSnappy
-		}
-		config.FlushByteCount = conf.FlushByteCount
-		config.FlushFrequency = conf.FlushTimeout
-		config.FlushMsgCount = conf.BatchSize
-		config.MaxMessageBytes = conf.MaxMessageBytes
-		config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
-		if *preservePartitions {
-			config.Partitioner = sarama.NewHashPartitioner
-		} else {
-			config.Partitioner = sarama.NewRandomPartitioner
-		}
-		config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
-		config.RetryBackoff = conf.RetryBackoff
-		config.Timeout = conf.Timeout
-
-		producer, err := sarama.NewProducer(client, config)
-		if err != nil {
-			panic(err)
-		}
-		producers = append(producers, producer)
-		stopper := make(chan bool)
-		producerRoutineStoppers = append(producerRoutineStoppers, stopper)
-		go produceRoutine(producer, stopper)
-	}
-}
-
-func produceRoutine(producer *sarama.Producer, stopper chan bool) {
-	for {
-		select {
-			case <-stopper: {
-				kafka.Info("mirrormaker", "Producer stop triggered")
-				return
-			}
-			case msg := <-messageChannel: {
-				kafka.Infof("mirrormaker", "Producing message: %s", msg)
-				producer.Input() <- &sarama.MessageToSend{Topic: *prefix + msg.Topic, Key: sarama.ByteEncoder(msg.Key), Value: sarama.ByteEncoder(msg.Value)}
-			}
-		}
-	}
-}
-
-func shutdown() {
-	consumerCloseChannels := make([]<-chan bool, 0)
-	for _, consumer := range consumers {
-		consumerCloseChannels = append(consumerCloseChannels, consumer.Close())
-	}
-
-	for _, ch := range consumerCloseChannels {
-		<-ch
-	}
-
-	for _, stopper := range producerRoutineStoppers {
-		stopper <- true
-	}
-
-	for _, producer := range producers {
-		producer.Close()
-	}
+	mirrorMaker.Stop()
 }
