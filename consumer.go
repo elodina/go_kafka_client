@@ -557,6 +557,7 @@ func (c *Consumer) rebalance() {
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 		context := c.startStateAssertionSeries()
 		//TODO: should it be an infinite loop?
+		c.releasePartitionOwnership(c.topicRegistry)
 		for context == nil {
 			context = c.startStateAssertionSeries()
 		}
@@ -621,8 +622,6 @@ func (c *Consumer) startStateAssertionSeries() *assignmentContext {
 }
 
 func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor assignStrategy) bool {
-	c.releasePartitionOwnership(c.topicRegistry)
-
 	partitionOwnershipDecision := partitionAssignor(context)
 	topicPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, _ := range partitionOwnershipDecision {
