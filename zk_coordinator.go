@@ -1010,7 +1010,7 @@ func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan C
 func (mzk *mockZookeeperCoordinator) GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error) {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) CommenceStateAssertionSeries(group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
+func (mzk *mockZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
