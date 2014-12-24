@@ -237,6 +237,9 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+
+	time.Sleep(c.config.DeploymentTimeout)
+
 	c.reinitializeConsumer()
 }
 
@@ -250,6 +253,9 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+
+	time.Sleep(c.config.DeploymentTimeout)
+
 	c.reinitializeConsumer()
 }
 
@@ -363,7 +369,6 @@ func (c *Consumer) applyNewDeployedTopics() {
 		if err != nil {
 			panic(err)
 		}
-
 		assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, consumersInGroup, allTopics, brokers, topicCount, topicPartitionMap)
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 		partitionOwnershipDecision := partitionAssignor(assignmentContext)
@@ -547,12 +552,18 @@ func (c *Consumer) unsubscribeFromChanges() {
 }
 
 func (c *Consumer) rebalance() {
-	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	if !c.isShuttingdown {
 		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
+		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
+		context := c.startStateAssertionSeries()
+		//TODO: should it be an infinite loop?
+		for context == nil {
+			context = c.startStateAssertionSeries()
+		}
+
 		var success = false
 		for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-			if tryRebalance(c, partitionAssignor) {
+			if tryRebalance(c, context, partitionAssignor) {
 				success = true
 				break
 			} else {
@@ -568,22 +579,51 @@ func (c *Consumer) rebalance() {
 	}
 }
 
-func tryRebalance(c *Consumer, partitionAssignor assignStrategy) bool {
-	brokers, err := c.config.Coordinator.GetAllBrokers()
-	if err != nil {
-		Errorf(c, "Failed to get broker list: %s", err)
-		return false
-	}
-	Infof(c, "%v\n", brokers)
-	c.releasePartitionOwnership(c.topicRegistry)
-
-	assignmentContext, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
+func (c *Consumer) startStateAssertionSeries() *assignmentContext {
+	context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
-		return false
+		//TODO what to do next?
+		panic(err)
 	}
 
-	partitionOwnershipDecision := partitionAssignor(assignmentContext)
+	finished := make(chan bool)
+	newConsumerAdded, err := c.config.Coordinator.CommenceStateAssertionSeries(c.config.Consumerid, c.config.Groupid, context.hash(), finished)
+	if err != nil {
+		//TODO what to do next?
+		panic(err)
+	}
+
+	passed, err := c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
+	for !passed {
+		select {
+		case <-newConsumerAdded: {
+			passed, err = c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
+			if err != nil {
+				//TODO what to do next?
+				panic(err)
+			}
+		}
+		case <-time.After(1 * time.Minute): {
+			err := c.config.Coordinator.StateAssertionSeriesFailed(c.config.Groupid, context.hash())
+			if err != nil {
+				//TODO what to do next?
+				panic(err)
+			}
+			return nil
+		}
+		}
+	}
+
+	finished <- true
+
+	return context
+}
+
+func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor assignStrategy) bool {
+	c.releasePartitionOwnership(c.topicRegistry)
+
+	partitionOwnershipDecision := partitionAssignor(context)
 	topicPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, _ := range partitionOwnershipDecision {
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
@@ -610,7 +650,7 @@ func tryRebalance(c *Consumer, partitionAssignor assignStrategy) bool {
 
 	if c.reflectPartitionOwnershipDecision(partitionOwnershipDecision) {
 		c.topicRegistry = currenttopicRegistry
-		c.initFetchersAndWorkers(assignmentContext)
+		c.initFetchersAndWorkers(context)
 	} else {
 		Errorf(c, "Failed to reflect partition ownership during rebalance")
 		return false
@@ -795,3 +835,6 @@ func (c *Consumer) StateSnapshot() *StateSnapshot {
 func isOffsetInvalid(offset int64) bool {
 	return offset <= InvalidOffset
 }
+
+2014-12-22/21:04:27 [INFO] [zk] Successfully joined state barrier /consumers/stress-test-group1/rebalance/252688a4d4cff5375fc6baebeee65abb
+2014-12-22/21:04:26 [INFO] [zk] Successfully joined state barrier /consumers/stress-test-group1/rebalance/252688a4d4cff5375fc6baebeee65abb
