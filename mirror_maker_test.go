@@ -69,6 +69,154 @@ func TestMirrorMakerWorks(t *testing.T) {
 	mirrorMaker.Stop()
 }
 
+func TestMirrorMakerPreservesPartitions(t *testing.T) {
+	topic := fmt.Sprintf("mirror-maker-partitions-%d", time.Now().Unix())
+	prefix := "mirror_"
+	destTopic := fmt.Sprintf("%s%s", prefix, topic)
+
+	consumeMessages := 100
+	timeout := 1 * time.Minute
+	sourceConsumeStatus := make(chan int)
+	destConsumeStatus := make(chan int)
+	sourceConsumedMessages := 0
+	destConsumedMessages := 0
+
+	CreateMultiplePartitionsTopic(localZk, topic, 5)
+	EnsureHasLeader(localZk, topic)
+	CreateMultiplePartitionsTopic(localZk, destTopic, 5)
+	EnsureHasLeader(localZk, destTopic)
+
+	config := NewMirrorMakerConfig()
+	consumerConfigLocation := createConsumerConfig(t, 1)
+	defer os.Remove(consumerConfigLocation)
+	config.ConsumerConfigs = []string{consumerConfigLocation}
+	config.NumProducers = 1
+	config.NumStreams = 1
+	config.PreservePartitions = true
+	producerConfigLocation := createProducerConfig(t, 1)
+	defer os.Remove(producerConfigLocation)
+	config.ProducerConfig = producerConfigLocation
+	config.TopicPrefix = "mirror_"
+	config.Whitelist = fmt.Sprintf("^%s$", topic)
+	mirrorMaker := NewMirrorMaker(config)
+	go mirrorMaker.Start()
+
+	produceN(t, consumeMessages, topic, localBroker)
+
+	//consume all messages with a regular consumer and make a map of message partitions
+	messagePartitions := make(map[string]int32)
+	sourceConsumerConfig := testConsumerConfig()
+	sourceConsumerConfig.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		messagePartitions[string(msg.Value)] = msg.Partition
+		sourceConsumedMessages++
+		if sourceConsumedMessages == consumeMessages {
+			sourceConsumeStatus <- sourceConsumedMessages
+		}
+		return NewSuccessfulResult(id)
+	}
+	sourceConsumer := NewConsumer(sourceConsumerConfig)
+	go sourceConsumer.StartStatic(map[string]int {topic: 1})
+	select {
+	case <-sourceConsumeStatus:
+	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	}
+	closeWithin(t, 10*time.Second, sourceConsumer)
+
+	//now consume the mirrored topic and make sure all messages are in correct partitions
+	destConsumerConfig := testConsumerConfig()
+	destConsumerConfig.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		expectedPartition := messagePartitions[string(msg.Value)]
+		assert(t, msg.Partition, expectedPartition)
+		destConsumedMessages++
+		if destConsumedMessages == consumeMessages {
+			destConsumeStatus <- destConsumedMessages
+		}
+		return NewSuccessfulResult(id)
+	}
+	destConsumer := NewConsumer(destConsumerConfig)
+	go destConsumer.StartStatic(map[string]int {destTopic: 1})
+	select {
+	case <-destConsumeStatus:
+	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	}
+	closeWithin(t, 10*time.Second, destConsumer)
+}
+
+func TestMirrorMakerPreservesOrder(t *testing.T) {
+	t.Skip("Preserving message order is not implemented yet")
+	topic := fmt.Sprintf("mirror-maker-order-%d", time.Now().Unix())
+	prefix := "mirror_"
+	destTopic := fmt.Sprintf("%s%s", prefix, topic)
+
+	consumeMessages := 100
+	timeout := 1 * time.Minute
+	sourceConsumeStatus := make(chan int)
+	destConsumeStatus := make(chan int)
+	sourceConsumedMessages := 0
+	destConsumedMessages := 0
+
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+	CreateMultiplePartitionsTopic(localZk, destTopic, 1)
+	EnsureHasLeader(localZk, destTopic)
+
+	config := NewMirrorMakerConfig()
+	consumerConfigLocation := createConsumerConfig(t, 1)
+	defer os.Remove(consumerConfigLocation)
+	config.ConsumerConfigs = []string{consumerConfigLocation}
+	config.NumProducers = 2
+	config.NumStreams = 1
+	config.PreserveOrder = true
+	producerConfigLocation := createProducerConfig(t, 1)
+	defer os.Remove(producerConfigLocation)
+	config.ProducerConfig = producerConfigLocation
+	config.TopicPrefix = "mirror_"
+	config.Whitelist = fmt.Sprintf("^%s$", topic)
+	mirrorMaker := NewMirrorMaker(config)
+	go mirrorMaker.Start()
+
+	produceN(t, consumeMessages, topic, localBroker)
+
+	//consume all messages with a regular consumer and make a map of message partitions
+	messageOrder := make([]string, 0)
+	sourceConsumerConfig := testConsumerConfig()
+	sourceConsumerConfig.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		messageOrder = append(messageOrder, string(msg.Value))
+		sourceConsumedMessages++
+		if sourceConsumedMessages == consumeMessages {
+			sourceConsumeStatus <- sourceConsumedMessages
+		}
+		return NewSuccessfulResult(id)
+	}
+	sourceConsumer := NewConsumer(sourceConsumerConfig)
+	go sourceConsumer.StartStatic(map[string]int {topic: 1})
+	select {
+	case <-sourceConsumeStatus:
+	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	}
+	closeWithin(t, 10*time.Second, sourceConsumer)
+
+	//now consume the mirrored topic and make sure all messages are in correct partitions
+	destConsumerConfig := testConsumerConfig()
+	destConsumerConfig.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		expectedMessage := messageOrder[0]
+		assert(t, string(msg.Value), expectedMessage)
+		messageOrder = messageOrder[1:]
+		destConsumedMessages++
+		if destConsumedMessages == consumeMessages {
+			destConsumeStatus <- destConsumedMessages
+		}
+		return NewSuccessfulResult(id)
+	}
+	destConsumer := NewConsumer(destConsumerConfig)
+	go destConsumer.StartStatic(map[string]int {destTopic: 1})
+	select {
+	case <-destConsumeStatus:
+	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	}
+	closeWithin(t, 10*time.Second, destConsumer)
+}
+
 func createConsumerConfig(t *testing.T, id int) string {
 	tmpPath, err := ioutil.TempDir("", "go_kafka_client")
 	if err != nil {

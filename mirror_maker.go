@@ -45,6 +45,9 @@ type MirrorMakerConfig struct {
 	// Flag to preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5. Note that this can affect performance.
 	PreservePartitions bool
 
+	// Flag to preserve message order. E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic. Note that this can affect performance.
+	PreserveOrder bool
+
 	// Destination topic prefix. E.g. if message was read from topic "test" and prefix is "dc1_" it'll be written to topic "dc1_test".
 	TopicPrefix string
 
