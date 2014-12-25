@@ -18,8 +18,6 @@ package go_kafka_client
 import (
 	"github.com/Shopify/sarama"
 	"strings"
-	"time"
-	"fmt"
 	"bytes"
 	"encoding/binary"
 )
@@ -66,7 +64,6 @@ type MirrorMaker struct {
 	consumers []*Consumer
 	producers []*sarama.Producer
 	messageChannel chan *Message
-	timestamp int64
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
@@ -74,7 +71,6 @@ func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 	return &MirrorMaker{
 		config: config,
 		messageChannel: make(chan *Message, config.ChannelSize),
-		timestamp: time.Now().Unix(),
 	}
 }
 
@@ -109,12 +105,12 @@ func (this *MirrorMaker) startConsumers() {
 		if err != nil {
 			panic(err)
 		}
-		config.Groupid = fmt.Sprintf("mirrormaker-%d", this.timestamp)
 		zkConfig, err := ZookeeperConfigFromFile(consumerConfigFile)
 		if err != nil {
 			panic(err)
 		}
 		config.NumWorkers = 1
+		config.AutoOffsetReset = SmallestOffset
 		config.Coordinator = NewZookeeperCoordinator(zkConfig)
 		config.WorkerFailureCallback = func(_ *WorkerManager) FailedDecision {
 			return CommitOffsetAndContinue
