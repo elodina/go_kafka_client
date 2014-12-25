@@ -21,6 +21,7 @@ import (
 	"time"
 	"io/ioutil"
 	"os"
+	"sync"
 )
 
 func TestMirrorMakerWorks(t *testing.T) {
@@ -96,7 +97,7 @@ func TestMirrorMakerPreservesPartitions(t *testing.T) {
 	producerConfigLocation := createProducerConfig(t, 1)
 	defer os.Remove(producerConfigLocation)
 	config.ProducerConfig = producerConfigLocation
-	config.TopicPrefix = "mirror_"
+	config.TopicPrefix = prefix
 	config.Whitelist = fmt.Sprintf("^%s$", topic)
 	mirrorMaker := NewMirrorMaker(config)
 	go mirrorMaker.Start()
@@ -143,7 +144,6 @@ func TestMirrorMakerPreservesPartitions(t *testing.T) {
 }
 
 func TestMirrorMakerPreservesOrder(t *testing.T) {
-	t.Skip("Preserving message order is not implemented yet")
 	topic := fmt.Sprintf("mirror-maker-order-%d", time.Now().Unix())
 	prefix := "mirror_"
 	destTopic := fmt.Sprintf("%s%s", prefix, topic)
@@ -155,22 +155,23 @@ func TestMirrorMakerPreservesOrder(t *testing.T) {
 	sourceConsumedMessages := 0
 	destConsumedMessages := 0
 
-	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	CreateMultiplePartitionsTopic(localZk, topic, 5)
 	EnsureHasLeader(localZk, topic)
-	CreateMultiplePartitionsTopic(localZk, destTopic, 1)
+	CreateMultiplePartitionsTopic(localZk, destTopic, 5)
 	EnsureHasLeader(localZk, destTopic)
 
 	config := NewMirrorMakerConfig()
 	consumerConfigLocation := createConsumerConfig(t, 1)
 	defer os.Remove(consumerConfigLocation)
 	config.ConsumerConfigs = []string{consumerConfigLocation}
-	config.NumProducers = 2
+	config.NumProducers = 3
 	config.NumStreams = 1
+	config.PreservePartitions = true
 	config.PreserveOrder = true
 	producerConfigLocation := createProducerConfig(t, 1)
 	defer os.Remove(producerConfigLocation)
 	config.ProducerConfig = producerConfigLocation
-	config.TopicPrefix = "mirror_"
+	config.TopicPrefix = prefix
 	config.Whitelist = fmt.Sprintf("^%s$", topic)
 	mirrorMaker := NewMirrorMaker(config)
 	go mirrorMaker.Start()
@@ -178,10 +179,16 @@ func TestMirrorMakerPreservesOrder(t *testing.T) {
 	produceN(t, consumeMessages, topic, localBroker)
 
 	//consume all messages with a regular consumer and make a map of message partitions
-	messageOrder := make([]string, 0)
+	messageOrder := make(map[int32][]string)
+	var messageOrderLock sync.Mutex
 	sourceConsumerConfig := testConsumerConfig()
 	sourceConsumerConfig.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-		messageOrder = append(messageOrder, string(msg.Value))
+		messageOrderLock.Lock()
+		defer messageOrderLock.Unlock()
+		if _, exists := messageOrder[msg.Partition]; !exists {
+			messageOrder[msg.Partition] = make([]string, 0)
+		}
+		messageOrder[msg.Partition] = append(messageOrder[msg.Partition], string(msg.Value))
 		sourceConsumedMessages++
 		if sourceConsumedMessages == consumeMessages {
 			sourceConsumeStatus <- sourceConsumedMessages
@@ -199,9 +206,11 @@ func TestMirrorMakerPreservesOrder(t *testing.T) {
 	//now consume the mirrored topic and make sure all messages are in correct partitions
 	destConsumerConfig := testConsumerConfig()
 	destConsumerConfig.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-		expectedMessage := messageOrder[0]
+		messageOrderLock.Lock()
+		defer messageOrderLock.Unlock()
+		expectedMessage := messageOrder[msg.Partition][0]
 		assert(t, string(msg.Value), expectedMessage)
-		messageOrder = messageOrder[1:]
+		messageOrder[msg.Partition] = messageOrder[msg.Partition][1:]
 		destConsumedMessages++
 		if destConsumedMessages == consumeMessages {
 			destConsumeStatus <- destConsumedMessages

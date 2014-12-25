@@ -20,6 +20,8 @@ import (
 	"strings"
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"hash/fnv"
 )
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
@@ -66,19 +68,19 @@ type MirrorMaker struct {
 	config *MirrorMakerConfig
 	consumers []*Consumer
 	producers []*sarama.Producer
-	messageChannel chan *Message
+	messageChannels []chan *Message
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
 func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 	return &MirrorMaker{
 		config: config,
-		messageChannel: make(chan *Message, config.ChannelSize),
 	}
 }
 
 // Starts the MirrorMaker. This method is blocking and should probably be run in a separate goroutine.
 func (this *MirrorMaker) Start() {
+	this.initializeMessageChannels()
 	this.startConsumers()
 	this.startProducers()
 }
@@ -94,7 +96,9 @@ func (this *MirrorMaker) Stop() {
 		<-ch
 	}
 
-	close(this.messageChannel)
+	for _, ch := range this.messageChannels {
+		close(ch)
+	}
 
 	//TODO maybe drain message channel first?
 	for _, producer := range this.producers {
@@ -121,10 +125,19 @@ func (this *MirrorMaker) startConsumers() {
 		config.WorkerFailedAttemptCallback = func(_ *Task, _ WorkerResult) FailedDecision {
 			return CommitOffsetAndContinue
 		}
-		config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-			this.messageChannel <- msg
+		if this.config.PreserveOrder {
+			numProducers := this.config.NumProducers
+			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+				this.messageChannels[topicPartitionHash(msg) % numProducers] <- msg
 
-			return NewSuccessfulResult(id)
+				return NewSuccessfulResult(id)
+			}
+		} else {
+			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+				this.messageChannels[0] <- msg
+
+				return NewSuccessfulResult(id)
+			}
 		}
 
 		consumer := NewConsumer(config)
@@ -136,6 +149,16 @@ func (this *MirrorMaker) startConsumers() {
 		} else {
 			panic("Consume pattern not specified")
 		}
+	}
+}
+
+func (this *MirrorMaker) initializeMessageChannels() {
+	if this.config.PreserveOrder {
+		for i := 0; i < this.config.NumProducers; i++ {
+			this.messageChannels = append(this.messageChannels, make(chan *Message, this.config.ChannelSize))
+		}
+	} else {
+		this.messageChannels = append(this.messageChannels, make(chan *Message, this.config.ChannelSize))
 	}
 }
 
@@ -180,12 +203,16 @@ func (this *MirrorMaker) startProducers() {
 			panic(err)
 		}
 		this.producers = append(this.producers, producer)
-		go this.produceRoutine(producer)
+		if this.config.PreserveOrder {
+			go this.produceRoutine(producer, i)
+		} else {
+			go this.produceRoutine(producer, 0)
+		}
 	}
 }
 
-func (this *MirrorMaker) produceRoutine(producer *sarama.Producer) {
-	for msg := range this.messageChannel {
+func (this *MirrorMaker) produceRoutine(producer *sarama.Producer, channelIndex int) {
+	for msg := range this.messageChannels[channelIndex] {
 		var key sarama.Encoder
 		if !this.config.PreservePartitions {
 			key = sarama.ByteEncoder(msg.Key)
@@ -194,6 +221,12 @@ func (this *MirrorMaker) produceRoutine(producer *sarama.Producer) {
 		}
 		producer.Input() <- &sarama.MessageToSend{Topic: this.config.TopicPrefix + msg.Topic, Key: key, Value: sarama.ByteEncoder(msg.Value)}
 	}
+}
+
+func topicPartitionHash(msg *Message) int {
+	h := fnv.New32a()
+	h.Write([]byte(fmt.Sprintf("%s%d", msg.Topic, msg.Partition)))
+	return int(h.Sum32())
 }
 
 // IntPartitioner is used when we want to preserve partitions.

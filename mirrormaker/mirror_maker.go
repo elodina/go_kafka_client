@@ -41,6 +41,7 @@ var producerConfig = flag.String("producer.config", "", "Path to producer config
 var numProducers = flag.Int("num.producers", 1, "Number of producers.")
 var numStreams = flag.Int("num.streams", 1, "Number of consumption streams.")
 var preservePartitions = flag.Bool("preserve.partitions", false, "preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.")
+var preserveOrder = flag.Bool("preserve.order", false, "E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.")
 var prefix = flag.String("prefix", "", "Destination topic prefix.")
 var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffered between the consumer and producer.")
 
@@ -73,6 +74,7 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	config.NumProducers = *numProducers
 	config.NumStreams = *numStreams
 	config.PreservePartitions = *preservePartitions
+	config.PreserveOrder = *preserveOrder
 	config.ProducerConfig = *producerConfig
 	config.TopicPrefix = *prefix
 
