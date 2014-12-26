@@ -414,6 +414,7 @@ type consumerFetcherRoutine struct {
 	name              string
 	broker            *BrokerInfo
 	brokerAddr        string //just not to calculate each time
+	brokerConn		  *sarama.Broker
 	allPartitionMap   map[TopicAndPartition]*partitionTopicInfo
 	partitionMap      map[TopicAndPartition]int64
 	partitionMapLock  sync.Mutex
@@ -546,17 +547,18 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	hasMessages := false
 	partitionsWithError := make(map[TopicAndPartition]bool)
 
-	saramaBroker := sarama.NewBroker(f.brokerAddr)
-	err := saramaBroker.Open(newSaramaBrokerConfig(f.manager.config))
-	if err != nil {
-		f.handleFetchError(request, err, partitionsWithError)
+	if f.brokerConn == nil {
+		f.brokerConn = sarama.NewBroker(f.brokerAddr)
+		err := f.brokerConn.Open(newSaramaBrokerConfig(f.manager.config))
+		if err != nil {
+			f.handleFetchError(request, err, partitionsWithError)
+		}
 	}
 
-	response, err := saramaBroker.Fetch(f.manager.config.Clientid, request)
+	response, err := f.brokerConn.Fetch(f.manager.config.Clientid, request)
 	if err != nil {
 		f.handleFetchError(request, err, partitionsWithError)
 	}
-	defer saramaBroker.Close()
 
 	if response != nil {
 		Trace(f, "Processing fetch request")
@@ -708,6 +710,7 @@ func (f *consumerFetcherRoutine) close() <-chan bool {
 		}
 		f.removeAllPartitions()
 		Debug(f, "Sending close finished")
+		f.brokerConn.Close()
 		f.closeFinished <- true
 		Debug(f, "Sent close finished")
 	}()
