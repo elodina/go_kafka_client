@@ -821,6 +821,21 @@ func NewZookeeperConfig() *ZookeeperConfig {
 	return config
 }
 
+func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
+	z, err := LoadConfiguration(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	config := NewZookeeperConfig()
+	setStringSliceConfig(&config.ZookeeperConnect, z["zookeeper.connect"], ",")
+	if setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]) != nil { return nil, err }
+	if setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]) != nil { return nil, err }
+	if setDurationConfig(&config.RequestBackoff, z["zookeeper.request.backoff"]) != nil { return nil, err }
+
+	return config, nil
+}
+
 type zkGroupDirs struct {
 	Group               string
 	ConsumerDir         string

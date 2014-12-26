@@ -99,8 +99,9 @@ func TestStaticConsumingMultiplePartitions(t *testing.T) {
 
 func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	consumeStatus := make(chan int)
-	topic1 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix())
-	topic2 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix()+1)
+	timestamp := time.Now().Unix()
+	topic1 := fmt.Sprintf("test-whitelist-%d-1", timestamp)
+	topic2 := fmt.Sprintf("test-whitelist-%d-2", timestamp)
 
 	CreateMultiplePartitionsTopic(localZk, topic1, 1)
 	EnsureHasLeader(localZk, topic1)
@@ -114,7 +115,7 @@ func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, expectedMessages, consumeTimeout, consumeStatus)
 	consumer := NewConsumer(config)
-	go consumer.StartWildcard(NewWhiteList("test-whitelist-.+"), 1)
+	go consumer.StartWildcard(NewWhiteList(fmt.Sprintf("test-whitelist-%d-.+", timestamp)), 1)
 	if actual := <-consumeStatus; actual != expectedMessages {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
 	}

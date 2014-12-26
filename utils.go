@@ -26,6 +26,8 @@ import (
 	"reflect"
 	"sync"
 	"time"
+	"strings"
+	"strconv"
 )
 
 // Loads a property file located at Path. Returns a map[string]string or error.
@@ -280,4 +282,58 @@ func (b *barrier) reset(size int32) {
 		b.size = size
 		b.watchers = 0
 	})
+}
+
+func setStringConfig(where *string, what string) {
+	if what != "" {
+		*where = what
+	}
+}
+
+func setStringSliceConfig(where *[]string, what string, delimiter string) {
+	if what != "" {
+		splitted := strings.Split(what, delimiter)
+		if len(splitted) > 0 {
+			*where = splitted
+		}
+	}
+}
+
+func setBoolConfig(where *bool, what string) {
+	if what != "" {
+		*where = what == "true"
+	}
+}
+
+func setDurationConfig(where *time.Duration, what string) error {
+	if what != "" {
+		value, err := time.ParseDuration(what)
+		if err == nil {
+			*where = value
+		}
+		return err
+	}
+	return nil
+}
+
+func setIntConfig(where *int, what string) error {
+	if what != "" {
+		value, err := strconv.Atoi(what)
+		if err == nil {
+			*where = value
+		}
+		return err
+	}
+	return nil
+}
+
+func setInt32Config(where *int32, what string) error {
+	if what != "" {
+		value, err := strconv.Atoi(what)
+		if err == nil {
+			*where = int32(value)
+		}
+		return err
+	}
+	return nil
 }
