@@ -64,15 +64,15 @@ func (mb *messageBuffer) autoFlush() {
 		case <-mb.Close:
 			return
 		case <-mb.Timer.C:
-			{
-				Debug(mb, "Batch accumulation timed out. Flushing...")
-				mb.Timer.Reset(mb.Config.FetchBatchTimeout)
+		{
+			Debug(mb, "Batch accumulation timed out. Flushing...")
+			mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 
-				select {
-				case mb.flush <- true:
-				default:
-				}
+			select {
+			case mb.flush <- true:
+			default:
 			}
+		}
 		}
 	}
 }
@@ -103,31 +103,45 @@ func (mb *messageBuffer) stop() {
 	Debug(mb, "Stopping message buffer")
 	mb.stopSending = true
 	mb.Close <- true
-	close(mb.flush)
+	inLock(&mb.MessageLock, func() {
+			close(mb.flush)
+		})
 	mb.disconnectChannelsForPartition <- mb.TopicPartition
 	Debug(mb, "Stopped message buffer")
 }
 
 func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 	inLock(&mb.MessageLock, func() {
-		fetchResponseBlock := data.Data
-		topicPartition := data.TopicPartition
-		if topicPartition != mb.TopicPartition {
-			panic(fmt.Sprintf("%s got batch for wrong topic and partition: %s", mb, topicPartition))
-		}
-		if fetchResponseBlock != nil {
-			for _, message := range fetchResponseBlock.MsgSet.Messages {
-				mb.add(&Message{
-					Key:       message.Msg.Key,
-					Value:     message.Msg.Value,
-					Topic:     topicPartition.Topic,
-					Partition: topicPartition.Partition,
-					Offset:    message.Offset,
-				})
+			fetchResponseBlock := data.Data
+			topicPartition := data.TopicPartition
+			if topicPartition != mb.TopicPartition {
+				panic(fmt.Sprintf("%s got batch for wrong topic and partition: %s", mb, topicPartition))
 			}
-		}
-		mb.askNextBatch <- mb.TopicPartition
-	})
+			if fetchResponseBlock != nil {
+				for _, message := range fetchResponseBlock.MsgSet.Messages {
+					if message.Msg.Set != nil {
+						for _, wrapped := range message.Msg.Set.Messages {
+							mb.add(&Message{
+							Key:       wrapped.Msg.Key,
+							Value:     wrapped.Msg.Value,
+							Topic:     topicPartition.Topic,
+							Partition: topicPartition.Partition,
+							Offset:    wrapped.Offset,
+						})
+						}
+					} else {
+						mb.add(&Message{
+						Key:       message.Msg.Key,
+						Value:     message.Msg.Value,
+						Topic:     topicPartition.Topic,
+						Partition: topicPartition.Partition,
+						Offset:    message.Offset,
+					})
+					}
+				}
+			}
+			mb.askNextBatch <- mb.TopicPartition
+		})
 }
 
 func (mb *messageBuffer) add(msg *Message) {

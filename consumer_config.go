@@ -1,17 +1,17 @@
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- contributor license agreements.  See the NOTICE file distributed with
- this work for additional information regarding copyright ownership.
- The ASF licenses this file to You under the Apache License, Version 2.0
- (the "License"); you may not use this file except in compliance with
- the License.  You may obtain a copy of the License at
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License. */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 
 package go_kafka_client
 
@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	"strconv"
 )
 
 //ConsumerConfig defines configuration options for Consumer
@@ -329,83 +328,88 @@ func ConsumerConfigFromFile(filename string) (*ConsumerConfig, error) {
 	}
 
 	config := DefaultConsumerConfig()
-	setStringEntry(&config.Groupid, c["group.id"])
-	setStringEntry(&config.Consumerid, c["consumer.id"])
-	if setDurationEntry(&config.SocketTimeout, c["socket.timeout"]) != nil { return nil, err }
-	if setInt32Entry(&config.FetchMessageMaxBytes, c["fetch.message.max.bytes"]) != nil { return nil, err }
-	if setIntEntry(&config.NumConsumerFetchers, c["num.consumer.fetchers"]) != nil { return nil, err }
-	if setInt32Entry(&config.QueuedMaxMessages, c["queued.max.message.chunks"]) != nil { return nil, err }
-	if setInt32Entry(&config.RebalanceMaxRetries, c["rebalance.max.retries"]) != nil { return nil, err }
-	if setInt32Entry(&config.FetchMinBytes, c["fetch.min.bytes"]) != nil { return nil, err }
-	if setInt32Entry(&config.FetchWaitMaxMs, c["fetch.wait.max.ms"]) != nil { return nil, err }
-	if setDurationEntry(&config.RebalanceBackoff, c["rebalance.backoff"]) != nil { return nil, err }
-	if setDurationEntry(&config.RefreshLeaderBackoff, c["refresh.leader.backoff"]) != nil { return nil, err }
-	if setIntEntry(&config.OffsetsCommitMaxRetries, c["offset.commit.max.retries"]) != nil { return nil, err }
-	if setDurationEntry(&config.OffsetCommitInterval, c["offset.commit.interval"]) != nil { return nil, err }
-	setStringEntry(&config.OffsetsStorage, c["offsets.storage"])
-	setStringEntry(&config.AutoOffsetReset, c["auto.offset.reset"])
-	setBoolEntry(&config.ExcludeInternalTopics, c["exclude.internal.topics"])
-	setStringEntry(&config.PartitionAssignmentStrategy, c["partition.assignment.strategy"])
-	if setIntEntry(&config.NumWorkers, c["num.workers"]) != nil { return nil, err }
-	if setIntEntry(&config.MaxWorkerRetries, c["max.worker.retries"]) != nil { return nil, err }
-	if setInt32Entry(&config.WorkerRetryThreshold, c["worker.retry.threshold"]) != nil { return nil, err }
-	if setDurationEntry(&config.WorkerThresholdTimeWindow, c["worker.threshold.time.window"]) != nil { return nil, err }
-	if setDurationEntry(&config.WorkerTaskTimeout, c["worker.task.timeout"]) != nil { return nil, err }
-	if setDurationEntry(&config.WorkerBackoff, c["worker.backoff"]) != nil { return nil, err }
-	if setDurationEntry(&config.WorkerManagersStopTimeout, c["worker.managers.stop.timeout"]) != nil { return nil, err }
-	if setIntEntry(&config.FetchBatchSize, c["fetch.batch.size"]) != nil { return nil, err }
-	if setDurationEntry(&config.FetchBatchTimeout, c["fetch.batch.timeout"]) != nil { return nil, err }
-	if setDurationEntry(&config.RequeueAskNextBackoff, c["requeue.ask.next.backoff"]) != nil { return nil, err }
-	if setIntEntry(&config.FetchMaxRetries, c["fetch.max.retries"]) != nil { return nil, err }
-	if setIntEntry(&config.FetchTopicMetadataRetries, c["fetch.topic.metadata.retries"]) != nil { return nil, err }
-	if setDurationEntry(&config.FetchTopicMetadataBackoff, c["fetch.topic.metadata.backoff"]) != nil { return nil, err }
-	if setDurationEntry(&config.FetchRequestBackoff, c["fetch.request.backoff"]) != nil { return nil, err }
-	setBoolEntry(&config.BlueGreenDeploymentEnabled, c["blue.green.deployment.enabled"])
+	setStringConfig(&config.Groupid, c["group.id"])
+	setStringConfig(&config.Consumerid, c["consumer.id"])
+	if setDurationConfig(&config.SocketTimeout, c["socket.timeout"]) != nil {
+		return nil, err
+	}
+	if setInt32Config(&config.FetchMessageMaxBytes, c["fetch.message.max.bytes"]) != nil {
+		return nil, err
+	}
+	if setIntConfig(&config.NumConsumerFetchers, c["num.consumer.fetchers"]) != nil {
+		return nil, err
+	}
+	if setInt32Config(&config.QueuedMaxMessages, c["queued.max.message.chunks"]) != nil {
+		return nil, err
+	}
+	if setInt32Config(&config.RebalanceMaxRetries, c["rebalance.max.retries"]) != nil {
+		return nil, err
+	}
+	if setInt32Config(&config.FetchMinBytes, c["fetch.min.bytes"]) != nil {
+		return nil, err
+	}
+	if setInt32Config(&config.FetchWaitMaxMs, c["fetch.wait.max.ms"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.RebalanceBackoff, c["rebalance.backoff"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.RefreshLeaderBackoff, c["refresh.leader.backoff"]) != nil {
+		return nil, err
+	}
+	if setIntConfig(&config.OffsetsCommitMaxRetries, c["offset.commit.max.retries"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.OffsetCommitInterval, c["offset.commit.interval"]) != nil {
+		return nil, err
+	}
+	setStringConfig(&config.OffsetsStorage, c["offsets.storage"])
+	setStringConfig(&config.AutoOffsetReset, c["auto.offset.reset"])
+	setBoolConfig(&config.ExcludeInternalTopics, c["exclude.internal.topics"])
+	setStringConfig(&config.PartitionAssignmentStrategy, c["partition.assignment.strategy"])
+	if setIntConfig(&config.NumWorkers, c["num.workers"]) != nil {
+		return nil, err
+	}
+	if setIntConfig(&config.MaxWorkerRetries, c["max.worker.retries"]) != nil {
+		return nil, err
+	}
+	if setInt32Config(&config.WorkerRetryThreshold, c["worker.retry.threshold"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.WorkerThresholdTimeWindow, c["worker.threshold.time.window"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.WorkerTaskTimeout, c["worker.task.timeout"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.WorkerBackoff, c["worker.backoff"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.WorkerManagersStopTimeout, c["worker.managers.stop.timeout"]) != nil {
+		return nil, err
+	}
+	if setIntConfig(&config.FetchBatchSize, c["fetch.batch.size"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.FetchBatchTimeout, c["fetch.batch.timeout"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.RequeueAskNextBackoff, c["requeue.ask.next.backoff"]) != nil {
+		return nil, err
+	}
+	if setIntConfig(&config.FetchMaxRetries, c["fetch.max.retries"]) != nil {
+		return nil, err
+	}
+	if setIntConfig(&config.FetchTopicMetadataRetries, c["fetch.topic.metadata.retries"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.FetchTopicMetadataBackoff, c["fetch.topic.metadata.backoff"]) != nil {
+		return nil, err
+	}
+	if setDurationConfig(&config.FetchRequestBackoff, c["fetch.request.backoff"]) != nil {
+		return nil, err
+	}
+	setBoolConfig(&config.BlueGreenDeploymentEnabled, c["blue.green.deployment.enabled"])
 
 	return config, nil
-}
-
-func setStringEntry(where *string, what string) {
-	if what != "" {
-		*where = what
-	}
-}
-
-func setBoolEntry(where *bool, what string) {
-	if what != "" {
-		*where = what == "true"
-	}
-}
-
-func setDurationEntry(where *time.Duration, what string) error {
-	if what != "" {
-		value, err := time.ParseDuration(what)
-		if err == nil {
-			*where = value
-		}
-		return err
-	}
-	return nil
-}
-
-func setIntEntry(where *int, what string) error {
-	if what != "" {
-		value, err := strconv.Atoi(what)
-		if err == nil {
-			*where = value
-		}
-		return err
-	}
-	return nil
-}
-
-func setInt32Entry(where *int32, what string) error {
-	if what != "" {
-		value, err := strconv.Atoi(what)
-		if err == nil {
-			*where = int32(value)
-		}
-		return err
-	}
-	return nil
 }

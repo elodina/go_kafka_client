@@ -25,12 +25,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.define "precise64" do |precise64|
     precise64.vm.network :private_network, ip: "172.16.22.44"
     precise64.vm.provider :virtualbox do |vb|
-      vb.customize ["modifyvm", :id, "--memory", "3072"]
+      vb.customize ["modifyvm", :id, "--memory", "1024"]
     end
 
-#    precise64.vm.provision "docker",
-#    images: ["ubuntu"]
+    precise64.vm.provision "docker",
+    images: ["ubuntu"]
   end
 end
-
-

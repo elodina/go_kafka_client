@@ -1,17 +1,17 @@
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- contributor license agreements.  See the NOTICE file distributed with
- this work for additional information regarding copyright ownership.
- The ASF licenses this file to You under the Apache License, Version 2.0
- (the "License"); you may not use this file except in compliance with
- the License.  You may obtain a copy of the License at
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License. */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 
 package go_kafka_client
 
@@ -29,17 +29,17 @@ const (
 //Single Kafka message that is sent to user-defined Strategy
 type Message struct {
 	// Partition key.
-	Key       []byte
+	Key []byte
 	// Message value.
-	Value     []byte
+	Value []byte
 	// Topic this message came from.
-	Topic     string
+	Topic string
 
 	// Partition this message came from.
 	Partition int32
 
 	// Message offset.
-	Offset    int64
+	Offset int64
 }
 
 func (m *Message) String() string {
@@ -256,7 +256,7 @@ type CoordinatorEvent string
 
 const (
 	// A regular coordinator event that should normally trigger consumer rebalance.
-	Regular CoordinatorEvent          = "Regular"
+	Regular CoordinatorEvent = "Regular"
 
 	// A coordinator event that informs a consumer group of new deployed topics.
 	NewTopicDeployed CoordinatorEvent = "NewTopicDeployed"
