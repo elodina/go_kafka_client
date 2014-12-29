@@ -211,7 +211,15 @@ func TestSequentialConsuming(t *testing.T) {
 	closeWithin(t, 10*time.Second, consumer)
 }
 
-func TestCompression(t *testing.T) {
+func TestGzipCompression(t *testing.T) {
+	testCompression(t, sarama.CompressionGZIP)
+}
+
+func TestSnappyCompression(t *testing.T) {
+	testCompression(t, sarama.CompressionSnappy)
+}
+
+func testCompression(t *testing.T, codec sarama.CompressionCodec) {
 	topic := fmt.Sprintf("test-compression-%d", time.Now().Unix())
 	messages := make([]string, 0)
 	for i := 0; i < numMessages; i++ {
@@ -220,7 +228,7 @@ func TestCompression(t *testing.T) {
 
 	CreateMultiplePartitionsTopic(localZk, topic, 1)
 	EnsureHasLeader(localZk, topic)
-	produce(t, messages, topic, localBroker, sarama.CompressionGZIP)
+	produce(t, messages, topic, localBroker, codec)
 
 	config := testConsumerConfig()
 	config.NumWorkers = 1
