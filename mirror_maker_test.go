@@ -1,27 +1,27 @@
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- contributor license agreements.  See the NOTICE file distributed with
- this work for additional information regarding copyright ownership.
- The ASF licenses this file to You under the Apache License, Version 2.0
- (the "License"); you may not use this file except in compliance with
- the License.  You may obtain a copy of the License at
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License. */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 
 package go_kafka_client
 
 import (
-	"testing"
 	"fmt"
-	"time"
 	"io/ioutil"
 	"os"
 	"sync"
+	"testing"
+	"time"
 )
 
 func TestMirrorMakerWorks(t *testing.T) {
@@ -62,7 +62,7 @@ func TestMirrorMakerWorks(t *testing.T) {
 	consumerConfig := testConsumerConfig()
 	consumerConfig.Strategy = newCountingStrategy(t, consumeMessages, timeout, consumeStatus)
 	consumer := NewConsumer(consumerConfig)
-	go consumer.StartStatic(map[string]int {topic: 1})
+	go consumer.StartStatic(map[string]int{topic: 1})
 	if actual := <-consumeStatus; actual != consumeMessages {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, timeout, actual)
 	}
@@ -116,10 +116,11 @@ func TestMirrorMakerPreservesPartitions(t *testing.T) {
 		return NewSuccessfulResult(id)
 	}
 	sourceConsumer := NewConsumer(sourceConsumerConfig)
-	go sourceConsumer.StartStatic(map[string]int {topic: 1})
+	go sourceConsumer.StartStatic(map[string]int{topic: 1})
 	select {
 	case <-sourceConsumeStatus:
-	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	case <-time.After(timeout):
+		t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
 	}
 	closeWithin(t, 10*time.Second, sourceConsumer)
 
@@ -135,10 +136,11 @@ func TestMirrorMakerPreservesPartitions(t *testing.T) {
 		return NewSuccessfulResult(id)
 	}
 	destConsumer := NewConsumer(destConsumerConfig)
-	go destConsumer.StartStatic(map[string]int {destTopic: 1})
+	go destConsumer.StartStatic(map[string]int{destTopic: 1})
 	select {
 	case <-destConsumeStatus:
-	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	case <-time.After(timeout):
+		t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
 	}
 	closeWithin(t, 10*time.Second, destConsumer)
 }
@@ -196,10 +198,11 @@ func TestMirrorMakerPreservesOrder(t *testing.T) {
 		return NewSuccessfulResult(id)
 	}
 	sourceConsumer := NewConsumer(sourceConsumerConfig)
-	go sourceConsumer.StartStatic(map[string]int {topic: 1})
+	go sourceConsumer.StartStatic(map[string]int{topic: 1})
 	select {
 	case <-sourceConsumeStatus:
-	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	case <-time.After(timeout):
+		t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
 	}
 	closeWithin(t, 10*time.Second, sourceConsumer)
 
@@ -218,10 +221,11 @@ func TestMirrorMakerPreservesOrder(t *testing.T) {
 		return NewSuccessfulResult(id)
 	}
 	destConsumer := NewConsumer(destConsumerConfig)
-	go destConsumer.StartStatic(map[string]int {destTopic: 1})
+	go destConsumer.StartStatic(map[string]int{destTopic: 1})
 	select {
 	case <-destConsumeStatus:
-	case <-time.After(timeout): t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
+	case <-time.After(timeout):
+		t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
 	}
 	closeWithin(t, 10*time.Second, destConsumer)
 }
