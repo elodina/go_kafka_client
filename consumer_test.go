@@ -17,6 +17,7 @@ package go_kafka_client
 
 import (
 	"fmt"
+	"github.com/Shopify/sarama"
 	"sync"
 	"testing"
 	"time"
@@ -137,14 +138,14 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 		value := string(msg.Value)
 		inLock(&messagesMapLock, func() {
-			if _, exists := messagesMap[value]; exists {
-				t.Errorf("Duplicate message: %s", value)
-			}
-			messagesMap[value] = true
-			if len(messagesMap) == messages {
-				consumeFinished <- true
-			}
-		})
+				if _, exists := messagesMap[value]; exists {
+					t.Errorf("Duplicate message: %s", value)
+				}
+				messagesMap[value] = true
+				if len(messagesMap) == messages {
+					consumeFinished <- true
+				}
+			})
 		return NewSuccessfulResult(id)
 	}
 	consumer := NewConsumer(config)
@@ -166,9 +167,9 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	go consumer.StartStatic(map[string]int{topic: 1})
 
 	select {
-	//this happens if we get a duplicate
+		//this happens if we get a duplicate
 	case <-consumeFinished:
-	//and this happens normally
+		//and this happens normally
 	case <-time.After(closeTimeout):
 	}
 	closeWithin(t, closeTimeout, consumer)
@@ -182,7 +183,7 @@ func TestSequentialConsuming(t *testing.T) {
 	}
 	CreateMultiplePartitionsTopic(localZk, topic, 1)
 	EnsureHasLeader(localZk, topic)
-	produce(t, messages, topic, localBroker)
+	produce(t, messages, topic, localBroker, sarama.CompressionNone)
 
 	config := testConsumerConfig()
 	config.NumWorkers = 1
@@ -199,6 +200,50 @@ func TestSequentialConsuming(t *testing.T) {
 		return NewSuccessfulResult(id)
 	}
 
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 1})
+
+	select {
+	case <-successChan:
+	case <-time.After(consumeTimeout):
+		t.Errorf("Failed to consume %d messages within %s", numMessages, consumeTimeout)
+	}
+	closeWithin(t, 10*time.Second, consumer)
+}
+
+func TestGzipCompression(t *testing.T) {
+	testCompression(t, sarama.CompressionGZIP)
+}
+
+func TestSnappyCompression(t *testing.T) {
+	testCompression(t, sarama.CompressionSnappy)
+}
+
+func testCompression(t *testing.T, codec sarama.CompressionCodec) {
+	topic := fmt.Sprintf("test-compression-%d", time.Now().Unix())
+	messages := make([]string, 0)
+	for i := 0; i < numMessages; i++ {
+		messages = append(messages, fmt.Sprintf("test-message-%d", i))
+	}
+
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+	produce(t, messages, topic, localBroker, codec)
+
+	config := testConsumerConfig()
+	config.NumWorkers = 1
+	successChan := make(chan bool)
+	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		value := string(msg.Value)
+		Warn("test", value)
+		message := messages[0]
+		assert(t, value, message)
+		messages = messages[1:]
+		if len(messages) == 0 {
+			successChan <- true
+		}
+		return NewSuccessfulResult(id)
+	}
 	consumer := NewConsumer(config)
 	go consumer.StartStatic(map[string]int{topic: 1})
 
@@ -238,16 +283,16 @@ func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Durati
 		case <-time.After(timeout):
 		}
 		inLock(&consumedMessagesLock, func() {
-			notify <- consumedMessages
-		})
+				notify <- consumedMessages
+			})
 	}()
 	return func(_ *Worker, _ *Message, id TaskId) WorkerResult {
 		inLock(&consumedMessagesLock, func() {
-			consumedMessages++
-			if consumedMessages == expectedMessages {
-				consumeFinished <- true
-			}
-		})
+				consumedMessages++
+				if consumedMessages == expectedMessages {
+					consumeFinished <- true
+				}
+			})
 		return NewSuccessfulResult(id)
 	}
 }
