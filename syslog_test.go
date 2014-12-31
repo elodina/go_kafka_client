@@ -41,6 +41,44 @@ func TestSyslogRFC3164(t *testing.T) {
 	testSyslog(t, sl.RFC3164)
 }
 
+func TestSyslogProducer(t *testing.T) {
+	Logger = NewDefaultLogger(TraceLevel)
+	topic := fmt.Sprintf("syslog-producer-%d", time.Now().Unix())
+
+	consumeMessages := 100
+	timeout := 1 * time.Minute
+	consumeStatus := make(chan int)
+
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+
+	config := NewSyslogProducerConfig()
+	config.ProducerConfig = DefaultProducerConfig()
+	config.ProducerConfig.BrokerList = []string{localBroker}
+	config.ChannelSize = 5
+	config.Format = sl.RFC5424
+	config.NumProducers = 1
+	config.TCPAddr = tcpAddr
+	config.Topic = topic
+	syslogProducer := NewSyslogProducer(config)
+	go syslogProducer.Start()
+
+	time.Sleep(2 * time.Second)
+	for i := 0; i < 100; i++ {
+		logMessage(sl.RFC5424)
+	}
+
+	consumerConfig := testConsumerConfig()
+	consumerConfig.Strategy = newCountingStrategy(t, consumeMessages, timeout, consumeStatus)
+	consumer := NewConsumer(consumerConfig)
+	go consumer.StartStatic(map[string]int {topic: 1})
+	if actual := <-consumeStatus; actual != consumeMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, timeout, actual)
+	}
+	closeWithin(t, 10*time.Second, consumer)
+	syslogProducer.Stop()
+}
+
 func testSyslog(t *testing.T, format sl.Format) {
 	topic := fmt.Sprintf("syslog-%d", time.Now().Unix())
 	numMessages := 1
