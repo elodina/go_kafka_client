@@ -1,17 +1,17 @@
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- contributor license agreements.  See the NOTICE file distributed with
- this work for additional information regarding copyright ownership.
- The ASF licenses this file to You under the Apache License, Version 2.0
- (the "License"); you may not use this file except in compliance with
- the License.  You may obtain a copy of the License at
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License. */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 
 package go_kafka_client
 
@@ -19,13 +19,13 @@ import (
 	"fmt"
 	"github.com/samuel/go-zookeeper/zk"
 	//	"github.com/stealthly/go-kafka/producer"
+	"github.com/Shopify/sarama"
 	"os"
 	"os/exec"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
-	"github.com/Shopify/sarama"
 )
 
 type logWriter struct {
@@ -66,22 +66,22 @@ func receiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 	for {
 		select {
 		case batch := <-from:
-		{
-			if numMessages+len(batch) > n {
-				t.Error("Received more messages than expected")
-				return
+			{
+				if numMessages+len(batch) > n {
+					t.Error("Received more messages than expected")
+					return
+				}
+				numMessages += len(batch)
+				if numMessages == n {
+					Infof("test", "Successfully consumed %d message[s]", n)
+					return
+				}
 			}
-			numMessages += len(batch)
-			if numMessages == n {
-				Infof("test", "Successfully consumed %d message[s]", n)
-				return
-			}
-		}
 		case <-time.After(timeout):
-		{
-			t.Errorf("Failed to receive a message within %d seconds", int(timeout.Seconds()))
-			return
-		}
+			{
+				t.Errorf("Failed to receive a message within %d seconds", int(timeout.Seconds()))
+				return
+			}
 		}
 	}
 }
@@ -119,7 +119,7 @@ func receiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 			t.Error("Received more messages than expected")
 		}
 		numMessages += batchSize
-		messageStats[from[chosen-1]] = messageStats[from[chosen-1]]+batchSize
+		messageStats[from[chosen-1]] = messageStats[from[chosen-1]] + batchSize
 		if numMessages == n {
 			Infof("test", "Successfully consumed %d message[s]", n)
 			return messageStats
@@ -133,14 +133,14 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 	for {
 		select {
 		case batch := <-from:
-		{
-			t.Errorf("Received %d messages when should receive none", len(batch))
-		}
+			{
+				t.Errorf("Received %d messages when should receive none", len(batch))
+			}
 		case <-time.After(timeout):
-		{
-			Info("test", "Received no messages as expected")
-			return
-		}
+			{
+				Info("test", "Received no messages as expected")
+				return
+			}
 		}
 	}
 }
@@ -161,7 +161,8 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
 	}
 	select {
-	case e := <-producer.Errors(): t.Fatalf("Failed to produce message: %s", e)
+	case e := <-producer.Errors():
+		t.Fatalf("Failed to produce message: %s", e)
 	case <-time.After(5 * time.Second):
 	}
 }
@@ -184,7 +185,8 @@ func produce(t *testing.T, messages []string, topic string, brokerAddr string, c
 		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(message)}
 	}
 	select {
-	case e := <-producer.Errors(): t.Fatalf("Failed to produce message: %s", e)
+	case e := <-producer.Errors():
+		t.Fatalf("Failed to produce message: %s", e)
 	case <-time.After(5 * time.Second):
 	}
 }
@@ -192,13 +194,13 @@ func produce(t *testing.T, messages []string, topic string, brokerAddr string, c
 func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	select {
 	case <-consumer.Close():
-	{
-		Info("test", "Successfully closed consumer")
-	}
+		{
+			Info("test", "Successfully closed consumer")
+		}
 	case <-time.After(timeout):
-	{
-		t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
-	}
+		{
+			t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
+		}
 	}
 }
 
