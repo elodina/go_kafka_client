@@ -106,7 +106,7 @@ func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid
 
 	_, err := this.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	if err == zk.ErrNoNode {
-		err = this.createOrUpdatePathParentMayNotExist(registryDir, make([]byte, 0))
+		err = this.createOrUpdatePathParentMayNotExistFailFast(registryDir, make([]byte, 0))
 		if err != nil {
 			return err
 		}
@@ -376,7 +376,7 @@ func (this *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId
 func (this *ZookeeperCoordinator) tryNotifyConsumerGroup(Groupid string, ConsumerId string) error {
 	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(Groupid).ConsumerChangesDir, ConsumerId, time.Now().Nanosecond())
 	Debugf(this, "Sending notification to consumer group at %s", path)
-	return this.createOrUpdatePathParentMayNotExist(path, make([]byte, 0))
+	return this.createOrUpdatePathParentMayNotExistFailFast(path, make([]byte, 0))
 }
 
 // Removes a notification notificationId for consumer group Group
@@ -550,7 +550,7 @@ func (this *ZookeeperCoordinator) tryDeployTopics(Group string, Topics DeployedT
 	if err != nil {
 		return err
 	}
-	return this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerChangesDir, time.Now().Unix()), data)
+	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerChangesDir, time.Now().Unix()), data)
 }
 
 /*
@@ -585,7 +585,7 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 					}
 				}()
 			}
-			err = this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
+			err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
 			if err != nil {
 				panic(err)
 			}
@@ -689,12 +689,12 @@ func (this *ZookeeperCoordinator) ClaimPartitionOwnership(Groupid string, Topic 
 
 func (this *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
 	dirs := newZKGroupTopicDirs(group, topic)
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerOwnerDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailFast(dirs.ConsumerOwnerDir, make([]byte, 0))
 
 	pathToOwn := fmt.Sprintf("%s/%d", dirs.ConsumerOwnerDir, partition)
 	_, err := this.zkConn.Create(pathToOwn, []byte(consumerThreadId.String()), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	if err == zk.ErrNoNode {
-		err = this.createOrUpdatePathParentMayNotExist(dirs.ConsumerOwnerDir, make([]byte, 0))
+		err = this.createOrUpdatePathParentMayNotExistFailFast(dirs.ConsumerOwnerDir, make([]byte, 0))
 		if err != nil {
 			return false, err
 		}
@@ -745,16 +745,16 @@ func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(group string, top
 // Returns error if failed to commit offset.
 func (this *ZookeeperCoordinator) CommitOffset(Groupid string, TopicPartition *TopicAndPartition, Offset int64) error {
 	dirs := newZKGroupTopicDirs(Groupid, TopicPartition.Topic)
-	return this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
 }
 
 func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {
 	dirs := newZKGroupDirs(group)
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerGroupDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerRegistryDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerChangesDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerRebalanceDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerGroupDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerRegistryDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerChangesDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerRebalanceDir, make([]byte, 0))
 }
 
 func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Event, error) {
@@ -841,7 +841,15 @@ func (this *ZookeeperCoordinator) getTopicInfo(topic string) (*TopicInfo, error)
 	return topicInfo, nil
 }
 
-func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCreate string, data []byte) error {
+func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExistFailSafe(pathToCreate string, data []byte) error {
+	return this.createOrUpdatePathParentMayNotExist(pathToCreate, data, true)
+}
+
+func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExistFailFast(pathToCreate string, data []byte) error {
+	return this.createOrUpdatePathParentMayNotExist(pathToCreate, data, false)
+}
+
+func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCreate string, data []byte, failSafe bool) error {
 	Debugf(this, "Trying to create path %s in Zookeeper", pathToCreate)
 	_, err := this.zkConn.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 	if err != nil {
@@ -854,7 +862,7 @@ func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCrea
 			}
 		} else {
 			parent, _ := path.Split(pathToCreate)
-			err = this.createOrUpdatePathParentMayNotExist(parent[:len(parent)-1], make([]byte, 0))
+			err = this.createOrUpdatePathParentMayNotExist(parent[:len(parent)-1], make([]byte, 0), failSafe)
 			if err != nil {
 				if zk.ErrNodeExists != err {
 					Error(this, err.Error())
@@ -866,6 +874,9 @@ func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCrea
 
 			Debugf(this, "Trying again to create path %s in Zookeeper", pathToCreate)
 			_, err = this.zkConn.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
+			if err == zk.ErrNodeExists && failSafe {
+				err = nil
+			}
 		}
 	}
 

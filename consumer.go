@@ -272,7 +272,7 @@ func (c *Consumer) reinitializeConsumer() {
 
 func (c *Consumer) initializeWorkerManagers() {
 	inLock(&c.workerManagersLock, func() {
-		Debugf(c, "Initializing worker managers from topic registry: %s", c.topicRegistry)
+		Infof(c, "Initializing worker managers from topic registry: %s", c.topicRegistry)
 		for topic, partitions := range c.topicRegistry {
 			for partition := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
@@ -428,18 +428,18 @@ func (c *Consumer) stopWorkerManagers() bool {
 }
 
 func (c *Consumer) updateFetcher(numStreams int) {
-	Debugf(c, "Updating fetcher with numStreams = %d", numStreams)
+	Infof(c, "Updating fetcher with numStreams = %d", numStreams)
 	allPartitionInfos := make([]*partitionTopicInfo, 0)
-	Debugf(c, "Topic Registry = %s", c.topicRegistry)
+	Infof(c, "Topic Registry = %s", c.topicRegistry)
 	for _, partitionAndInfo := range c.topicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
 			allPartitionInfos = append(allPartitionInfos, partitionInfo)
 		}
 	}
 
-	Debug(c, "Restarted streams")
+	Infof(c, "Restarted streams")
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
-	Debug(c, "Updated fetcher")
+	Infof(c, "Updated fetcher")
 	c.connectChannels <- true
 }
 
@@ -576,6 +576,8 @@ func (c *Consumer) rebalance() {
 
 			if !success && !c.isShuttingdown {
 				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
+			} else {
+				Info(c, "Rebalance has been successfully completed")
 			}
 		}
 	} else {
@@ -658,8 +660,11 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 	}
 
 	if c.reflectPartitionOwnershipDecision(partitionOwnershipDecision) {
+		Info(c, "Partition ownership has been successfully reflected")
 		c.topicRegistry = currenttopicRegistry
+		Infof(c, "Trying to reinitialize fetchers and workers")
 		c.initFetchersAndWorkers(context)
+		Infof(c, "Fetchers and workers have been successfully reinitialized")
 	} else {
 		Errorf(c, "Failed to reflect partition ownership during rebalance")
 		return false
@@ -677,6 +682,7 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 				numStreams = len(v)
 				break
 			}
+			Infof(c, "Trying to update fetcher")
 			c.updateFetcher(numStreams)
 		}
 	case *WildcardTopicsToNumStreams:
@@ -684,6 +690,7 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 			c.updateFetcher(topicCount.NumStreams)
 		}
 	}
+	Infof(c, "Fetcher has been updated %s", assignmentContext)
 	c.initializeWorkerManagers()
 }
 
