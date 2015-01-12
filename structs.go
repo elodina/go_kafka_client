@@ -132,7 +132,7 @@ func (p *partitionTopicInfo) String() string {
 }
 
 type brokerAndInitialOffset struct {
-	Broker     *BrokerInfo
+	Broker     BrokerInfo
 	InitOffset int64
 }
 
@@ -141,7 +141,7 @@ func (b *brokerAndInitialOffset) String() string {
 }
 
 type brokerAndFetcherId struct {
-	Broker    *BrokerInfo
+	Broker    BrokerInfo
 	FetcherId int
 }
 
