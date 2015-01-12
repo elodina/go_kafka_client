@@ -571,10 +571,14 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 					for {
 						select {
 						case <-finished: return
-						case <-zkWatcher: {
-							select {
-							case watcher <- Regular:
-							case <-finished: return
+						case e := <-zkWatcher: {
+							if e.State == zk.StateDisconnected {
+								_, _, zkWatcher, err = this.zkConn.ChildrenW(path)
+							} else {
+								select {
+								case watcher <- Regular:
+								case <-finished: return
+								}
 							}
 						}
 						}
@@ -608,7 +612,9 @@ func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash s
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		children, _, err = this.zkConn.Children(path)
-		if err == nil {
+		if err == zk.ErrNoNode {
+			return false, nil
+		} else if err == nil {
 			return len(children) == expected, err
 		}
 		Warnf(this, "Failed to assert rebalance state %s, retrying...", path)
@@ -626,7 +632,7 @@ func (this *ZookeeperCoordinator) RemoveStateAssertionSeries(group string, state
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		err = this.tryRemoveStateAssertionSeries(group, stateHash)
 		if err == nil || err == zk.ErrNoNode {
-			return err
+			return nil
 		}
 		Tracef(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
 		time.Sleep(this.config.RequestBackoff)
