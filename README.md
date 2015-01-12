@@ -1,7 +1,7 @@
 Go Kafka Client
 ===============
 
-Apache Kafka Client Library for Go
+The Apache Kafka Client Library for Go is sponsored by [CrowdStrike] (http://www.crowdstrike.com/) and developed by [Big Data Open Source Security LLC] (http://stealth.ly)
 
 [![Build Status](https://travis-ci.org/stealthly/go_kafka_client.svg?branch=master)](https://travis-ci.org/stealthly/go_kafka_client)
 
