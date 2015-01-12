@@ -24,3 +24,5 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 `--queue.size` - number of messages that are buffered for producing. *Defaults to 10000*.
 
 `--log.level` - log level for built-in logger. Possible values are: `trace`, `debug`, `info`, `warn`, `error`, `critical`. *Defaults to info*.
+
+`--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.

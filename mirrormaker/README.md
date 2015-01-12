@@ -27,3 +27,5 @@ The tool uses a Kafka consumer to consume messages from the source cluster, and 
 `--prefix` - destination topic prefix. E.g. if message was read from topic "test" and prefix is "dc1_" it'll be written to topic "dc1_test". *Defaults to empty string*.
 
 `--queue.size` - number of messages that are buffered between the consumer and producer. *Defaults to 10000*.
+
+`--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.

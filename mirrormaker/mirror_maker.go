@@ -21,6 +21,7 @@ import (
 	kafka "github.com/stealthly/go_kafka_client"
 	"os"
 	"os/signal"
+	"runtime"
 )
 
 type consumerConfigs []string
@@ -44,10 +45,12 @@ var preservePartitions = flag.Bool("preserve.partitions", false, "preserve parti
 var preserveOrder = flag.Bool("preserve.order", false, "E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.")
 var prefix = flag.String("prefix", "", "Destination topic prefix.")
 var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffered between the consumer and producer.")
+var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 
 func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	flag.Var(&consumerConfig, "consumer.config", "Path to consumer configuration file.")
 	flag.Parse()
+	runtime.GOMAXPROCS(*maxProcs)
 
 	if (*whitelist != "" && *blacklist != "") || (*whitelist == "" && *blacklist == "") {
 		fmt.Println("Exactly one of whitelist or blacklist is required.")

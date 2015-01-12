@@ -23,6 +23,7 @@ import (
 	"os/signal"
 	"strings"
 	syslog "github.com/mcuadros/go-syslog"
+	"runtime"
 )
 
 var logLevel = flag.String("log.level", "info", "Log level for built-in logger.")
@@ -33,11 +34,13 @@ var topic = flag.String("topic", "", "Topic to produce messages into.")
 var format = flag.String("format", "rfc5424", "Message format. Either RFC5424 or RFC3164.")
 var tcpPort = flag.String("tcp.port", "5140", "TCP port to listen for incoming messages.")
 var tcpHost = flag.String("tcp.host", "0.0.0.0", "TCP host to listen for incoming messages.")
+var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 
 func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 	flag.Parse()
 
 	setLogLevel()
+	runtime.GOMAXPROCS(*maxProcs)
 	rfc5424 := "rfc5424"
 	rfc3164 := "rfc3164"
 
