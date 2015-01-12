@@ -140,7 +140,18 @@ func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 				}
 			}
 		}
-		mb.askNextBatch <- mb.TopicPartition
+
+		askNextLoop:
+		for {
+			select {
+			case mb.askNextBatch <- mb.TopicPartition:
+				break askNextLoop
+			case <-time.After(200 * time.Millisecond):
+				if mb.stopSending {
+					return
+				}
+			}
+		}
 	})
 }
 
