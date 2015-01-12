@@ -189,7 +189,7 @@ func (m *consumerFetcherManager) waitForNextRequests() {
 func (m *consumerFetcherManager) findLeaders() {
 	for {
 		Trace(m, "Find leaders")
-		leaderForPartitions := make(map[TopicAndPartition]*BrokerInfo)
+		leaderForPartitions := make(map[TopicAndPartition]BrokerInfo)
 		inLock(&m.partitionMapLock, func() {
 			for len(m.noLeaderPartitions) == 0 {
 				if m.shuttingDown {
@@ -221,7 +221,7 @@ func (m *consumerFetcherManager) findLeaders() {
 
 					for i, tp := range m.noLeaderPartitions {
 						if tp == topicAndPartition && leaderBroker != nil {
-							leaderForPartitions[topicAndPartition] = leaderBroker
+							leaderForPartitions[topicAndPartition] = *leaderBroker
 							m.noLeaderPartitions = append(m.noLeaderPartitions[:i], m.noLeaderPartitions[i+1:]...)
 							break
 						}
@@ -301,7 +301,6 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 	Infof(m, "Adding fetcher for partitions %v", partitionAndOffsets)
 	inLock(&m.fetcherRoutineMapLock, func() {
 
-		//TODO map key contains a pointer, inspect this!
 		partitionsPerFetcher := make(map[brokerAndFetcherId]map[TopicAndPartition]*brokerAndInitialOffset)
 		for topicAndPartition, brokerAndOffset := range partitionAndOffsets {
 			brokerAndFetcher := brokerAndFetcherId{brokerAndOffset.Broker, m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)}
@@ -412,7 +411,6 @@ func (m *consumerFetcherManager) close() <-chan bool {
 type consumerFetcherRoutine struct {
 	manager           *consumerFetcherManager
 	name              string
-	broker            *BrokerInfo
 	brokerAddr        string //just not to calculate each time
 	brokerConn        *sarama.Broker
 	allPartitionMap   map[TopicAndPartition]*partitionTopicInfo
@@ -430,11 +428,10 @@ func (f *consumerFetcherRoutine) String() string {
 	return f.name
 }
 
-func newConsumerFetcher(m *consumerFetcherManager, name string, broker *BrokerInfo, allPartitionMap map[TopicAndPartition]*partitionTopicInfo, fetcherBarrier *barrier) *consumerFetcherRoutine {
+func newConsumerFetcher(m *consumerFetcherManager, name string, broker BrokerInfo, allPartitionMap map[TopicAndPartition]*partitionTopicInfo, fetcherBarrier *barrier) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
 		manager:         m,
 		name:            name,
-		broker:          broker,
 		brokerAddr:      fmt.Sprintf("%s:%d", broker.Host, broker.Port),
 		allPartitionMap: allPartitionMap,
 		partitionMap:    make(map[TopicAndPartition]int64),
