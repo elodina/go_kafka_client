@@ -18,13 +18,14 @@ package go_kafka_client
 import (
 	"fmt"
 	"github.com/samuel/go-zookeeper/zk"
-	"github.com/stealthly/go-kafka/producer"
+	//	"github.com/stealthly/go-kafka/producer"
 	"os"
 	"os/exec"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
+	"github.com/Shopify/sarama"
 )
 
 type logWriter struct {
@@ -65,22 +66,22 @@ func receiveN(t *testing.T, n int, timeout time.Duration, from <-chan []*Message
 	for {
 		select {
 		case batch := <-from:
-			{
-				if numMessages+len(batch) > n {
-					t.Error("Received more messages than expected")
-					return
-				}
-				numMessages += len(batch)
-				if numMessages == n {
-					Infof("test", "Successfully consumed %d message[s]", n)
-					return
-				}
-			}
-		case <-time.After(timeout):
-			{
-				t.Errorf("Failed to receive a message within %d seconds", int(timeout.Seconds()))
+		{
+			if numMessages+len(batch) > n {
+				t.Error("Received more messages than expected")
 				return
 			}
+			numMessages += len(batch)
+			if numMessages == n {
+				Infof("test", "Successfully consumed %d message[s]", n)
+				return
+			}
+		}
+		case <-time.After(timeout):
+		{
+			t.Errorf("Failed to receive a message within %d seconds", int(timeout.Seconds()))
+			return
+		}
 		}
 	}
 }
@@ -118,7 +119,7 @@ func receiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 			t.Error("Received more messages than expected")
 		}
 		numMessages += batchSize
-		messageStats[from[chosen-1]] = messageStats[from[chosen-1]] + batchSize
+		messageStats[from[chosen-1]] = messageStats[from[chosen-1]]+batchSize
 		if numMessages == n {
 			Infof("test", "Successfully consumed %d message[s]", n)
 			return messageStats
@@ -132,39 +133,72 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 	for {
 		select {
 		case batch := <-from:
-			{
-				t.Errorf("Received %d messages when should receive none", len(batch))
-			}
+		{
+			t.Errorf("Received %d messages when should receive none", len(batch))
+		}
 		case <-time.After(timeout):
-			{
-				Info("test", "Received no messages as expected")
-				return
-			}
+		{
+			Info("test", "Received no messages as expected")
+			return
+		}
 		}
 	}
 }
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
-	p := producer.NewKafkaProducer(topic, []string{brokerAddr})
-	for i := 0; i < n; i++ {
-		message := fmt.Sprintf("test-kafka-message-%d", i)
-		if err := p.SendStringSync(message); err != nil {
-			t.Fatalf("Failed to produce message %s because: %s", message, err)
-		}
+	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	if err != nil {
+		t.Fatal(err)
 	}
-	p.Close()
+	defer client.Close()
+
+	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	for i := 0; i < n; i++ {
+		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+	}
+	select {
+	case e := <-producer.Errors(): t.Fatalf("Failed to produce message: %s", e)
+	case <-time.After(5 * time.Second):
+	}
+}
+
+func produce(t *testing.T, messages []string, topic string, brokerAddr string, compression sarama.CompressionCodec) {
+	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	producerConfig := sarama.NewProducerConfig()
+	producerConfig.Compression = compression
+	producer, err := sarama.NewProducer(client, producerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	for _, message := range messages {
+		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(message)}
+	}
+	select {
+	case e := <-producer.Errors(): t.Fatalf("Failed to produce message: %s", e)
+	case <-time.After(5 * time.Second):
+	}
 }
 
 func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	select {
 	case <-consumer.Close():
-		{
-			Info("test", "Successfully closed consumer")
-		}
+	{
+		Info("test", "Successfully closed consumer")
+	}
 	case <-time.After(timeout):
-		{
-			t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
-		}
+	{
+		t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
+	}
 	}
 }
 
@@ -195,6 +229,7 @@ func EnsureHasLeader(zkConnect string, topic string) {
 	zookeeper.Connect()
 	hasLeader := false
 
+	numPartitions := 0
 	for !hasLeader {
 		var topicInfo *TopicInfo
 		var err error
@@ -207,6 +242,7 @@ func EnsureHasLeader(zkConnect string, topic string) {
 		if err != nil {
 			continue
 		}
+		numPartitions = len(topicInfo.Partitions)
 
 		hasLeader = true
 		for partition, leaders := range topicInfo.Partitions {
@@ -221,4 +257,5 @@ func EnsureHasLeader(zkConnect string, topic string) {
 			time.Sleep(1 * time.Second)
 		}
 	}
+	time.Sleep(time.Duration(numPartitions) * time.Second)
 }

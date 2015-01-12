@@ -1,17 +1,17 @@
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- contributor license agreements.  See the NOTICE file distributed with
- this work for additional information regarding copyright ownership.
- The ASF licenses this file to You under the Apache License, Version 2.0
- (the "License"); you may not use this file except in compliance with
- the License.  You may obtain a copy of the License at
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License. */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 
 package go_kafka_client
 
@@ -20,8 +20,8 @@ import (
 	metrics "github.com/rcrowley/go-metrics"
 	"math"
 	"sync"
-	"time"
 	"sync/atomic"
+	"time"
 )
 
 // WorkerManager is responsible for splitting the incomming batches of messages between a configured amount of workers.
@@ -32,6 +32,7 @@ type WorkerManager struct {
 	workers             []*Worker
 	availableWorkers    chan *Worker
 	currentBatch        map[TaskId]*Task //TODO inspect for race conditions
+	batchOrder          []TaskId
 	inputChannel        chan []*Message
 	topicPartition      TopicAndPartition
 	largestOffset       int64
@@ -70,6 +71,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		workers:              workers,
 		inputChannel:         make(chan []*Message),
 		currentBatch:         make(map[TaskId]*Task),
+		batchOrder:           make([]TaskId, 0),
 		topicPartition:       topicPartition,
 		largestOffset:        InvalidOffset,
 		failCounter:          NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
@@ -138,12 +140,16 @@ func (wm *WorkerManager) Stop() chan bool {
 
 func (wm *WorkerManager) startBatch(batch []*Message) {
 	inLock(&wm.stopLock, func() {
+		wm.batchOrder = make([]TaskId, 0)
 		for _, message := range batch {
 			topicPartition := TopicAndPartition{message.Topic, message.Partition}
-			wm.currentBatch[TaskId{topicPartition, message.Offset}] = &Task{Msg: message}
+			id := TaskId{topicPartition, message.Offset}
+			wm.batchOrder = append(wm.batchOrder, id)
+			wm.currentBatch[id] = &Task{Msg: message}
 		}
 		wm.pendingTasksCounter.Inc(int64(len(wm.currentBatch)))
-		for _, task := range wm.currentBatch {
+		for _, id := range wm.batchOrder {
+			task := wm.currentBatch[id]
 			worker := <-wm.availableWorkers
 			wm.activeWorkersCounter.Inc(1)
 			wm.pendingTasksCounter.Dec(1)
@@ -313,10 +319,10 @@ type Worker struct {
 	OutputChannel chan WorkerResult
 
 	// Timeout for a single worker task.
-	TaskTimeout   time.Duration
+	TaskTimeout time.Duration
 
 	// Indicates whether this worker is closed and cannot accept new work.
-	Closed        bool
+	Closed bool
 }
 
 func (w *Worker) String() string {
@@ -395,13 +401,13 @@ func (f *FailureCounter) Failed() bool {
 // Represents a single task for a worker.
 type Task struct {
 	// A message that should be processed.
-	Msg     *Message
+	Msg *Message
 
 	// Number of retries used for this task.
 	Retries int
 
 	// A worker that is responsible for processing this task.
-	Callee  *Worker
+	Callee *Worker
 }
 
 // Returns an id for this Task.
@@ -491,7 +497,7 @@ type TaskId struct {
 	TopicPartition TopicAndPartition
 
 	// Message's offset
-	Offset         int64
+	Offset int64
 }
 
 func (tid TaskId) String() string {

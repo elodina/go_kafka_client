@@ -1,17 +1,17 @@
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- contributor license agreements.  See the NOTICE file distributed with
- this work for additional information regarding copyright ownership.
- The ASF licenses this file to You under the Apache License, Version 2.0
- (the "License"); you may not use this file except in compliance with
- the License.  You may obtain a copy of the License at
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License. */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 
 package go_kafka_client
 
@@ -414,6 +414,7 @@ type consumerFetcherRoutine struct {
 	name              string
 	broker            *BrokerInfo
 	brokerAddr        string //just not to calculate each time
+	brokerConn        *sarama.Broker
 	allPartitionMap   map[TopicAndPartition]*partitionTopicInfo
 	partitionMap      map[TopicAndPartition]int64
 	partitionMapLock  sync.Mutex
@@ -546,17 +547,18 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 	hasMessages := false
 	partitionsWithError := make(map[TopicAndPartition]bool)
 
-	saramaBroker := sarama.NewBroker(f.brokerAddr)
-	err := saramaBroker.Open(newSaramaBrokerConfig(f.manager.config))
-	if err != nil {
-		f.handleFetchError(request, err, partitionsWithError)
+	if f.brokerConn == nil {
+		f.brokerConn = sarama.NewBroker(f.brokerAddr)
+		err := f.brokerConn.Open(newSaramaBrokerConfig(f.manager.config))
+		if err != nil {
+			f.handleFetchError(request, err, partitionsWithError)
+		}
 	}
 
-	response, err := saramaBroker.Fetch(f.manager.config.Clientid, request)
+	response, err := f.brokerConn.Fetch(f.manager.config.Clientid, request)
 	if err != nil {
 		f.handleFetchError(request, err, partitionsWithError)
 	}
-	defer saramaBroker.Close()
 
 	if response != nil {
 		Trace(f, "Processing fetch request")
@@ -708,6 +710,7 @@ func (f *consumerFetcherRoutine) close() <-chan bool {
 		}
 		f.removeAllPartitions()
 		Debug(f, "Sending close finished")
+		f.brokerConn.Close()
 		f.closeFinished <- true
 		Debug(f, "Sent close finished")
 	}()

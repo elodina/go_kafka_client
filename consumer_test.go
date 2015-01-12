@@ -1,22 +1,23 @@
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- contributor license agreements.  See the NOTICE file distributed with
- this work for additional information regarding copyright ownership.
- The ASF licenses this file to You under the Apache License, Version 2.0
- (the "License"); you may not use this file except in compliance with
- the License.  You may obtain a copy of the License at
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License. */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 
 package go_kafka_client
 
 import (
 	"fmt"
+	"github.com/Shopify/sarama"
 	"sync"
 	"testing"
 	"time"
@@ -99,8 +100,9 @@ func TestStaticConsumingMultiplePartitions(t *testing.T) {
 
 func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	consumeStatus := make(chan int)
-	topic1 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix())
-	topic2 := fmt.Sprintf("test-whitelist-%d", time.Now().Unix()+1)
+	timestamp := time.Now().Unix()
+	topic1 := fmt.Sprintf("test-whitelist-%d-1", timestamp)
+	topic2 := fmt.Sprintf("test-whitelist-%d-2", timestamp)
 
 	CreateMultiplePartitionsTopic(localZk, topic1, 1)
 	EnsureHasLeader(localZk, topic1)
@@ -114,7 +116,7 @@ func TestWhitelistConsumingSinglePartition(t *testing.T) {
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, expectedMessages, consumeTimeout, consumeStatus)
 	consumer := NewConsumer(config)
-	go consumer.StartWildcard(NewWhiteList("test-whitelist-.+"), 1)
+	go consumer.StartWildcard(NewWhiteList(fmt.Sprintf("test-whitelist-%d-.+", timestamp)), 1)
 	if actual := <-consumeStatus; actual != expectedMessages {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", expectedMessages, consumeTimeout, actual)
 	}
@@ -148,11 +150,12 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	}
 	consumer := NewConsumer(config)
 
-	go consumer.StartStatic(map[string]int{topic:1})
+	go consumer.StartStatic(map[string]int{topic: 1})
 
 	select {
 	case <-consumeFinished:
-	case <-time.After(consumeTimeout): t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", messages, consumeTimeout, len(messagesMap))
+	case <-time.After(consumeTimeout):
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", messages, consumeTimeout, len(messagesMap))
 	}
 	closeWithin(t, closeTimeout, consumer)
 
@@ -161,15 +164,95 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	zkConfig.ZookeeperConnect = []string{localZk}
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 	consumer = NewConsumer(config)
-	go consumer.StartStatic(map[string]int{topic:1})
+	go consumer.StartStatic(map[string]int{topic: 1})
 
 	select {
-	//this happens if we get a duplicate
+		//this happens if we get a duplicate
 	case <-consumeFinished:
-	//and this happens normally
+		//and this happens normally
 	case <-time.After(closeTimeout):
 	}
 	closeWithin(t, closeTimeout, consumer)
+}
+
+func TestSequentialConsuming(t *testing.T) {
+	topic := fmt.Sprintf("test-sequential-%d", time.Now().Unix())
+	messages := make([]string, 0)
+	for i := 0; i < numMessages; i++ {
+		messages = append(messages, fmt.Sprintf("test-message-%d", i))
+	}
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+	produce(t, messages, topic, localBroker, sarama.CompressionNone)
+
+	config := testConsumerConfig()
+	config.NumWorkers = 1
+	successChan := make(chan bool)
+	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		value := string(msg.Value)
+		Debug("test", value)
+		message := messages[0]
+		assert(t, value, message)
+		messages = messages[1:]
+		if len(messages) == 0 {
+			successChan <- true
+		}
+		return NewSuccessfulResult(id)
+	}
+
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 1})
+
+	select {
+	case <-successChan:
+	case <-time.After(consumeTimeout):
+		t.Errorf("Failed to consume %d messages within %s", numMessages, consumeTimeout)
+	}
+	closeWithin(t, 10*time.Second, consumer)
+}
+
+func TestGzipCompression(t *testing.T) {
+	testCompression(t, sarama.CompressionGZIP)
+}
+
+func TestSnappyCompression(t *testing.T) {
+	testCompression(t, sarama.CompressionSnappy)
+}
+
+func testCompression(t *testing.T, codec sarama.CompressionCodec) {
+	topic := fmt.Sprintf("test-compression-%d", time.Now().Unix())
+	messages := make([]string, 0)
+	for i := 0; i < numMessages; i++ {
+		messages = append(messages, fmt.Sprintf("test-message-%d", i))
+	}
+
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+	produce(t, messages, topic, localBroker, codec)
+
+	config := testConsumerConfig()
+	config.NumWorkers = 1
+	successChan := make(chan bool)
+	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		value := string(msg.Value)
+		Warn("test", value)
+		message := messages[0]
+		assert(t, value, message)
+		messages = messages[1:]
+		if len(messages) == 0 {
+			successChan <- true
+		}
+		return NewSuccessfulResult(id)
+	}
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 1})
+
+	select {
+	case <-successChan:
+	case <-time.After(consumeTimeout):
+		t.Errorf("Failed to consume %d messages within %s", numMessages, consumeTimeout)
+	}
+	closeWithin(t, 10*time.Second, consumer)
 }
 
 func testConsumerConfig() *ConsumerConfig {
@@ -200,16 +283,16 @@ func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Durati
 		case <-time.After(timeout):
 		}
 		inLock(&consumedMessagesLock, func() {
-			notify <- consumedMessages
-		})
+				notify <- consumedMessages
+			})
 	}()
 	return func(_ *Worker, _ *Message, id TaskId) WorkerResult {
 		inLock(&consumedMessagesLock, func() {
-			consumedMessages++
-			if consumedMessages == expectedMessages {
-				consumeFinished <- true
-			}
-		})
+				consumedMessages++
+				if consumedMessages == expectedMessages {
+					consumeFinished <- true
+				}
+			})
 		return NewSuccessfulResult(id)
 	}
 }
