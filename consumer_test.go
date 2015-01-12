@@ -138,14 +138,14 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 		value := string(msg.Value)
 		inLock(&messagesMapLock, func() {
-				if _, exists := messagesMap[value]; exists {
-					t.Errorf("Duplicate message: %s", value)
-				}
-				messagesMap[value] = true
-				if len(messagesMap) == messages {
-					consumeFinished <- true
-				}
-			})
+			if _, exists := messagesMap[value]; exists {
+				t.Errorf("Duplicate message: %s", value)
+			}
+			messagesMap[value] = true
+			if len(messagesMap) == messages {
+				consumeFinished <- true
+			}
+		})
 		return NewSuccessfulResult(id)
 	}
 	consumer := NewConsumer(config)
@@ -167,7 +167,7 @@ func TestMessagesProcessedOnce(t *testing.T) {
 	go consumer.StartStatic(map[string]int{topic: 1})
 
 	select {
-		//this happens if we get a duplicate
+	//this happens if we get a duplicate
 	case <-consumeFinished:
 		//and this happens normally
 	case <-time.After(closeTimeout):
@@ -283,16 +283,16 @@ func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Durati
 		case <-time.After(timeout):
 		}
 		inLock(&consumedMessagesLock, func() {
-				notify <- consumedMessages
-			})
+			notify <- consumedMessages
+		})
 	}()
 	return func(_ *Worker, _ *Message, id TaskId) WorkerResult {
 		inLock(&consumedMessagesLock, func() {
-				consumedMessages++
-				if consumedMessages == expectedMessages {
-					consumeFinished <- true
-				}
-			})
+			consumedMessages++
+			if consumedMessages == expectedMessages {
+				consumeFinished <- true
+			}
+		})
 		return NewSuccessfulResult(id)
 	}
 }
