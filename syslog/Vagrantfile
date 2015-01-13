@@ -12,23 +12,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
 
-#!/bin/sh -Eux
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
 
-# Start Zookeeper and Kafka
-./vagrant/kafka.sh
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  config.vm.box = "precise64"
 
-mkdir -p $GOPATH/src/github.com/stealthly/go_kafka_client
-cp -r /go_kafka_client $GOPATH/src/github.com/stealthly
-cd $GOPATH/src/github.com/stealthly/go_kafka_client
+  # The url from where the 'config.vm.box' box will be fetched if it
+  # doesn't already exist on the user's system.
+  config.vm.box_url = "http://files.vagrantup.com/precise64.box"
 
-echo 'Updating dependencies'
-gpm install
+  config.vm.define "syslog" do |syslog|
+    syslog.vm.network :private_network, ip: "192.168.66.66"
+    syslog.vm.provider :virtualbox do |vb|
+      vb.customize ["modifyvm", :id, "--memory", "512"]
+    end
+    syslog.vm.provision "shell", path: "vagrant/syslog.sh"
+  end
 
-echo 'Running tests'
-go test -v
-
-echo 'Stopping Kafka'
-$KAFKA_PATH/bin/kafka-server-stop.sh
-echo 'Stopping Zookeeper'
-$ZK_HOME/bin/zkServer.sh stop
+  config.vm.synced_folder "../", "/vagrant"
+end
