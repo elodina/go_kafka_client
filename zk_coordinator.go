@@ -31,6 +31,7 @@ var (
 	consumersPath    = "/consumers"
 	brokerIdsPath    = "/brokers/ids"
 	brokerTopicsPath = "/brokers/topics"
+	emptyEvent 		 = zk.Event{}
 )
 
 /* ZookeeperCoordinator implements ConsumerCoordinator interface and is used to coordinate multiple consumers that work within the same consumer group. */
@@ -445,54 +446,49 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 		for {
 			select {
 			case e := <-zkEvents:
-				{
-					Trace(this, e)
-					if e.Type == zk.EventNotWatching || e.State == zk.StateDisconnected {
-						Info(this, "ZK watcher session ended, reconnecting...")
-						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
-							Info(this, "Trying to renew watcher for consumer registry")
-							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
-							Info(this, "Trying to renew watcher for consumer changes dir")
-							consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
-							Info(this, "Trying to renew watcher for consumer topic dir")
-							topicsWatcher, err = this.getTopicsWatcher()
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, brokerIdsPath) {
-							Info(this, "Trying to renew watcher for brokers in cluster")
-							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
-							if err != nil {
-								panic(err)
-							}
+			{
+				Trace(this, e)
+				if e != emptyEvent {
+					if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+							changes <- NewTopicDeployed
 						} else {
-							Warnf(this, "Unknown event path: %s", e.Path)
-						}
-
-						stopRedirecting <- true
-						stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
-					} else {
-						emptyEvent := zk.Event{}
-						if e != emptyEvent {
-							if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
-								changes <- NewTopicDeployed
-							} else {
-								changes <- Regular
-							}
-						} else {
-							//TODO configurable?
-							time.Sleep(2 * time.Second)
+							changes <- Regular
 						}
 					}
+
+					if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
+						Info(this, "Trying to renew watcher for consumer registry")
+						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+						Info(this, "Trying to renew watcher for consumer changes dir")
+						consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
+						Info(this, "Trying to renew watcher for consumer topic dir")
+						topicsWatcher, err = this.getTopicsWatcher()
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, brokerIdsPath) {
+						Info(this, "Trying to renew watcher for brokers in cluster")
+						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+						if err != nil {
+							panic(err)
+						}
+					} else {
+						Warnf(this, "Unknown event path: %s", e.Path)
+					}
+
+					stopRedirecting <- true
+					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 				}
+			}
 			case <-this.unsubscribe:
 				{
 					stopRedirecting <- true
@@ -586,13 +582,14 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 						select {
 						case <-finished: return
 						case e := <-zkWatcher: {
-							if e.Type == zk.EventNotWatching || e.State == zk.StateDisconnected {
-								_, _, zkWatcher, err = this.zkConn.ChildrenW(path)
-							} else {
-								select {
-								case watcher <- Regular:
-								case <-finished: return
+							if e != emptyEvent {
+								if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+									select {
+									case watcher <- Regular:
+									case <-finished: return
+									}
 								}
+								_, _, zkWatcher, err = this.zkConn.ChildrenW(path)
 							}
 						}
 						}

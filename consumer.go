@@ -557,14 +557,13 @@ func (c *Consumer) rebalance() {
 	if !c.isShuttingdown {
 		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
-		c.releasePartitionOwnership(c.topicRegistry)
 		context, rebalanceRequired := c.startStateAssertionSeries()
 		for context == nil {
 			context, rebalanceRequired = c.startStateAssertionSeries()
 		}
 
 		if rebalanceRequired {
-			var success = false
+			success := false
 			for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
 				if tryRebalance(c, context, partitionAssignor) {
 					success = true
@@ -595,6 +594,7 @@ func (c *Consumer) startStateAssertionSeries() (*assignmentContext, bool) {
 	}
 
 	if context.hash() != c.lastSuccessfulRebalanceHash {
+		c.releasePartitionOwnership(c.topicRegistry)
 		finished := make(chan bool)
 		newConsumerAdded, err := c.config.Coordinator.CommenceStateAssertionSeries(c.config.Consumerid, c.config.Groupid, context.hash(), finished)
 		if err != nil {
