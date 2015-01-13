@@ -447,24 +447,32 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 			case e := <-zkEvents:
 				{
 					Trace(this, e)
-					if e.State == zk.StateDisconnected {
-						Debug(this, "ZK watcher session ended, reconnecting...")
-						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
-						if err != nil {
-							panic(err)
+					if e.Type == zk.EventNotWatching || e.State == zk.StateDisconnected {
+						Info(this, "ZK watcher session ended, reconnecting...")
+						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
+							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+							consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
+							topicsWatcher, err = this.getTopicsWatcher()
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, brokerIdsPath) {
+							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+							if err != nil {
+								panic(err)
+							}
 						}
-						consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
-						if err != nil {
-							panic(err)
-						}
-						topicsWatcher, err = this.getTopicsWatcher()
-						if err != nil {
-							panic(err)
-						}
-						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
-						if err != nil {
-							panic(err)
-						}
+
+						stopRedirecting <- true
+						stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 					} else {
 						emptyEvent := zk.Event{}
 						if e != emptyEvent {
@@ -572,7 +580,7 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 						select {
 						case <-finished: return
 						case e := <-zkWatcher: {
-							if e.State == zk.StateDisconnected {
+							if e.Type == zk.EventNotWatching || e.State == zk.StateDisconnected {
 								_, _, zkWatcher, err = this.zkConn.ChildrenW(path)
 							} else {
 								select {
@@ -745,7 +753,12 @@ func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(group string, top
 // Returns error if failed to commit offset.
 func (this *ZookeeperCoordinator) CommitOffset(Groupid string, TopicPartition *TopicAndPartition, Offset int64) error {
 	dirs := newZKGroupTopicDirs(Groupid, TopicPartition.Topic)
-	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+	err := this.updateRecord(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+	if err == zk.ErrNoNode {
+		return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+	}
+
+	return err
 }
 
 func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {

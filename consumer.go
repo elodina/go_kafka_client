@@ -618,6 +618,7 @@ func (c *Consumer) startStateAssertionSeries() (*assignmentContext, bool) {
 					//TODO what to do next?
 					panic(err)
 				}
+				finished <- true
 				return nil, true
 			}
 			}
