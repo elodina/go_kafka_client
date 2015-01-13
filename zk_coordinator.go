@@ -451,28 +451,24 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						Info(this, "ZK watcher session ended, reconnecting...")
 						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
 							Info(this, "Trying to renew watcher for consumer registry")
-							close(consumersWatcher)
 							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
 							if err != nil {
 								panic(err)
 							}
 						} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
 							Info(this, "Trying to renew watcher for consumer changes dir")
-							close(consumerGroupChangesWatcher)
 							consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
 							if err != nil {
 								panic(err)
 							}
 						} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
 							Info(this, "Trying to renew watcher for consumer topic dir")
-							close(topicsWatcher)
 							topicsWatcher, err = this.getTopicsWatcher()
 							if err != nil {
 								panic(err)
 							}
 						} else if strings.HasPrefix(e.Path, brokerIdsPath) {
 							Info(this, "Trying to renew watcher for brokers in cluster")
-							close(brokersWatcher)
 							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
 							if err != nil {
 								panic(err)
