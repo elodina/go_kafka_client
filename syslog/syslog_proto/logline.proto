@@ -11,6 +11,6 @@ message LogLine
 	required string line = 1;
 	optional string source = 2;
 	repeated Tag tag = 3;
-	optional int64 id = 4 [default = 0];
+	optional int64 eventid = 4 [default = 0];
 	repeated int64 timings = 5;
 }
