@@ -15,8 +15,19 @@
 
 #!/bin/sh -Eux
 
-# Start Zookeeper and Kafka
-./vagrant/kafka.sh
+#Start Zookeeper
+echo 'Starting Zookeeper'
+$ZK_HOME/bin/zkServer.sh start
+
+#Start Kafka
+sed -r -i "s/(zookeeper.connect)=(.*)/\1=$ZK_PORT_2181_TCP_ADDR/g" $KAFKA_PATH/config/server.properties
+sed -r -i "s/(broker.id)=(.*)/\1=$BROKER_ID/g" $KAFKA_PATH/config/server.properties
+sed -r -i "s/#(advertised.host.name)=(.*)/\1=$HOST_IP/g" $KAFKA_PATH/config/server.properties
+sed -r -i "s/^(port)=(.*)/\1=$PORT/g" $KAFKA_PATH/config/server.properties
+sed -r -i "s/^(log4j.rootLogger)=(.*)( stdout)/\1=WARN\3/g" $KAFKA_PATH/config/log4j.properties
+
+echo 'Starting Kafka'
+$KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
 
 mkdir -p $GOPATH/src/github.com/stealthly/go_kafka_client
 cp -r /go_kafka_client $GOPATH/src/github.com/stealthly

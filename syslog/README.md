@@ -26,3 +26,19 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 `--log.level` - log level for built-in logger. Possible values are: `trace`, `debug`, `info`, `warn`, `error`, `critical`. *Defaults to info*.
 
 `--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.
+
+Try it out using Vagrant
+=======================
+
+1. `cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog`    
+2. `go build`    
+3. `vagrant up`
+
+After this is done you will have a VM available at `192.168.66.66` with Zookeeper on port 2181, Kafka on port 9092, and Syslog Server listening on TCP port 5140 and UDP port 5141. To verify this is working you may do the following:
+
+1. Start the console consumer: `$KAFKA_HOME/bin/kafka-console-consumer.sh --zookeeper 192.168.66.66:2181 --topic syslog --from-beginning`
+2. Send some syslog messages via console: `echo "<34>1 2003-10-11T22:14:15.003Z localhost.stealth.ly su - ID23 - a simple message" > /dev/tcp/192.168.66.66/5140` to send via TCP or `echo "<34>1 2003-10-11T22:14:15.003Z localhost.stealth.ly su - ID23 - a simple message" > /dev/udp/192.168.66.66/5141` to send via UDP.
+
+**Customizing server**:
+
+You may want to produce to different topic or listen to other ports than 5140 and 5141 etc. All settings are kept in `syslog/vagrant/syslog.sh` file and can be modified before `vagrant up` to customize configurations.
