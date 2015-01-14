@@ -26,6 +26,26 @@ import (
 	"strings"
 )
 
+type tags map[string]string
+
+func (i tags) String() string {
+	return "tags"
+}
+
+func (i tags) Set(value string) error {
+	defer func() {
+		r := recover()
+		if r != nil {
+			fmt.Println("Tags are expected in k=v format.")
+			os.Exit(1)
+		}
+	}()
+
+	kv := strings.Split(value, "=")
+	i[kv[0]] = kv[1]
+	return nil
+}
+
 var logLevel = flag.String("log.level", "info", "Log level for built-in logger.")
 var producerConfig = flag.String("producer.config", "", "Path to producer configuration file.")
 var numProducers = flag.Int("num.producers", 1, "Number of producers.")
@@ -38,7 +58,13 @@ var udpPort = flag.String("udp.port", "5141", "UDP port to listen for incoming m
 var udpHost = flag.String("udp.host", "0.0.0.0", "UDP host to listen for incoming messages.")
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 
+//additional params
+var source = flag.String("source", "", "")
+var tag tags
+
 func parseAndValidateArgs() *kafka.SyslogProducerConfig {
+	tag = make(map[string]string)
+	flag.Var(tag, "tag", "")
 	flag.Parse()
 
 	setLogLevel()
@@ -81,6 +107,9 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 	}
 	config.TCPAddr = fmt.Sprintf("%s:%s", *tcpHost, *tcpPort)
 	config.UDPAddr = fmt.Sprintf("%s:%s", *udpHost, *udpPort)
+
+	config.Source = *source
+	config.Tags = tag
 
 	return config
 }

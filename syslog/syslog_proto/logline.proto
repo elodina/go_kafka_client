@@ -1,0 +1,16 @@
+package syslog.proto;
+
+message LogLine
+{
+	message Tag
+	{
+		required string key = 1;
+		required string value = 2;
+	}
+
+	required string line = 1;
+	optional string source = 2;
+	repeated Tag tag = 3;
+	optional int64 id = 4 [default = 0];
+	repeated int64 timings = 5;
+}
