@@ -51,9 +51,9 @@ func NewSyslogProducerConfig() *SyslogProducerConfig {
 }
 
 type SyslogProducer struct {
-	config   *SyslogProducerConfig
-	servers   []*syslog.Server
-	incoming syslog.LogPartsChannel
+	config           *SyslogProducerConfig
+	servers          []*syslog.Server
+	incoming         syslog.LogPartsChannel
 	incomingChannels []syslog.LogPartsChannel
 
 	producers []*sarama.Producer
@@ -61,7 +61,7 @@ type SyslogProducer struct {
 
 func NewSyslogProducer(config *SyslogProducerConfig) *SyslogProducer {
 	return &SyslogProducer{
-		config: config,
+		config:   config,
 		incoming: make(syslog.LogPartsChannel),
 	}
 }

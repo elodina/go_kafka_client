@@ -18,12 +18,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	syslog "github.com/mcuadros/go-syslog"
 	kafka "github.com/stealthly/go_kafka_client"
 	"os"
 	"os/signal"
-	"strings"
-	syslog "github.com/mcuadros/go-syslog"
 	"runtime"
+	"strings"
 )
 
 var logLevel = flag.String("log.level", "info", "Log level for built-in logger.")
@@ -88,13 +88,20 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 func setLogLevel() {
 	var level kafka.LogLevel
 	switch strings.ToLower(*logLevel) {
-		case "trace": level = kafka.TraceLevel
-		case "debug": level = kafka.DebugLevel
-		case "info": level = kafka.DebugLevel
-		case "warn": level = kafka.DebugLevel
-		case "error": level = kafka.DebugLevel
-		case "critical": level = kafka.DebugLevel
-		default: {
+	case "trace":
+		level = kafka.TraceLevel
+	case "debug":
+		level = kafka.DebugLevel
+	case "info":
+		level = kafka.DebugLevel
+	case "warn":
+		level = kafka.DebugLevel
+	case "error":
+		level = kafka.DebugLevel
+	case "critical":
+		level = kafka.DebugLevel
+	default:
+		{
 			fmt.Printf("Invalid log level: %s\n", *logLevel)
 			os.Exit(1)
 		}
