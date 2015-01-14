@@ -100,18 +100,26 @@ func (mb *messageBuffer) flushLoop() {
 }
 
 func (mb *messageBuffer) stop() {
-	Debug(mb, "Stopping message buffer")
-	mb.stopSending = true
-	mb.Close <- true
-	inLock(&mb.MessageLock, func() {
-		close(mb.flush)
-	})
-	mb.disconnectChannelsForPartition <- mb.TopicPartition
-	Debug(mb, "Stopped message buffer")
+	if !mb.stopSending {
+		mb.stopSending = true
+		Info(mb, "Trying to stop message buffer")
+		inLock(&mb.MessageLock, func() {
+				Info(mb, "Stopping message buffer")
+				mb.Close <- true
+				Info(mb, "Closing flush channel")
+				close(mb.flush)
+				Info(mb, "Disconnecting channels for partitions")
+				mb.disconnectChannelsForPartition <- mb.TopicPartition
+				Info(mb, "Stopped message buffer")
+			})
+	}
 }
 
 func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 	inLock(&mb.MessageLock, func() {
+		if mb.stopSending {
+			return
+		}
 		fetchResponseBlock := data.Data
 		topicPartition := data.TopicPartition
 		if topicPartition != mb.TopicPartition {
@@ -140,7 +148,15 @@ func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 				}
 			}
 		}
-		mb.askNextBatch <- mb.TopicPartition
+
+		askNextLoop:
+		for !mb.stopSending {
+			select {
+			case mb.askNextBatch <- mb.TopicPartition:
+				break askNextLoop
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
 	})
 }
 

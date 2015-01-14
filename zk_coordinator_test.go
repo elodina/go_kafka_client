@@ -53,7 +53,7 @@ func TestZkAPI(t *testing.T) {
 }
 
 func testCreatePathParentMayNotExist(t *testing.T, pathToCreate string) {
-	err := coordinator.createOrUpdatePathParentMayNotExist(pathToCreate, make([]byte, 0))
+	err := coordinator.createOrUpdatePathParentMayNotExistFailFast(pathToCreate, make([]byte, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func testCreatePathParentMayNotExist(t *testing.T, pathToCreate string) {
 
 func testGetBrokerInfo(t *testing.T) {
 	jsonBroker, _ := json.Marshal(broker)
-	coordinator.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", brokerIdsPath, broker.Id), []byte(jsonBroker))
+	coordinator.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", brokerIdsPath, broker.Id), []byte(jsonBroker))
 	brokerInfo, err := coordinator.getBrokerInfo(broker.Id)
 	if err != nil {
 		t.Error(err)
@@ -146,7 +146,7 @@ func testNewDeployedTopics(t *testing.T) {
 	go func() {
 		time.Sleep(1 * time.Second)
 		data, _ := json.Marshal(topics)
-		coordinator.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", newZKGroupDirs(group).ConsumerChangesDir, time.Now().Unix()), data)
+		coordinator.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", newZKGroupDirs(group).ConsumerChangesDir, time.Now().Unix()), data)
 	}()
 	select {
 	case event := <-events:

@@ -83,18 +83,6 @@ func (t *TopicInfo) String() string {
 		t.Version, t.Partitions)
 }
 
-//Information on Consumer subscription. Used to keep it in consumer coordinator.
-type TopicsToNumStreams interface {
-	//Creates a map descibing consumer subscription where keys are topic names and values are number of fetchers used to fetch these topics.
-	GetTopicsToNumStreamsMap() map[string]int
-
-	//Creates a map describing consumer subscription where keys are topic names and values are slices of ConsumerThreadIds used to fetch these topics.
-	GetConsumerThreadIdsPerTopic() map[string][]ConsumerThreadId
-
-	//Returns a pattern describing this TopicsToNumStreams.
-	Pattern() string
-}
-
 //Consumer routine id. Used to keep track of what consumer routine consumes a particular topic-partition in consumer coordinator.
 type ConsumerThreadId struct {
 	Consumer string
@@ -234,6 +222,18 @@ type ConsumerCoordinator interface {
 	/* Gets all deployed topics for consume group Group from consumer coordinator.
 	Returns a map where keys are notification ids and values are DeployedTopics. May also return an error (e.g. if failed to reach coordinator). */
 	GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error)
+
+	/*
+	*/
+	CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error)
+
+	/*
+	*/
+	AssertRebalanceState(group string, stateHash string, expected int) (bool, error)
+
+	/*
+	*/
+	RemoveStateAssertionSeries(group string, stateHash string) error
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
