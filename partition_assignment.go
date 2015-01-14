@@ -19,6 +19,11 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
+	"crypto/md5"
+	"io"
+	"strconv"
+	"encoding/hex"
 )
 
 const (
@@ -152,16 +157,39 @@ type assignmentContext struct {
 	PartitionsForTopic  map[string][]int32
 	ConsumersForTopic   map[string][]ConsumerThreadId
 	Consumers           []string
+	Brokers				[]*BrokerInfo
+	AllTopics			[]string
+}
+
+func (context *assignmentContext) hash() string {
+	hash := md5.New()
+	for _, broker := range context.Brokers {
+		io.WriteString(hash, strconv.Itoa(int(broker.Id)))
+	}
+
+	io.WriteString(hash, strings.Join(context.Consumers, ""))
+	for _, topic := range context.AllTopics {
+		io.WriteString(hash, topic)
+		if _, exists := context.PartitionsForTopic[topic]; !exists { continue }
+		for _, partition := range context.PartitionsForTopic[topic] {
+			io.WriteString(hash, strconv.Itoa(int(partition)))
+		}
+	}
+
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func newAssignmentContext(group string, consumerId string, excludeInternalTopics bool, coordinator ConsumerCoordinator) (*assignmentContext, error) {
+	brokers, _ := coordinator.GetAllBrokers()
+	allTopics, _ := coordinator.GetAllTopics()
+
 	topicCount, _ := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
-	topics := make([]string, 0)
+	myTopics := make([]string, 0)
 	for topic, _ := range myTopicThreadIds {
-		topics = append(topics, topic)
+		myTopics = append(myTopics, topic)
 	}
-	partitionsForTopic, _ := coordinator.GetPartitionsForTopics(topics)
+	partitionsForTopic, _ := coordinator.GetPartitionsForTopics(myTopics)
 	consumersForTopic, _ := coordinator.GetConsumersPerTopic(group, excludeInternalTopics)
 	consumers, _ := coordinator.GetConsumersInGroup(group)
 
@@ -173,10 +201,13 @@ func newAssignmentContext(group string, consumerId string, excludeInternalTopics
 		PartitionsForTopic:  partitionsForTopic,
 		ConsumersForTopic:   consumersForTopic,
 		Consumers:           consumers,
+		Brokers: 			 brokers,
+		AllTopics:			 allTopics,
 	}, nil
 }
 
-func newStaticAssignmentContext(group string, consumerId string, consumersInGroup []string, topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *assignmentContext {
+func newStaticAssignmentContext(group string, consumerId string, consumersInGroup []string, allTopics []string, brokers []*BrokerInfo,
+								topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *assignmentContext {
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 	consumersForTopic := make(map[string][]ConsumerThreadId)
 	for topic := range topicPartitionMap {
@@ -198,5 +229,7 @@ func newStaticAssignmentContext(group string, consumerId string, consumersInGrou
 		PartitionsForTopic:  topicPartitionMap,
 		ConsumersForTopic:   consumersForTopic,
 		Consumers:           consumersInGroup,
+		Brokers: 			 brokers,
+		AllTopics:			 allTopics,
 	}
 }

@@ -310,7 +310,7 @@ func (wm *WorkerManager) GetLargestOffset() int64 {
 
 // Updates the highest offset that has been processed by this WorkerManager with a new value.
 func (wm *WorkerManager) UpdateLargestOffset(offset int64) {
-	atomic.StoreInt64(&wm.largestOffset, int64(math.Max(float64(wm.largestOffset), float64(offset))))
+	atomic.StoreInt64(&wm.largestOffset, int64(math.Max(float64(wm.GetLargestOffset()), float64(offset))))
 }
 
 // Represents a worker that is able to process a single message.

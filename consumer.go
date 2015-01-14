@@ -71,6 +71,8 @@ type Consumer struct {
 	wmsIdleTimer                      metrics.Timer
 
 	newDeployedTopics []*DeployedTopics
+
+	lastSuccessfulRebalanceHash 	string
 }
 
 /* NewConsumer creates a new Consumer with a given configuration. Creating a Consumer does not start fetching immediately. */
@@ -139,10 +141,18 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	}
 
 	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	allTopics, err := c.config.Coordinator.GetAllTopics()
+	if err != nil {
+		panic(err)
+	}
+	brokers, err := c.config.Coordinator.GetAllBrokers()
+	if err != nil {
+		panic(err)
+	}
 
 	time.Sleep(c.config.DeploymentTimeout)
 
-	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, topicCount, topicPartitionMap)
+	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, allTopics, brokers, topicCount, topicPartitionMap)
 	partitionOwnershipDecision := newPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
 	topicPartitions := make([]*TopicAndPartition, 0)
@@ -262,7 +272,7 @@ func (c *Consumer) reinitializeConsumer() {
 
 func (c *Consumer) initializeWorkerManagers() {
 	inLock(&c.workerManagersLock, func() {
-		Debugf(c, "Initializing worker managers from topic registry: %s", c.topicRegistry)
+		Infof(c, "Initializing worker managers from topic registry: %s", c.topicRegistry)
 		for topic, partitions := range c.topicRegistry {
 			for partition := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
@@ -353,7 +363,15 @@ func (c *Consumer) applyNewDeployedTopics() {
 		if err != nil {
 			panic(err)
 		}
-		assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, consumersInGroup, topicCount, topicPartitionMap)
+		allTopics, err := c.config.Coordinator.GetAllTopics()
+		if err != nil {
+			panic(err)
+		}
+		brokers, err := c.config.Coordinator.GetAllBrokers()
+		if err != nil {
+			panic(err)
+		}
+		assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, consumersInGroup, allTopics, brokers, topicCount, topicPartitionMap)
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 		partitionOwnershipDecision := partitionAssignor(assignmentContext)
 		topicPartitions := make([]*TopicAndPartition, 0)
@@ -410,18 +428,18 @@ func (c *Consumer) stopWorkerManagers() bool {
 }
 
 func (c *Consumer) updateFetcher(numStreams int) {
-	Debugf(c, "Updating fetcher with numStreams = %d", numStreams)
+	Infof(c, "Updating fetcher with numStreams = %d", numStreams)
 	allPartitionInfos := make([]*partitionTopicInfo, 0)
-	Debugf(c, "Topic Registry = %s", c.topicRegistry)
+	Infof(c, "Topic Registry = %s", c.topicRegistry)
 	for _, partitionAndInfo := range c.topicRegistry {
 		for _, partitionInfo := range partitionAndInfo {
 			allPartitionInfos = append(allPartitionInfos, partitionInfo)
 		}
 	}
 
-	Debug(c, "Restarted streams")
+	Infof(c, "Restarted streams")
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
-	Debug(c, "Updated fetcher")
+	Infof(c, "Updated fetcher")
 	c.connectChannels <- true
 }
 
@@ -536,43 +554,88 @@ func (c *Consumer) unsubscribeFromChanges() {
 }
 
 func (c *Consumer) rebalance() {
-	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	if !c.isShuttingdown {
 		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
-		var success = false
-		for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-			if tryRebalance(c, partitionAssignor) {
-				success = true
-				break
-			} else {
-				time.Sleep(c.config.RebalanceBackoff)
-			}
+		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
+		context, rebalanceRequired := c.startStateAssertionSeries()
+		for context == nil {
+			context, rebalanceRequired = c.startStateAssertionSeries()
 		}
 
-		if !success && !c.isShuttingdown {
-			panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
+		if rebalanceRequired {
+			success := false
+			for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
+				if tryRebalance(c, context, partitionAssignor) {
+					success = true
+					break
+				} else {
+					time.Sleep(c.config.RebalanceBackoff)
+				}
+			}
+
+			if !success && !c.isShuttingdown {
+				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
+			} else {
+				Info(c, "Rebalance has been successfully completed")
+			}
 		}
 	} else {
 		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.Consumerid)
 	}
 }
 
-func tryRebalance(c *Consumer, partitionAssignor assignStrategy) bool {
-	brokers, err := c.config.Coordinator.GetAllBrokers()
-	if err != nil {
-		Errorf(c, "Failed to get broker list: %s", err)
-		return false
-	}
-	Infof(c, "%v\n", brokers)
-	c.releasePartitionOwnership(c.topicRegistry)
-
-	assignmentContext, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
+func (c *Consumer) startStateAssertionSeries() (*assignmentContext, bool) {
+	context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid,
+										 c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
-		return false
+		//TODO what to do next?
+		panic(err)
 	}
 
-	partitionOwnershipDecision := partitionAssignor(assignmentContext)
+	if context.hash() != c.lastSuccessfulRebalanceHash {
+		c.releasePartitionOwnership(c.topicRegistry)
+		finished := make(chan bool)
+		newConsumerAdded, err := c.config.Coordinator.CommenceStateAssertionSeries(c.config.Consumerid, c.config.Groupid, context.hash(), finished)
+		if err != nil {
+			//TODO what to do next?
+			panic(err)
+		}
+
+		passed, err := c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
+		for !passed {
+			select {
+			case <-newConsumerAdded: {
+				passed, err = c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
+				if err != nil {
+					//TODO what to do next?
+					panic(err)
+				}
+			}
+			case <-time.After(c.config.RebalanceBarrierTimeout): {
+				err = c.config.Coordinator.RemoveStateAssertionSeries(c.config.Groupid, context.hash())
+				if err != nil {
+					//TODO what to do next?
+					panic(err)
+				}
+				finished <- true
+				return nil, true
+			}
+			}
+		}
+
+		finished <- true
+
+		c.lastSuccessfulRebalanceHash = context.hash()
+
+		return context, true
+	} else {
+		return context, false
+	}
+}
+
+func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor assignStrategy) bool {
+	partitionOwnershipDecision := partitionAssignor(context)
 	topicPartitions := make([]*TopicAndPartition, 0)
 	for topicPartition, _ := range partitionOwnershipDecision {
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
@@ -598,8 +661,11 @@ func tryRebalance(c *Consumer, partitionAssignor assignStrategy) bool {
 	}
 
 	if c.reflectPartitionOwnershipDecision(partitionOwnershipDecision) {
+		Info(c, "Partition ownership has been successfully reflected")
 		c.topicRegistry = currenttopicRegistry
-		c.initFetchersAndWorkers(assignmentContext)
+		Infof(c, "Trying to reinitialize fetchers and workers")
+		c.initFetchersAndWorkers(context)
+		Infof(c, "Fetchers and workers have been successfully reinitialized")
 	} else {
 		Errorf(c, "Failed to reflect partition ownership during rebalance")
 		return false
@@ -617,6 +683,7 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 				numStreams = len(v)
 				break
 			}
+			Infof(c, "Trying to update fetcher")
 			c.updateFetcher(numStreams)
 		}
 	case *WildcardTopicsToNumStreams:
@@ -624,6 +691,7 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 			c.updateFetcher(topicCount.NumStreams)
 		}
 	}
+	Infof(c, "Fetcher has been updated %s", assignmentContext)
 	c.initializeWorkerManagers()
 }
 

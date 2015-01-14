@@ -31,6 +31,7 @@ var (
 	consumersPath    = "/consumers"
 	brokerIdsPath    = "/brokers/ids"
 	brokerTopicsPath = "/brokers/topics"
+	emptyEvent 		 = zk.Event{}
 )
 
 /* ZookeeperCoordinator implements ConsumerCoordinator interface and is used to coordinate multiple consumers that work within the same consumer group. */
@@ -106,7 +107,7 @@ func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid
 
 	_, err := this.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	if err == zk.ErrNoNode {
-		err = this.createOrUpdatePathParentMayNotExist(registryDir, make([]byte, 0))
+		err = this.createOrUpdatePathParentMayNotExistFailFast(registryDir, make([]byte, 0))
 		if err != nil {
 			return err
 		}
@@ -137,13 +138,9 @@ func (this *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid 
 }
 
 func (this *ZookeeperCoordinator) tryDeregisterConsumer(Consumerid string, Groupid string) error {
-	pathToConsumer := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
-	Debugf(this, "Trying to deregister consumer at path: %s", pathToConsumer)
-	_, stat, err := this.zkConn.Get(pathToConsumer)
-	if err != nil {
-		return err
-	}
-	return this.zkConn.Delete(pathToConsumer, stat.Version)
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
+	Debugf(this, "Trying to deregister consumer at path: %s", path)
+	return this.deleteNode(path)
 }
 
 // Gets the information about consumer with Consumerid id that is a part of consumer group Groupid from this ConsumerCoordinator.
@@ -380,7 +377,7 @@ func (this *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId
 func (this *ZookeeperCoordinator) tryNotifyConsumerGroup(Groupid string, ConsumerId string) error {
 	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(Groupid).ConsumerChangesDir, ConsumerId, time.Now().Nanosecond())
 	Debugf(this, "Sending notification to consumer group at %s", path)
-	return this.createOrUpdatePathParentMayNotExist(path, make([]byte, 0))
+	return this.createOrUpdatePathParentMayNotExistFailFast(path, make([]byte, 0))
 }
 
 // Removes a notification notificationId for consumer group Group
@@ -398,17 +395,8 @@ func (this *ZookeeperCoordinator) PurgeNotificationForGroup(Groupid string, noti
 }
 
 func (this *ZookeeperCoordinator) tryPurgeNotificationForGroup(Groupid string, notificationId string) error {
-	pathToDelete := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerChangesDir, notificationId)
-	_, stat, err := this.zkConn.Get(pathToDelete)
-	if err != nil && err != zk.ErrNoNode {
-		return err
-	}
-	err = this.zkConn.Delete(pathToDelete, stat.Version)
-	if err != nil && err != zk.ErrNoNode {
-		return err
-	}
-
-	return nil
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerChangesDir, notificationId)
+	return this.deleteNode(path)
 }
 
 // Subscribes for any change that should trigger consumer rebalance on consumer group Groupid in this ConsumerCoordinator.
@@ -458,40 +446,49 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 		for {
 			select {
 			case e := <-zkEvents:
-				{
-					Trace(this, e)
-					if e.State == zk.StateDisconnected {
-						Debug(this, "ZK watcher session ended, reconnecting...")
+			{
+				Trace(this, e)
+				if e != emptyEvent {
+					if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+							changes <- NewTopicDeployed
+						} else {
+							changes <- Regular
+						}
+					}
+
+					if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
+						Info(this, "Trying to renew watcher for consumer registry")
 						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
 						if err != nil {
 							panic(err)
 						}
+					} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+						Info(this, "Trying to renew watcher for consumer changes dir")
 						consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
 						if err != nil {
 							panic(err)
 						}
+					} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
+						Info(this, "Trying to renew watcher for consumer topic dir")
 						topicsWatcher, err = this.getTopicsWatcher()
 						if err != nil {
 							panic(err)
 						}
+					} else if strings.HasPrefix(e.Path, brokerIdsPath) {
+						Info(this, "Trying to renew watcher for brokers in cluster")
 						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
 						if err != nil {
 							panic(err)
 						}
 					} else {
-						emptyEvent := zk.Event{}
-						if e != emptyEvent {
-							if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
-								changes <- NewTopicDeployed
-							} else {
-								changes <- Regular
-							}
-						} else {
-							//TODO configurable?
-							time.Sleep(2 * time.Second)
-						}
+						Warnf(this, "Unknown event path: %s", e.Path)
 					}
+
+					stopRedirecting <- true
+					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 				}
+			}
 			case <-this.unsubscribe:
 				{
 					stopRedirecting <- true
@@ -563,7 +560,122 @@ func (this *ZookeeperCoordinator) tryDeployTopics(Group string, Topics DeployedT
 	if err != nil {
 		return err
 	}
-	return this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerChangesDir, time.Now().Unix()), data)
+	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerChangesDir, time.Now().Unix()), data)
+}
+
+/*
+*/
+func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
+	this.ensureZkPathsExist(group)
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
+	var err error
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		Infof(this, "Commencing assertion series at %s", path)
+		_, err = this.zkConn.Create(path, make([]byte, 0), 0, zk.WorldACL(zk.PermAll))
+		if err == nil || err == zk.ErrNodeExists {
+			Infof(this, "Joining state barrier %s", path)
+			_, _, zkWatcher, err := this.zkConn.ChildrenW(path)
+			watcher := make(chan CoordinatorEvent)
+			if err == nil {
+				go func() {
+					for {
+						select {
+						case <-finished: return
+						case e := <-zkWatcher: {
+							if e != emptyEvent {
+								if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+									select {
+									case watcher <- Regular:
+									case <-finished: return
+									}
+								}
+								_, _, zkWatcher, err = this.zkConn.ChildrenW(path)
+							}
+						}
+						}
+					}
+				}()
+			}
+			err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
+			if err != nil {
+				panic(err)
+			}
+			Infof(this, "Successfully joined state barrier %s", path)
+
+			return watcher, err
+		}
+
+		Warnf(this, "Failed to join state barrier %s, retrying...", path)
+		time.Sleep(this.config.RequestBackoff)
+	}
+
+	Errorf(this, "Failed to join state barrier %s after %d retries", path, this.config.MaxRequestRetries)
+
+	return nil, err
+}
+
+/*
+*/
+func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
+	Debugf(this, "Trying to assert rebalance state for group %s and hash %s with %d", group, stateHash, expected)
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
+	var children []string
+	var err error
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		children, _, err = this.zkConn.Children(path)
+		if err == zk.ErrNoNode {
+			return false, nil
+		} else if err == nil {
+			return len(children) == expected, err
+		}
+		Warnf(this, "Failed to assert rebalance state %s, retrying...", path)
+		time.Sleep(this.config.RequestBackoff)
+	}
+	Errorf(this, "Failed to assert rebalance state %s after %d retries", path, this.config.MaxRequestRetries)
+
+	return false, err
+}
+
+/*
+*/
+func (this *ZookeeperCoordinator) RemoveStateAssertionSeries(group string, stateHash string) error {
+	var err error
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		err = this.tryRemoveStateAssertionSeries(group, stateHash)
+		if err == nil || err == zk.ErrNoNode {
+			return nil
+		}
+		Tracef(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
+		time.Sleep(this.config.RequestBackoff)
+	}
+
+	return err
+}
+
+func (this *ZookeeperCoordinator) tryRemoveStateAssertionSeries(group string, stateHash string) error {
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
+	Debugf(this, "Trying to fail rebalance at path: %s", path)
+
+	return this.deleteNode(path)
+}
+
+func (this *ZookeeperCoordinator) deleteNode(path string) error {
+	children, _, err := this.zkConn.Children(path)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		err := this.deleteNode(fmt.Sprintf("%s/%s", path, child))
+		if err != nil && err != zk.ErrNoNode {
+			return err
+		}
+	}
+
+	_, stat, err := this.zkConn.Get(path)
+	if err != nil {
+		return err
+	}
+	return this.zkConn.Delete(path, stat.Version)
 }
 
 /* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
@@ -588,12 +700,12 @@ func (this *ZookeeperCoordinator) ClaimPartitionOwnership(Groupid string, Topic 
 
 func (this *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
 	dirs := newZKGroupTopicDirs(group, topic)
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerOwnerDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailFast(dirs.ConsumerOwnerDir, make([]byte, 0))
 
 	pathToOwn := fmt.Sprintf("%s/%d", dirs.ConsumerOwnerDir, partition)
 	_, err := this.zkConn.Create(pathToOwn, []byte(consumerThreadId.String()), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	if err == zk.ErrNoNode {
-		err = this.createOrUpdatePathParentMayNotExist(dirs.ConsumerOwnerDir, make([]byte, 0))
+		err = this.createOrUpdatePathParentMayNotExistFailFast(dirs.ConsumerOwnerDir, make([]byte, 0))
 		if err != nil {
 			return false, err
 		}
@@ -620,7 +732,7 @@ func (this *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic
 func (this *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topic string, Partition int32) error {
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err := this.tryReleasePartitionOwnership(Groupid, Topic, Partition)
+		err = this.tryReleasePartitionOwnership(Groupid, Topic, Partition)
 		if err == nil {
 			return err
 		}
@@ -630,32 +742,35 @@ func (this *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topi
 	return err
 }
 
-func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(Groupid string, Topic string, Partition int32) error {
-	err := this.deletePartitionOwnership(Groupid, Topic, Partition)
-	if err != nil {
-		if err == zk.ErrNoNode {
-			Warn(this, err)
-			return nil
-		} else {
-			return err
-		}
+func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(group string, topic string, partition int32) error {
+	path := fmt.Sprintf("%s/%d", newZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
+	err := this.deleteNode(path)
+	if err != nil && err != zk.ErrNoNode {
+		return err
+	} else {
+		return nil
 	}
-	return nil
 }
 
 // Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Groupid.
 // Returns error if failed to commit offset.
 func (this *ZookeeperCoordinator) CommitOffset(Groupid string, TopicPartition *TopicAndPartition, Offset int64) error {
 	dirs := newZKGroupTopicDirs(Groupid, TopicPartition.Topic)
-	return this.createOrUpdatePathParentMayNotExist(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+	err := this.updateRecord(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+	if err == zk.ErrNoNode {
+		return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+	}
+
+	return err
 }
 
 func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {
 	dirs := newZKGroupDirs(group)
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerGroupDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerRegistryDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExist(dirs.ConsumerChangesDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerGroupDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerRegistryDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerChangesDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerRebalanceDir, make([]byte, 0))
 }
 
 func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Event, error) {
@@ -742,7 +857,15 @@ func (this *ZookeeperCoordinator) getTopicInfo(topic string) (*TopicInfo, error)
 	return topicInfo, nil
 }
 
-func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCreate string, data []byte) error {
+func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExistFailSafe(pathToCreate string, data []byte) error {
+	return this.createOrUpdatePathParentMayNotExist(pathToCreate, data, true)
+}
+
+func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExistFailFast(pathToCreate string, data []byte) error {
+	return this.createOrUpdatePathParentMayNotExist(pathToCreate, data, false)
+}
+
+func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCreate string, data []byte, failSafe bool) error {
 	Debugf(this, "Trying to create path %s in Zookeeper", pathToCreate)
 	_, err := this.zkConn.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
 	if err != nil {
@@ -755,7 +878,7 @@ func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCrea
 			}
 		} else {
 			parent, _ := path.Split(pathToCreate)
-			err = this.createOrUpdatePathParentMayNotExist(parent[:len(parent)-1], make([]byte, 0))
+			err = this.createOrUpdatePathParentMayNotExist(parent[:len(parent)-1], make([]byte, 0), failSafe)
 			if err != nil {
 				if zk.ErrNodeExists != err {
 					Error(this, err.Error())
@@ -767,24 +890,13 @@ func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCrea
 
 			Debugf(this, "Trying again to create path %s in Zookeeper", pathToCreate)
 			_, err = this.zkConn.Create(pathToCreate, data, 0, zk.WorldACL(zk.PermAll))
+			if err == zk.ErrNodeExists && failSafe {
+				err = nil
+			}
 		}
 	}
 
 	return err
-}
-
-func (this *ZookeeperCoordinator) deletePartitionOwnership(group string, topic string, partition int32) error {
-	pathToDelete := fmt.Sprintf("%s/%d", newZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
-	_, stat, err := this.zkConn.Get(pathToDelete)
-	if err != nil {
-		return err
-	}
-	err = this.zkConn.Delete(pathToDelete, stat.Version)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (this *ZookeeperCoordinator) updateRecord(pathToCreate string, dataToWrite []byte) error {
@@ -843,18 +955,20 @@ func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 }
 
 type zkGroupDirs struct {
-	Group               string
-	ConsumerDir         string
-	ConsumerGroupDir    string
-	ConsumerRegistryDir string
-	ConsumerChangesDir  string
-	ConsumerSyncDir     string
+	Group                string
+	ConsumerDir          string
+	ConsumerGroupDir     string
+	ConsumerRegistryDir  string
+	ConsumerChangesDir   string
+	ConsumerRebalanceDir string
+	ConsumerSyncDir      string
 }
 
 func newZKGroupDirs(group string) *zkGroupDirs {
 	consumerGroupDir := fmt.Sprintf("%s/%s", consumersPath, group)
 	consumerRegistryDir := fmt.Sprintf("%s/ids", consumerGroupDir)
 	consumerChangesDir := fmt.Sprintf("%s/changes", consumerGroupDir)
+	consumerRebalanceDir := fmt.Sprintf("%s/rebalance", consumerGroupDir)
 	consumerSyncDir := fmt.Sprintf("%s/sync", consumerGroupDir)
 	return &zkGroupDirs{
 		Group:               group,
@@ -862,6 +976,7 @@ func newZKGroupDirs(group string) *zkGroupDirs {
 		ConsumerGroupDir:    consumerGroupDir,
 		ConsumerRegistryDir: consumerRegistryDir,
 		ConsumerChangesDir:  consumerChangesDir,
+		ConsumerRebalanceDir: consumerRebalanceDir,
 		ConsumerSyncDir:     consumerSyncDir,
 	}
 }
@@ -928,6 +1043,15 @@ func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan C
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error) {
+	panic("Not implemented")
+}
+func (mzk *mockZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
+	panic("Not implemented")
+}
+func (mzk *mockZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
+	panic("Not implemented")
+}
+func (mzk *mockZookeeperCoordinator) RemoveStateAssertionSeries(group string, stateHash string) error {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }
