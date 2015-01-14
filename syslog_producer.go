@@ -23,7 +23,7 @@ import (
 	"github.com/jeromer/syslogparser"
 	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
 	"time"
-	"code.google.com/p/goprotobuf/proto"
+	"github.com/golang/protobuf/proto"
 )
 
 // SyslogProducerConfig defines configuration options for SyslogProducer
