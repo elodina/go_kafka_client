@@ -31,6 +31,15 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 
 `--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.
 
+Running with Docker
+==================
+
+We provided a Docker image for quick deployment without cloning the repo, building the binary etc. Running it is as easy as following:
+
+`docker run --net=host -v $(pwd):/syslog stealthly/syslog --topic syslog --producer.config=/syslog/producer.properties`
+
+You may pass all configurations described above as arguments to the container.
+
 Try it out using Vagrant
 =======================
 

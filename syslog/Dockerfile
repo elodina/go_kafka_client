@@ -19,7 +19,7 @@ MAINTAINER stealthly
 
 #Get and build
 RUN git clone https://github.com/pote/gpm.git && cd gpm && git checkout v1.3.1 && ./configure && make install
-RUN go get github.com/stealthly/go_kafka_client && cd $GOPATH/src/github.com/stealthly/go_kafka_client && git checkout syslog && gpm install
+RUN go get github.com/stealthly/go_kafka_client && cd $GOPATH/src/github.com/stealthly/go_kafka_client && gpm install
 RUN cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog && go build
 
 ADD syslog /usr/bin/syslog
