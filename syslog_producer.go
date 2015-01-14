@@ -21,9 +21,6 @@ import (
 	syslog "github.com/mcuadros/go-syslog"
 	"strings"
 	"github.com/jeromer/syslogparser"
-	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
-	"time"
-	"github.com/golang/protobuf/proto"
 )
 
 // SyslogProducerConfig defines configuration options for SyslogProducer
@@ -48,14 +45,14 @@ type SyslogProducerConfig struct {
 	// Receive messages from this UDP address and post them to topic.
 	UDPAddr string
 
-	Source string
-
-	Tags map[string]string
+	Transformer func(message syslogparser.LogParts, topic string) *sarama.MessageToSend
 }
 
 // Creates an empty SyslogProducerConfig.
 func NewSyslogProducerConfig() *SyslogProducerConfig {
-	return &SyslogProducerConfig{}
+	return &SyslogProducerConfig{
+		Transformer: simpleTransformFunc,
+	}
 }
 
 type SyslogProducer struct {
@@ -190,46 +187,21 @@ func (this *SyslogProducer) startProducers() {
 			panic(err)
 		}
 		this.producers = append(this.producers, producer)
-		if (this.config.Source == "" && len(this.config.Tags) == 0) {
-			go this.produceRoutine(producer, this.simpleTransformFunc)
-		} else {
-			go this.produceRoutine(producer, this.protobufTransformFunc)
-		}
+		go this.produceRoutine(producer)
 	}
 }
 
-func (this *SyslogProducer) produceRoutine(producer *sarama.Producer, transformer func(syslogparser.LogParts) *sarama.MessageToSend) {
+func (this *SyslogProducer) produceRoutine(producer *sarama.Producer) {
 	for msg := range this.incoming {
 		Tracef(this, "Got message: %s", msg)
-		producer.Input() <- transformer(msg)
+		producer.Input() <- this.config.Transformer(msg, this.config.Topic)
 	}
 }
 
-func (this *SyslogProducer) simpleTransformFunc(msg syslogparser.LogParts) *sarama.MessageToSend {
+func simpleTransformFunc(msg syslogparser.LogParts, topic string) *sarama.MessageToSend {
 	b, err := json.Marshal(msg)
 	if err != nil {
-		Errorf(this, "Failed to marshal %s as JSON", msg)
+		Errorf("simple-transform", "Failed to marshal %s as JSON", msg)
 	}
-	return &sarama.MessageToSend{Topic: this.config.Topic, Value: sarama.ByteEncoder(b)}
-}
-
-func (this *SyslogProducer) protobufTransformFunc(msg syslogparser.LogParts) *sarama.MessageToSend {
-	line := &sp.LogLine{}
-	b, err := json.Marshal(msg)
-	if err != nil {
-		Errorf(this, "Failed to marshal %s as JSON", msg)
-	}
-	line.Line = proto.String(string(b))
-	line.Source = proto.String(this.config.Source)
-	for k, v := range this.config.Tags {
-		line.Tag = append(line.Tag, &sp.LogLine_Tag{Key: proto.String(k), Value: proto.String(v)})
-	}
-	line.Timings = append(line.Timings, time.Now().Unix())
-
-	protobuf, err := proto.Marshal(line)
-	if err != nil {
-		Errorf(this, "Failed to marshal %s as Protocol Buffer", msg)
-	}
-
-	return &sarama.MessageToSend{Topic: this.config.Topic, Key: sarama.StringEncoder(this.config.Source), Value: sarama.ByteEncoder(protobuf)}
+	return &sarama.MessageToSend{Topic: topic, Value: sarama.ByteEncoder(b)}
 }

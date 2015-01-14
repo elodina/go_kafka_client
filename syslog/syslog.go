@@ -24,6 +24,13 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"math"
+	"github.com/jeromer/syslogparser"
+	"github.com/Shopify/sarama"
+	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
+	"encoding/json"
+	"github.com/golang/protobuf/proto"
+	"time"
 )
 
 type tags map[string]string
@@ -61,6 +68,7 @@ var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs t
 //additional params
 var source = flag.String("source", "", "")
 var tag tags
+var logtypeid = flag.Int64("log.type.id", math.MinInt64, "")
 
 func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 	tag = make(map[string]string)
@@ -108,8 +116,9 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 	config.TCPAddr = fmt.Sprintf("%s:%s", *tcpHost, *tcpPort)
 	config.UDPAddr = fmt.Sprintf("%s:%s", *udpHost, *udpPort)
 
-	config.Source = *source
-	config.Tags = tag
+	if !(*source == "" && len(tag) == 0 && *logtypeid == math.MinInt64) {
+		config.Transformer = protobufTransformer
+	}
 
 	return config
 }
@@ -130,10 +139,10 @@ func setLogLevel() {
 	case "critical":
 		level = kafka.DebugLevel
 	default:
-		{
-			fmt.Printf("Invalid log level: %s\n", *logLevel)
-			os.Exit(1)
-		}
+	{
+		fmt.Printf("Invalid log level: %s\n", *logLevel)
+		os.Exit(1)
+	}
 	}
 	kafka.Logger = kafka.NewDefaultLogger(level)
 }
@@ -147,4 +156,29 @@ func main() {
 	signal.Notify(ctrlc, os.Interrupt)
 	<-ctrlc
 	producer.Stop()
+}
+
+func protobufTransformer(msg syslogparser.LogParts, topic string) *sarama.MessageToSend {
+	line := &sp.LogLine{}
+
+	b, err := json.Marshal(msg)
+	if err != nil {
+		kafka.Errorf("protobuf-transformer", "Failed to marshal %s as JSON", msg)
+	}
+	line.Line = proto.String(string(b))
+	line.Source = proto.String(*source)
+	for k, v := range tag {
+		line.Tag = append(line.Tag, &sp.LogLine_Tag{Key: proto.String(k), Value: proto.String(v)})
+	}
+	if *logtypeid != math.MinInt64 {
+		line.Logtypeid = logtypeid
+	}
+	line.Timings = append(line.Timings, time.Now().Unix())
+
+	protobuf, err := proto.Marshal(line)
+	if err != nil {
+		kafka.Errorf("protobuf-transformer", "Failed to marshal %s as Protocol Buffer", msg)
+	}
+
+	return &sarama.MessageToSend{Topic: topic, Key: sarama.StringEncoder(*source), Value: sarama.ByteEncoder(protobuf)}
 }

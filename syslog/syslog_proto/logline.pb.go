@@ -22,9 +22,9 @@ var _ = math.Inf
 
 type LogLine struct {
 	Line             *string        `protobuf:"bytes,1,req,name=line" json:"line,omitempty"`
-	Source           *string        `protobuf:"bytes,2,opt,name=source" json:"source,omitempty"`
+	Source           *string        `protobuf:"bytes,2,opt,name=source,def=" json:"source,omitempty"`
 	Tag              []*LogLine_Tag `protobuf:"bytes,3,rep,name=tag" json:"tag,omitempty"`
-	Eventid          *int64         `protobuf:"varint,4,opt,name=eventid,def=0" json:"eventid,omitempty"`
+	Logtypeid        *int64         `protobuf:"varint,4,opt,name=logtypeid,def=0" json:"logtypeid,omitempty"`
 	Timings          []int64        `protobuf:"varint,5,rep,name=timings" json:"timings,omitempty"`
 	XXX_unrecognized []byte         `json:"-"`
 }
@@ -33,7 +33,7 @@ func (m *LogLine) Reset()         { *m = LogLine{} }
 func (m *LogLine) String() string { return proto.CompactTextString(m) }
 func (*LogLine) ProtoMessage()    {}
 
-const Default_LogLine_Eventid int64 = 0
+const Default_LogLine_Logtypeid int64 = 0
 
 func (m *LogLine) GetLine() string {
 	if m != nil && m.Line != nil {
@@ -56,11 +56,11 @@ func (m *LogLine) GetTag() []*LogLine_Tag {
 	return nil
 }
 
-func (m *LogLine) GetEventid() int64 {
-	if m != nil && m.Eventid != nil {
-		return *m.Eventid
+func (m *LogLine) GetLogtypeid() int64 {
+	if m != nil && m.Logtypeid != nil {
+		return *m.Logtypeid
 	}
-	return Default_LogLine_Eventid
+	return Default_LogLine_Logtypeid
 }
 
 func (m *LogLine) GetTimings() []int64 {
