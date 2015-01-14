@@ -38,8 +38,11 @@ type SyslogProducerConfig struct {
 
 	Topic string
 
-	// Receive messages from this address and post them to topic.
+	// Receive messages from this TCP address and post them to topic.
 	TCPAddr string
+
+	// Receive messages from this UDP address and post them to topic.
+	UDPAddr string
 }
 
 // Creates an empty SyslogProducerConfig.
@@ -49,8 +52,9 @@ func NewSyslogProducerConfig() *SyslogProducerConfig {
 
 type SyslogProducer struct {
 	config   *SyslogProducerConfig
-	server   *syslog.Server
+	servers   []*syslog.Server
 	incoming syslog.LogPartsChannel
+	incomingChannels []syslog.LogPartsChannel
 
 	producers []*sarama.Producer
 }
@@ -58,6 +62,7 @@ type SyslogProducer struct {
 func NewSyslogProducer(config *SyslogProducerConfig) *SyslogProducer {
 	return &SyslogProducer{
 		config: config,
+		incoming: make(syslog.LogPartsChannel),
 	}
 }
 
@@ -68,23 +73,36 @@ func (this *SyslogProducer) String() string {
 func (this *SyslogProducer) Start() {
 	Trace(this, "Starting...")
 	this.startTCPServer()
+	this.startUDPServer()
 	this.startProducers()
 }
 
 func (this *SyslogProducer) Stop() {
 	Trace(this, "Stopping..")
+
+	//temporary fix until https://github.com/mcuadros/go-syslog/pull/7 is accepted
+	defer func() {
+		recover()
+	}()
+
+	for _, incoming := range this.incomingChannels {
+		close(incoming)
+	}
 	close(this.incoming)
 
 	for _, producer := range this.producers {
 		producer.Close()
 	}
 
-	this.server.Kill()
+	for _, server := range this.servers {
+		server.Kill()
+	}
 }
 
 func (this *SyslogProducer) startTCPServer() {
 	Trace(this, "Starting TCP server")
 	channel := make(syslog.LogPartsChannel)
+	this.incomingChannels = append(this.incomingChannels, channel)
 	handler := syslog.NewChannelHandler(channel)
 
 	server := syslog.NewServer()
@@ -97,9 +115,38 @@ func (this *SyslogProducer) startTCPServer() {
 		panic(err)
 	}
 
-	this.server = server
-	this.incoming = channel
+	this.servers = append(this.servers, server)
+	go func() {
+		for msg := range channel {
+			this.incoming <- msg
+		}
+	}()
 	Infof(this, "Listening for messages at TCP %s", this.config.TCPAddr)
+}
+
+func (this *SyslogProducer) startUDPServer() {
+	Trace(this, "Starting UDP server")
+	channel := make(syslog.LogPartsChannel)
+	this.incomingChannels = append(this.incomingChannels, channel)
+	handler := syslog.NewChannelHandler(channel)
+
+	server := syslog.NewServer()
+	server.SetFormat(this.config.Format)
+	server.SetHandler(handler)
+	if err := server.ListenUDP(this.config.UDPAddr); err != nil {
+		panic(err)
+	}
+	if err := server.Boot(); err != nil {
+		panic(err)
+	}
+
+	this.servers = append(this.servers, server)
+	go func() {
+		for msg := range channel {
+			this.incoming <- msg
+		}
+	}()
+	Infof(this, "Listening for messages at UDP %s", this.config.UDPAddr)
 }
 
 func (this *SyslogProducer) startProducers() {

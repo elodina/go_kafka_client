@@ -34,6 +34,8 @@ var topic = flag.String("topic", "", "Topic to produce messages into.")
 var format = flag.String("format", "rfc5424", "Message format. Either RFC5424 or RFC3164.")
 var tcpPort = flag.String("tcp.port", "5140", "TCP port to listen for incoming messages.")
 var tcpHost = flag.String("tcp.host", "0.0.0.0", "TCP host to listen for incoming messages.")
+var udpPort = flag.String("udp.port", "5141", "UDP port to listen for incoming messages.")
+var udpHost = flag.String("udp.host", "0.0.0.0", "UDP host to listen for incoming messages.")
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 
 func parseAndValidateArgs() *kafka.SyslogProducerConfig {
@@ -78,6 +80,7 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 		os.Exit(1)
 	}
 	config.TCPAddr = fmt.Sprintf("%s:%s", *tcpHost, *tcpPort)
+	config.UDPAddr = fmt.Sprintf("%s:%s", *udpHost, *udpPort)
 
 	return config
 }

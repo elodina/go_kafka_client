@@ -19,6 +19,10 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 
 `--tcp.host` - TCP host to listen for incoming syslog messages. *Defaults to 0.0.0.0*.
 
+`--udp.port` - UDP port to listen for incoming syslog messages. *Defaults to 5141*.
+
+`--udp.host` - UDP host to listen for incoming syslog messages. *Defaults to 0.0.0.0*.
+
 `--num.producers` - number of producer instances. This can be used to increase throughput. *Defaults to 1*.
 
 `--queue.size` - number of messages that are buffered for producing. *Defaults to 10000*.
