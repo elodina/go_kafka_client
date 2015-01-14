@@ -17,22 +17,11 @@ FROM golang:1.4
 
 MAINTAINER stealthly
 
-#Syslog defaults
-ENV FORMAT rfc5424
-ENV TCP_PORT 5140
-ENV TCP_HOST 0.0.0.0
-ENV NUM_PRODUCERS 1
-ENV QUEUE_SIZE 10000
-ENV LOG_LEVEL info
-ENV MAX_PROCS 0
-
-#Get GPM
+#Get and build
 RUN git clone https://github.com/pote/gpm.git && cd gpm && git checkout v1.3.1 && ./configure && make install
 RUN go get github.com/stealthly/go_kafka_client && cd $GOPATH/src/github.com/stealthly/go_kafka_client && git checkout syslog && gpm install
 RUN cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog && go build
 
-#Adding startup script
 ADD syslog /usr/bin/syslog
 
-#Run server
-CMD syslog --producer.config $PRODUCER_CONFIG --topic $TOPIC --format $FORMAT --tcp.port $TCP_PORT --tcp.host $TCP_HOST --num.producers $NUM_PRODUCERS --queue.size $QUEUE_SIZE --log.level $LOG_LEVEL --max.procs $MAX_PROCS
+ENTRYPOINT ["syslog"]
