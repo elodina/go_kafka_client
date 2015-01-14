@@ -44,6 +44,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 	workerTaskTimeout, _ := time.ParseDuration(rawConfig["worker_task_timeout"])
 	workerManagersStopTimeout, _ := time.ParseDuration(rawConfig["worker_managers_stop_timeout"])
 
+	rebalanceBarrierTimeout, _ := time.ParseDuration(rawConfig["rebalance_barrier_timeout"])
 	rebalanceMaxRetries, _ := strconv.Atoi(rawConfig["rebalance_max_retries"])
 	rebalanceBackoff, _ := time.ParseDuration(rawConfig["rebalance_backoff"])
 	partitionAssignmentStrategy, _ := rawConfig["partition_assignment_strategy"]
@@ -82,6 +83,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 	config.WorkerThresholdTimeWindow = workerConsideredFailedTimeWindow
 	config.WorkerTaskTimeout = workerTaskTimeout
 	config.WorkerManagersStopTimeout = workerManagersStopTimeout
+	config.RebalanceBarrierTimeout = rebalanceBarrierTimeout
 	config.RebalanceMaxRetries = int32(rebalanceMaxRetries)
 	config.RebalanceBackoff = rebalanceBackoff
 	config.PartitionAssignmentStrategy = partitionAssignmentStrategy
