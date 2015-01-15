@@ -18,9 +18,9 @@ package go_kafka_client
 import (
 	"encoding/json"
 	"github.com/Shopify/sarama"
+	"github.com/jeromer/syslogparser"
 	syslog "github.com/mcuadros/go-syslog"
 	"strings"
-	"github.com/jeromer/syslogparser"
 )
 
 // SyslogProducerConfig defines configuration options for SyslogProducer

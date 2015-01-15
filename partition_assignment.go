@@ -16,14 +16,14 @@ limitations under the License. */
 package go_kafka_client
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
-	"strings"
-	"crypto/md5"
-	"io"
 	"strconv"
-	"encoding/hex"
+	"strings"
 )
 
 const (
@@ -157,8 +157,8 @@ type assignmentContext struct {
 	PartitionsForTopic  map[string][]int32
 	ConsumersForTopic   map[string][]ConsumerThreadId
 	Consumers           []string
-	Brokers				[]*BrokerInfo
-	AllTopics			[]string
+	Brokers             []*BrokerInfo
+	AllTopics           []string
 }
 
 func (context *assignmentContext) hash() string {
@@ -170,7 +170,9 @@ func (context *assignmentContext) hash() string {
 	io.WriteString(hash, strings.Join(context.Consumers, ""))
 	for _, topic := range context.AllTopics {
 		io.WriteString(hash, topic)
-		if _, exists := context.PartitionsForTopic[topic]; !exists { continue }
+		if _, exists := context.PartitionsForTopic[topic]; !exists {
+			continue
+		}
 		for _, partition := range context.PartitionsForTopic[topic] {
 			io.WriteString(hash, strconv.Itoa(int(partition)))
 		}
@@ -201,13 +203,13 @@ func newAssignmentContext(group string, consumerId string, excludeInternalTopics
 		PartitionsForTopic:  partitionsForTopic,
 		ConsumersForTopic:   consumersForTopic,
 		Consumers:           consumers,
-		Brokers: 			 brokers,
-		AllTopics:			 allTopics,
+		Brokers:             brokers,
+		AllTopics:           allTopics,
 	}, nil
 }
 
 func newStaticAssignmentContext(group string, consumerId string, consumersInGroup []string, allTopics []string, brokers []*BrokerInfo,
-								topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *assignmentContext {
+	topicCount TopicsToNumStreams, topicPartitionMap map[string][]int32) *assignmentContext {
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 	consumersForTopic := make(map[string][]ConsumerThreadId)
 	for topic := range topicPartitionMap {
@@ -229,7 +231,7 @@ func newStaticAssignmentContext(group string, consumerId string, consumersInGrou
 		PartitionsForTopic:  topicPartitionMap,
 		ConsumersForTopic:   consumersForTopic,
 		Consumers:           consumersInGroup,
-		Brokers: 			 brokers,
-		AllTopics:			 allTopics,
+		Brokers:             brokers,
+		AllTopics:           allTopics,
 	}
 }

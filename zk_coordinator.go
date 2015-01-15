@@ -31,7 +31,7 @@ var (
 	consumersPath    = "/consumers"
 	brokerIdsPath    = "/brokers/ids"
 	brokerTopicsPath = "/brokers/topics"
-	emptyEvent 		 = zk.Event{}
+	emptyEvent       = zk.Event{}
 )
 
 /* ZookeeperCoordinator implements ConsumerCoordinator interface and is used to coordinate multiple consumers that work within the same consumer group. */
@@ -446,49 +446,49 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 		for {
 			select {
 			case e := <-zkEvents:
-			{
-				Trace(this, e)
-				if e != emptyEvent {
-					if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
-						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
-							changes <- NewTopicDeployed
+				{
+					Trace(this, e)
+					if e != emptyEvent {
+						if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+							if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+								changes <- NewTopicDeployed
+							} else {
+								changes <- Regular
+							}
+						}
+
+						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
+							Info(this, "Trying to renew watcher for consumer registry")
+							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
+							Info(this, "Trying to renew watcher for consumer changes dir")
+							consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
+							Info(this, "Trying to renew watcher for consumer topic dir")
+							topicsWatcher, err = this.getTopicsWatcher()
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, brokerIdsPath) {
+							Info(this, "Trying to renew watcher for brokers in cluster")
+							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+							if err != nil {
+								panic(err)
+							}
 						} else {
-							changes <- Regular
+							Warnf(this, "Unknown event path: %s", e.Path)
 						}
-					}
 
-					if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
-						Info(this, "Trying to renew watcher for consumer registry")
-						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
-						if err != nil {
-							panic(err)
-						}
-					} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
-						Info(this, "Trying to renew watcher for consumer changes dir")
-						consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
-						if err != nil {
-							panic(err)
-						}
-					} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
-						Info(this, "Trying to renew watcher for consumer topic dir")
-						topicsWatcher, err = this.getTopicsWatcher()
-						if err != nil {
-							panic(err)
-						}
-					} else if strings.HasPrefix(e.Path, brokerIdsPath) {
-						Info(this, "Trying to renew watcher for brokers in cluster")
-						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
-						if err != nil {
-							panic(err)
-						}
-					} else {
-						Warnf(this, "Unknown event path: %s", e.Path)
+						stopRedirecting <- true
+						stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 					}
-
-					stopRedirecting <- true
-					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 				}
-			}
 			case <-this.unsubscribe:
 				{
 					stopRedirecting <- true
@@ -564,7 +564,7 @@ func (this *ZookeeperCoordinator) tryDeployTopics(Group string, Topics DeployedT
 }
 
 /*
-*/
+ */
 func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
 	this.ensureZkPathsExist(group)
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
@@ -580,18 +580,21 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 				go func() {
 					for {
 						select {
-						case <-finished: return
-						case e := <-zkWatcher: {
-							if e != emptyEvent {
-								if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
-									select {
-									case watcher <- Regular:
-									case <-finished: return
+						case <-finished:
+							return
+						case e := <-zkWatcher:
+							{
+								if e != emptyEvent {
+									if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+										select {
+										case watcher <- Regular:
+										case <-finished:
+											return
+										}
 									}
+									_, _, zkWatcher, err = this.zkConn.ChildrenW(path)
 								}
-								_, _, zkWatcher, err = this.zkConn.ChildrenW(path)
 							}
-						}
 						}
 					}
 				}()
@@ -615,7 +618,7 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 }
 
 /*
-*/
+ */
 func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
 	Debugf(this, "Trying to assert rebalance state for group %s and hash %s with %d", group, stateHash, expected)
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
@@ -637,7 +640,7 @@ func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash s
 }
 
 /*
-*/
+ */
 func (this *ZookeeperCoordinator) RemoveStateAssertionSeries(group string, stateHash string) error {
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
@@ -971,13 +974,13 @@ func newZKGroupDirs(group string) *zkGroupDirs {
 	consumerRebalanceDir := fmt.Sprintf("%s/rebalance", consumerGroupDir)
 	consumerSyncDir := fmt.Sprintf("%s/sync", consumerGroupDir)
 	return &zkGroupDirs{
-		Group:               group,
-		ConsumerDir:         consumersPath,
-		ConsumerGroupDir:    consumerGroupDir,
-		ConsumerRegistryDir: consumerRegistryDir,
-		ConsumerChangesDir:  consumerChangesDir,
+		Group:                group,
+		ConsumerDir:          consumersPath,
+		ConsumerGroupDir:     consumerGroupDir,
+		ConsumerRegistryDir:  consumerRegistryDir,
+		ConsumerChangesDir:   consumerChangesDir,
 		ConsumerRebalanceDir: consumerRebalanceDir,
-		ConsumerSyncDir:     consumerSyncDir,
+		ConsumerSyncDir:      consumerSyncDir,
 	}
 }
 
