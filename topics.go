@@ -17,7 +17,6 @@ package go_kafka_client
 
 import "strings"
 
-
 //Information on Consumer subscription. Used to keep it in consumer coordinator.
 type TopicsToNumStreams interface {
 	//Creates a map descibing consumer subscription where keys are topic names and values are number of fetchers used to fetch these topics.

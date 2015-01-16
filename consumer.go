@@ -72,7 +72,7 @@ type Consumer struct {
 
 	newDeployedTopics []*DeployedTopics
 
-	lastSuccessfulRebalanceHash 	string
+	lastSuccessfulRebalanceHash string
 }
 
 /* NewConsumer creates a new Consumer with a given configuration. Creating a Consumer does not start fetching immediately. */
@@ -586,7 +586,7 @@ func (c *Consumer) rebalance() {
 
 func (c *Consumer) startStateAssertionSeries() (*assignmentContext, bool) {
 	context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid,
-										 c.config.ExcludeInternalTopics, c.config.Coordinator)
+		c.config.ExcludeInternalTopics, c.config.Coordinator)
 	if err != nil {
 		Errorf(c, "Failed to initialize assignment context: %s", err)
 		//TODO what to do next?
@@ -605,22 +605,24 @@ func (c *Consumer) startStateAssertionSeries() (*assignmentContext, bool) {
 		passed, err := c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
 		for !passed {
 			select {
-			case <-newConsumerAdded: {
-				passed, err = c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
-				if err != nil {
-					//TODO what to do next?
-					panic(err)
+			case <-newConsumerAdded:
+				{
+					passed, err = c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
+					if err != nil {
+						//TODO what to do next?
+						panic(err)
+					}
 				}
-			}
-			case <-time.After(c.config.RebalanceBarrierTimeout): {
-				err = c.config.Coordinator.RemoveStateAssertionSeries(c.config.Groupid, context.hash())
-				if err != nil {
-					//TODO what to do next?
-					panic(err)
+			case <-time.After(c.config.RebalanceBarrierTimeout):
+				{
+					err = c.config.Coordinator.RemoveStateAssertionSeries(c.config.Groupid, context.hash())
+					if err != nil {
+						//TODO what to do next?
+						panic(err)
+					}
+					finished <- true
+					return nil, true
 				}
-				finished <- true
-				return nil, true
-			}
 			}
 		}
 

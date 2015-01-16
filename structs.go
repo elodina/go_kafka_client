@@ -224,15 +224,15 @@ type ConsumerCoordinator interface {
 	GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error)
 
 	/*
-	*/
+	 */
 	CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error)
 
 	/*
-	*/
+	 */
 	AssertRebalanceState(group string, stateHash string, expected int) (bool, error)
 
 	/*
-	*/
+	 */
 	RemoveStateAssertionSeries(group string, stateHash string) error
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
