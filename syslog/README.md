@@ -9,9 +9,11 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 
 **Configuration parameters**:
 
-`--producer.config` - property file to configure embedded producers. *This parameter is required*.
+`--broker.list` - Kafka broker list host:port to discover cluster. *This parameter is required*.
 
 `--topic` - destination topic for all incoming syslog messages. *This parameter is required*.
+
+`--producer.config` - property file to configure embedded producers. *This parameter is optional*.
 
 `--tcp.port` - TCP port to listen for incoming syslog messages. *Defaults to 5140*.
 
@@ -34,7 +36,7 @@ Running with Docker
 
 We provided a Docker image for quick deployment without cloning the repo, building the binary etc. Running it is as easy as following:
 
-`docker run --net=host -v $(pwd):/syslog stealthly/syslog --topic syslog --producer.config=/syslog/producer.properties`
+`docker run stealthly/syslog --topic syslog --broker.list host:port`
 
 You may pass all configurations described above as arguments to the container.
 

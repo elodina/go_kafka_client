@@ -60,6 +60,7 @@ var tcpHost = flag.String("tcp.host", "0.0.0.0", "TCP host to listen for incomin
 var udpPort = flag.String("udp.port", "5141", "UDP port to listen for incoming messages.")
 var udpHost = flag.String("udp.host", "0.0.0.0", "UDP host to listen for incoming messages.")
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
+var brokerList = flag.String("broker.list", "", "Broker List to produce messages too.")
 
 //additional params
 var source = flag.String("source", "", "")
@@ -74,14 +75,16 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 	setLogLevel()
 	runtime.GOMAXPROCS(*maxProcs)
 
+	if *brokerList == "" {
+		fmt.Println("broker.list is required.")
+		os.Exit(1)
+	}
+
 	if *topic == "" {
 		fmt.Println("Topic is required.")
 		os.Exit(1)
 	}
-	if *producerConfig == "" {
-		fmt.Println("Producer config is required.")
-		os.Exit(1)
-	}
+
 	if *queueSize < 0 {
 		fmt.Println("Queue size should be equal or greater than 0")
 		os.Exit(1)
@@ -89,16 +92,25 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 
 	config := kafka.NewSyslogProducerConfig()
 	conf, err := kafka.ProducerConfigFromFile(*producerConfig)
+	useFile := true
 	if err != nil {
-		panic(err)
+		//we dont have a producer configuraiton which is ok
+		useFile = false
+	} else {
+		if err = conf.Validate(); err != nil {
+			panic(err)
+		}
 	}
-	if err = conf.Validate(); err != nil {
-		panic(err)
+
+	if useFile {
+		config.ProducerConfig = conf
+	} else {
+		config.ProducerConfig = kafka.DefaultProducerConfig()
 	}
-	config.ProducerConfig = conf
 	config.NumProducers = *numProducers
 	config.ChannelSize = *queueSize
 	config.Topic = *topic
+	config.BrokerList = *brokerList
 	config.TCPAddr = fmt.Sprintf("%s:%s", *tcpHost, *tcpPort)
 	config.UDPAddr = fmt.Sprintf("%s:%s", *udpHost, *udpPort)
 
