@@ -54,7 +54,7 @@ func TestSyslogProducer(t *testing.T) {
 
 	config := NewSyslogProducerConfig()
 	config.ProducerConfig = DefaultProducerConfig()
-	config.ProducerConfig.BrokerList = []string{localBroker}
+	config.BrokerList = localBroker
 	config.ChannelSize = 5
 	config.NumProducers = 1
 	config.TCPAddr = tcpAddr

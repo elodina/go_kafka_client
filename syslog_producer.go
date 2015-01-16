@@ -16,15 +16,15 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"github.com/Shopify/sarama"
-	"strings"
-	"net"
 	"bufio"
+	"github.com/Shopify/sarama"
+	"net"
+	"strings"
 	"time"
 )
 
 type SyslogMessage struct {
-	Message string
+	Message   string
 	Timestamp int64
 }
 
@@ -47,7 +47,10 @@ type SyslogProducerConfig struct {
 	// Receive messages from this UDP address and post them to topic.
 	UDPAddr string
 
-//	Transformer func(message syslogparser.LogParts, topic string) *sarama.MessageToSend
+	// Kafka Broker List host:port,host:port
+	BrokerList string
+
+	//	Transformer func(message syslogparser.LogParts, topic string) *sarama.MessageToSend
 	Transformer func(message *SyslogMessage, topic string) *sarama.MessageToSend
 }
 
@@ -59,9 +62,9 @@ func NewSyslogProducerConfig() *SyslogProducerConfig {
 }
 
 type SyslogProducer struct {
-	config           *SyslogProducerConfig
-	incoming		 chan *SyslogMessage
-	closeChannels	 []chan bool
+	config        *SyslogProducerConfig
+	incoming      chan *SyslogMessage
+	closeChannels []chan bool
 
 	producers []*sarama.Producer
 }
@@ -114,7 +117,8 @@ func (this *SyslogProducer) startTCPServer() {
 	go func() {
 		for {
 			select {
-			case <-closeChannel: return
+			case <-closeChannel:
+				return
 			default:
 			}
 			connection, err := listener.Accept()
@@ -145,7 +149,8 @@ func (this *SyslogProducer) startUDPServer() {
 	go func() {
 		for {
 			select {
-			case <-closeChannel: return
+			case <-closeChannel:
+				return
 			default:
 			}
 
@@ -166,7 +171,8 @@ func (this *SyslogProducer) scan(connection net.Conn) {
 func (this *SyslogProducer) startProducers() {
 	for i := 0; i < this.config.NumProducers; i++ {
 		conf := this.config.ProducerConfig
-		client, err := sarama.NewClient(conf.Clientid, conf.BrokerList, sarama.NewClientConfig())
+		brokerList := strings.Split(this.config.BrokerList, ",")
+		client, err := sarama.NewClient(conf.Clientid, brokerList, sarama.NewClientConfig())
 		if err != nil {
 			panic(err)
 		}
