@@ -18,15 +18,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/Shopify/sarama"
+	"github.com/golang/protobuf/proto"
 	kafka "github.com/stealthly/go_kafka_client"
+	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
+	"math"
 	"os"
 	"os/signal"
 	"runtime"
 	"strings"
-	"math"
-	"github.com/Shopify/sarama"
-	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
-	"github.com/golang/protobuf/proto"
 	"time"
 )
 
@@ -125,10 +125,10 @@ func setLogLevel() {
 	case "critical":
 		level = kafka.DebugLevel
 	default:
-	{
-		fmt.Printf("Invalid log level: %s\n", *logLevel)
-		os.Exit(1)
-	}
+		{
+			fmt.Printf("Invalid log level: %s\n", *logLevel)
+			os.Exit(1)
+		}
 	}
 	kafka.Logger = kafka.NewDefaultLogger(level)
 }
@@ -155,7 +155,7 @@ func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.Message
 	if *logtypeid != math.MinInt64 {
 		line.Logtypeid = logtypeid
 	}
-	line.Timings = append(line.Timings, msg.Timestamp, time.Now().UnixNano() / int64(time.Millisecond))
+	line.Timings = append(line.Timings, msg.Timestamp, time.Now().UnixNano()/int64(time.Millisecond))
 
 	protobuf, err := proto.Marshal(line)
 	if err != nil {
