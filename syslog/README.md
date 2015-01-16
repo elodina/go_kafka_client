@@ -5,7 +5,7 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 
 **Usage**:
 
-`go run syslog.go --producer.config producer.properties --topic syslog`
+`go run syslog.go --broker.list localhost:9092 --topic syslog`
 
 **Configuration parameters**:
 
