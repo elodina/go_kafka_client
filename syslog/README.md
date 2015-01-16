@@ -1,4 +1,4 @@
-Syslog Producer for Go Kafka Client
+Syslog Producer for Apache Kafka 
 ==================================
 
 This tool setups a Syslog server listening for syslog messages via TCP, parses them and produces into a Kafka topic.
