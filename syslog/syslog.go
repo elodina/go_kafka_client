@@ -18,17 +18,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	syslog "github.com/mcuadros/go-syslog"
 	kafka "github.com/stealthly/go_kafka_client"
 	"os"
 	"os/signal"
 	"runtime"
 	"strings"
 	"math"
-	"github.com/jeromer/syslogparser"
 	"github.com/Shopify/sarama"
 	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
-	"encoding/json"
 	"github.com/golang/protobuf/proto"
 	"time"
 )
@@ -58,7 +55,6 @@ var producerConfig = flag.String("producer.config", "", "Path to producer config
 var numProducers = flag.Int("num.producers", 1, "Number of producers.")
 var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffered between the consumer and producer.")
 var topic = flag.String("topic", "", "Topic to produce messages into.")
-var format = flag.String("format", "rfc5424", "Message format. Either RFC5424 or RFC3164.")
 var tcpPort = flag.String("tcp.port", "5140", "TCP port to listen for incoming messages.")
 var tcpHost = flag.String("tcp.host", "0.0.0.0", "TCP host to listen for incoming messages.")
 var udpPort = flag.String("udp.port", "5141", "UDP port to listen for incoming messages.")
@@ -77,8 +73,6 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 
 	setLogLevel()
 	runtime.GOMAXPROCS(*maxProcs)
-	rfc5424 := "rfc5424"
-	rfc3164 := "rfc3164"
 
 	if *topic == "" {
 		fmt.Println("Topic is required.")
@@ -105,14 +99,6 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 	config.NumProducers = *numProducers
 	config.ChannelSize = *queueSize
 	config.Topic = *topic
-	if strings.ToLower(*format) == rfc5424 {
-		config.Format = syslog.RFC5424
-	} else if strings.ToLower(*format) == rfc3164 {
-		config.Format = syslog.RFC3164
-	} else {
-		fmt.Println("Message format can be RFC5424 or RFC3164 (any case).")
-		os.Exit(1)
-	}
 	config.TCPAddr = fmt.Sprintf("%s:%s", *tcpHost, *tcpPort)
 	config.UDPAddr = fmt.Sprintf("%s:%s", *udpHost, *udpPort)
 
@@ -158,14 +144,10 @@ func main() {
 	producer.Stop()
 }
 
-func protobufTransformer(msg syslogparser.LogParts, topic string) *sarama.MessageToSend {
+func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.MessageToSend {
 	line := &sp.LogLine{}
 
-	b, err := json.Marshal(msg)
-	if err != nil {
-		kafka.Errorf("protobuf-transformer", "Failed to marshal %s as JSON", msg)
-	}
-	line.Line = proto.String(string(b))
+	line.Line = proto.String(msg.Message)
 	line.Source = proto.String(*source)
 	for k, v := range tag {
 		line.Tag = append(line.Tag, &sp.LogLine_Tag{Key: proto.String(k), Value: proto.String(v)})
@@ -173,7 +155,7 @@ func protobufTransformer(msg syslogparser.LogParts, topic string) *sarama.Messag
 	if *logtypeid != math.MinInt64 {
 		line.Logtypeid = logtypeid
 	}
-	line.Timings = append(line.Timings, time.Now().Unix())
+	line.Timings = append(line.Timings, msg.Timestamp, time.Now().UnixNano() / int64(time.Millisecond))
 
 	protobuf, err := proto.Marshal(line)
 	if err != nil {

@@ -1,7 +1,7 @@
 Syslog Producer for Go Kafka Client
 ==================================
 
-This tool setups a Syslog server listening for syslog messages via TCP, parses them and produces into a Kafka topic. Messages can be in RFC 5424 or RFC 3164 format.
+This tool setups a Syslog server listening for syslog messages via TCP, parses them and produces into a Kafka topic.
 
 **Usage**:
 
@@ -12,8 +12,6 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 `--producer.config` - property file to configure embedded producers. *This parameter is required*.
 
 `--topic` - destination topic for all incoming syslog messages. *This parameter is required*.
-
-`--format` - format of incoming syslog messages. Possible values are `rfc5424` and `rfc3164`. *Defaults to rfc5424*.
 
 `--tcp.port` - TCP port to listen for incoming syslog messages. *Defaults to 5140*.
 
@@ -43,9 +41,8 @@ You may pass all configurations described above as arguments to the container.
 Try it out using Vagrant
 =======================
 
-1. `cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog`    
-2. `go build`    
-3. `vagrant up`
+1. `cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog`
+2. `vagrant up`
 
 After this is done you will have a VM available at `192.168.66.66` with Zookeeper on port 2181, Kafka on port 9092, and Syslog Server listening on TCP port 5140 and UDP port 5141. To verify this is working you may do the following:
 

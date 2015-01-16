@@ -16,12 +16,17 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"encoding/json"
 	"github.com/Shopify/sarama"
-	"github.com/jeromer/syslogparser"
-	syslog "github.com/mcuadros/go-syslog"
 	"strings"
+	"net"
+	"bufio"
+	"time"
 )
+
+type SyslogMessage struct {
+	Message string
+	Timestamp int64
+}
 
 // SyslogProducerConfig defines configuration options for SyslogProducer
 type SyslogProducerConfig struct {
@@ -34,9 +39,6 @@ type SyslogProducerConfig struct {
 	// Number of messages that are buffered to produce.
 	ChannelSize int
 
-	// Message format. Either RFC5424 or RFC3164
-	Format syslog.Format
-
 	Topic string
 
 	// Receive messages from this TCP address and post them to topic.
@@ -45,7 +47,8 @@ type SyslogProducerConfig struct {
 	// Receive messages from this UDP address and post them to topic.
 	UDPAddr string
 
-	Transformer func(message syslogparser.LogParts, topic string) *sarama.MessageToSend
+//	Transformer func(message syslogparser.LogParts, topic string) *sarama.MessageToSend
+	Transformer func(message *SyslogMessage, topic string) *sarama.MessageToSend
 }
 
 // Creates an empty SyslogProducerConfig.
@@ -57,9 +60,8 @@ func NewSyslogProducerConfig() *SyslogProducerConfig {
 
 type SyslogProducer struct {
 	config           *SyslogProducerConfig
-	servers          []*syslog.Server
-	incoming         syslog.LogPartsChannel
-	incomingChannels []syslog.LogPartsChannel
+	incoming		 chan *SyslogMessage
+	closeChannels	 []chan bool
 
 	producers []*sarama.Producer
 }
@@ -67,7 +69,7 @@ type SyslogProducer struct {
 func NewSyslogProducer(config *SyslogProducerConfig) *SyslogProducer {
 	return &SyslogProducer{
 		config:   config,
-		incoming: make(syslog.LogPartsChannel),
+		incoming: make(chan *SyslogMessage),
 	}
 }
 
@@ -85,45 +87,42 @@ func (this *SyslogProducer) Start() {
 func (this *SyslogProducer) Stop() {
 	Trace(this, "Stopping..")
 
-	//temporary fix until https://github.com/mcuadros/go-syslog/pull/7 is accepted
-	defer func() {
-		recover()
-	}()
-
-	for _, incoming := range this.incomingChannels {
-		close(incoming)
+	for _, closeChannel := range this.closeChannels {
+		closeChannel <- true
 	}
 	close(this.incoming)
 
 	for _, producer := range this.producers {
 		producer.Close()
 	}
-
-	for _, server := range this.servers {
-		server.Kill()
-	}
 }
 
 func (this *SyslogProducer) startTCPServer() {
 	Trace(this, "Starting TCP server")
-	channel := make(syslog.LogPartsChannel)
-	this.incomingChannels = append(this.incomingChannels, channel)
-	handler := syslog.NewChannelHandler(channel)
-
-	server := syslog.NewServer()
-	server.SetFormat(this.config.Format)
-	server.SetHandler(handler)
-	if err := server.ListenTCP(this.config.TCPAddr); err != nil {
-		panic(err)
-	}
-	if err := server.Boot(); err != nil {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", this.config.TCPAddr)
+	if err != nil {
 		panic(err)
 	}
 
-	this.servers = append(this.servers, server)
+	listener, err := net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		panic(err)
+	}
+	closeChannel := make(chan bool, 1)
+	this.closeChannels = append(this.closeChannels, closeChannel)
+
 	go func() {
-		for msg := range channel {
-			this.incoming <- msg
+		for {
+			select {
+			case <-closeChannel: return
+			default:
+			}
+			connection, err := listener.Accept()
+			if err != nil {
+				return
+			}
+
+			this.scan(connection)
 		}
 	}()
 	Infof(this, "Listening for messages at TCP %s", this.config.TCPAddr)
@@ -131,27 +130,37 @@ func (this *SyslogProducer) startTCPServer() {
 
 func (this *SyslogProducer) startUDPServer() {
 	Trace(this, "Starting UDP server")
-	channel := make(syslog.LogPartsChannel)
-	this.incomingChannels = append(this.incomingChannels, channel)
-	handler := syslog.NewChannelHandler(channel)
-
-	server := syslog.NewServer()
-	server.SetFormat(this.config.Format)
-	server.SetHandler(handler)
-	if err := server.ListenUDP(this.config.UDPAddr); err != nil {
-		panic(err)
-	}
-	if err := server.Boot(); err != nil {
+	udpAddr, err := net.ResolveUDPAddr("udp", this.config.UDPAddr)
+	if err != nil {
 		panic(err)
 	}
 
-	this.servers = append(this.servers, server)
+	connection, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		panic(err)
+	}
+	closeChannel := make(chan bool, 1)
+	this.closeChannels = append(this.closeChannels, closeChannel)
+
 	go func() {
-		for msg := range channel {
-			this.incoming <- msg
+		for {
+			select {
+			case <-closeChannel: return
+			default:
+			}
+
+			this.scan(connection)
 		}
 	}()
 	Infof(this, "Listening for messages at UDP %s", this.config.UDPAddr)
+}
+
+func (this *SyslogProducer) scan(connection net.Conn) {
+	scanner := bufio.NewScanner(connection)
+	for scanner.Scan() {
+		timestamp := time.Now().UnixNano() / int64(time.Millisecond)
+		this.incoming <- &SyslogMessage{scanner.Text(), timestamp}
+	}
 }
 
 func (this *SyslogProducer) startProducers() {
@@ -198,10 +207,6 @@ func (this *SyslogProducer) produceRoutine(producer *sarama.Producer) {
 	}
 }
 
-func simpleTransformFunc(msg syslogparser.LogParts, topic string) *sarama.MessageToSend {
-	b, err := json.Marshal(msg)
-	if err != nil {
-		Errorf("simple-transform", "Failed to marshal %s as JSON", msg)
-	}
-	return &sarama.MessageToSend{Topic: topic, Value: sarama.ByteEncoder(b)}
+func simpleTransformFunc(msg *SyslogMessage, topic string) *sarama.MessageToSend {
+	return &sarama.MessageToSend{Topic: topic, Value: sarama.StringEncoder(msg.Message)}
 }
