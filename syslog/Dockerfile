@@ -22,6 +22,6 @@ RUN git clone https://github.com/pote/gpm.git && cd gpm && git checkout v1.3.1 &
 RUN go get github.com/stealthly/go_kafka_client && cd $GOPATH/src/github.com/stealthly/go_kafka_client && gpm install
 RUN cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog && go build
 
-ADD syslog/syslog /usr/bin/syslogproducer
+ADD $GOPATH/src/github.com/stealthly/go_kafka_client/syslog/syslog /usr/bin/syslogproducer
 
 ENTRYPOINT ["syslogproducer"]
