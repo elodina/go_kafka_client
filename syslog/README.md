@@ -36,7 +36,7 @@ Running with Docker
 
 We provided a Docker image for quick deployment without cloning the repo, building the binary etc. Running it is as easy as following:
 
-`docker run stealthly/syslog --topic syslog --broker.list host:port`
+`docker run -p --net=host stealthly/syslog --topic syslog --broker.list host:port`
 
 You may pass all configurations described above as arguments to the container.
 
