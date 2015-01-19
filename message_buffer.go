@@ -32,7 +32,6 @@ type messageBuffer struct {
 	TopicPartition                 TopicAndPartition
 	askNextBatch                   chan TopicAndPartition
 	disconnectChannelsForPartition chan TopicAndPartition
-	flush                          chan bool
 }
 
 func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig, askNextBatch chan TopicAndPartition, disconnectChannelsForPartition chan TopicAndPartition) *messageBuffer {
@@ -45,11 +44,9 @@ func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Me
 		TopicPartition:                 topicPartition,
 		askNextBatch:                   askNextBatch,
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
-		flush: make(chan bool),
 	}
 
 	go buffer.autoFlush()
-	go buffer.flushLoop()
 
 	return buffer
 }
@@ -67,35 +64,29 @@ func (mb *messageBuffer) autoFlush() {
 			{
 				Debug(mb, "Batch accumulation timed out. Flushing...")
 				mb.Timer.Reset(mb.Config.FetchBatchTimeout)
-
-				select {
-				case mb.flush <- true:
-				default:
-				}
+				inLock(&mb.MessageLock, mb.flush)
 			}
 		}
 	}
 }
 
-func (mb *messageBuffer) flushLoop() {
-	for _ = range mb.flush {
-		if len(mb.Messages) > 0 {
-			Debug(mb, "Flushing")
-			mb.Timer.Reset(mb.Config.FetchBatchTimeout)
+func (mb *messageBuffer) flush() {
+	if len(mb.Messages) > 0 {
+		Debug(mb, "Flushing")
+		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 		flushLoop:
-			for {
-				select {
-				case mb.OutputChannel <- mb.Messages:
-					break flushLoop
-				case <-time.After(200 * time.Millisecond):
-					if mb.stopSending {
-						return
-					}
+		for {
+			select {
+			case mb.OutputChannel <- mb.Messages:
+				break flushLoop
+			case <-time.After(200 * time.Millisecond):
+				if mb.stopSending {
+					return
 				}
 			}
-			Debug(mb, "Flushed")
-			mb.Messages = make([]*Message, 0)
 		}
+		Debug(mb, "Flushed")
+		mb.Messages = make([]*Message, 0)
 	}
 }
 
@@ -106,8 +97,6 @@ func (mb *messageBuffer) stop() {
 		inLock(&mb.MessageLock, func() {
 			Info(mb, "Stopping message buffer")
 			mb.Close <- true
-			Info(mb, "Closing flush channel")
-			close(mb.flush)
 			Info(mb, "Disconnecting channels for partitions")
 			mb.disconnectChannelsForPartition <- mb.TopicPartition
 			Info(mb, "Stopped message buffer")
@@ -165,6 +154,6 @@ func (mb *messageBuffer) add(msg *Message) {
 	mb.Messages = append(mb.Messages, msg)
 	if len(mb.Messages) == mb.Config.FetchBatchSize {
 		Debug(mb, "Batch is ready. Flushing")
-		mb.flush <- true
+		mb.flush()
 	}
 }
