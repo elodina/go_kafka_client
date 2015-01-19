@@ -33,6 +33,9 @@ exitscript()
 # Apply Syslog Server configurations.
 source /vagrant/syslog/vagrant/params.sh
 
+sudo echo "*.*                             @@$TCP_HOST:$TCP_PORT" >> /etc/rsyslog.d/50-default.conf
+sudo service rsyslog restart
+
 # Setup Zookeeper, Kafka, Go etc.
 export HOST_IP_ADDR=192.168.66.66
 source /vagrant/vagrant/prep.sh
@@ -55,6 +58,6 @@ $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
 # let Zookeeper and Kafka start normally
 sleep 5
 $KAFKA_PATH/bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic $TOPIC
-$GOPATH/src/github.com/stealthly/go_kafka_client/syslog/syslog $SYSLOG_ARGS &
+$GOPATH/src/github.com/stealthly/go_kafka_client/syslog/syslog $SYSLOG_ARGS --broker.list $HOST_IP_ADDR:9092 &
 
 exitscript
