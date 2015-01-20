@@ -17,4 +17,6 @@
 
 # Syslog Server configurations here.
 export TOPIC=syslog #Topic MUST BE present in order to be created first
-export SYSLOG_ARGS="--producer.config /vagrant/syslog/producer.properties --topic $TOPIC --tcp.port 5140 --tcp.host 0.0.0.0 --udp.port 5141 --udp.host 0.0.0.0 --num.producers 1 --queue.size 10000 --log.level info --max.procs 0"
+export TCP_PORT=5140 #TCP port and host are then read and written to rsyslog.d properties to listen for live syslog data
+export TCP_HOST=0.0.0.0
+export SYSLOG_ARGS="--producer.config /vagrant/syslog/producer.properties --topic $TOPIC --tcp.port $TCP_PORT --tcp.host $TCP_HOST --udp.port 5141 --udp.host 0.0.0.0 --num.producers 1 --queue.size 10000 --log.level info --max.procs 0"
