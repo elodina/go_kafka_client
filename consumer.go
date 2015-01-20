@@ -69,7 +69,7 @@ type Consumer struct {
 	wmsBatchDurationTimer             metrics.Timer
 	wmsIdleTimer                      metrics.Timer
 
-	newDeployedTopics []*DeployedTopics
+	newDeployedTopics []*BlueGreenDeployment
 
 	lastSuccessfulRebalanceHash string
 }
@@ -460,7 +460,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 							if err != nil {
 								panic(err)
 							}
-							newTopics := make([]*DeployedTopics, 0)
+							newTopics := make([]*BlueGreenDeployment, 0)
 							for _, topics := range deployedTopics {
 								newTopics = append(newTopics, topics)
 							}
@@ -569,7 +569,7 @@ func (c *Consumer) rebalance() {
 			if (c.lastSuccessfulRebalanceHash == stateHash) { break }
 
 			c.releasePartitionOwnership(c.topicRegistry)
-			if c.awaitOnStateBarrier(stateHash, barrierSize) {
+			if c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash, barrierSize, Rebalance, c.config.BarrierTimeout) {
 				success := false
 				for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
 					if tryRebalance(c, context, partitionAssignor) {
@@ -590,40 +590,6 @@ func (c *Consumer) rebalance() {
 	} else {
 		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.Consumerid)
 	}
-}
-
-func (c *Consumer) awaitOnStateBarrier(stateHash string, barrierSize int) bool {
-	finished := make(chan bool)
-	memberJoinedEvents, err := c.config.Coordinator.JoinStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash, finished)
-	if err != nil {
-		panic(err)
-	}
-
-	passed, err := c.config.Coordinator.IsStateBarrierPassed(c.config.Groupid, stateHash, barrierSize)
-	barrierLoop:
-	for !passed {
-		select {
-		case <-memberJoinedEvents:
-		{
-			passed, err = c.config.Coordinator.IsStateBarrierPassed(c.config.Groupid, stateHash, barrierSize)
-			if err != nil {
-				panic(err)
-			}
-		}
-		case <-time.After(c.config.BarrierTimeout):
-		{
-			err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, stateHash)
-				if err != nil {
-					panic(err)
-				}
-				break barrierLoop
-		}
-		}
-	}
-
-	finished <- true
-
-	return passed
 }
 
 func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor assignStrategy) bool {

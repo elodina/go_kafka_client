@@ -18,6 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	"github.com/Shopify/sarama"
+	"time"
 )
 
 const (
@@ -155,17 +156,6 @@ type TopicPartitionData struct {
 	Data           *sarama.FetchResponseBlock
 }
 
-// DeployedTopics contain information needed to do a successful blue-green deployment.
-// It contains a comma-separated list of new topics to consume if the pattern is static and regex for wildcard consuming.
-type DeployedTopics struct {
-	// Comma separated list of topics to consume from
-	Topics string
-	// Either black_list, white_list or static
-	Pattern string
-	//Consumer group to switch to
-	Group string
-}
-
 type intArray []int32
 
 func (s intArray) Len() int           { return len(s) }
@@ -223,19 +213,10 @@ type ConsumerCoordinator interface {
 
 	/* Gets all deployed topics for consume group Group from consumer coordinator.
 	Returns a map where keys are notification ids and values are DeployedTopics. May also return an error (e.g. if failed to reach coordinator). */
-	GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error)
+	GetNewDeployedTopics(Group string) (map[string]*BlueGreenDeployment, error)
 
-	/*
-	 */
-	JoinStateBarrier(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error)
-
-	/*
-	 */
-	IsStateBarrierPassed(group string, stateHash string, expected int) (bool, error)
-
-	/*
-	 */
-	RemoveStateBarrier(group string, stateHash string) error
+	/* Implements classic barrier synchronization primitive via service coordinator facilities */
+	AwaitOnStateBarrier(consumerId string, group string, stateHash string, barrierSize int, api ConsumerGroupApi, timeout time.Duration) bool
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
@@ -255,7 +236,6 @@ type ConsumerCoordinator interface {
 
 // CoordinatorEvent is sent by consumer coordinator representing some state change.
 type CoordinatorEvent string
-
 const (
 	// A regular coordinator event that should normally trigger consumer rebalance.
 	Regular CoordinatorEvent = "Regular"
