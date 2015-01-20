@@ -162,6 +162,8 @@ type DeployedTopics struct {
 	Topics string
 	// Either black_list, white_list or static
 	Pattern string
+	//Consumer group to switch to
+	Group string
 }
 
 type intArray []int32

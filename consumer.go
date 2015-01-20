@@ -50,7 +50,6 @@ type Consumer struct {
 	config                         *ConsumerConfig
 	fetcher                        *consumerFetcherManager
 	unsubscribe                    chan bool
-	unsubscribeFinished            chan bool
 	closeFinished                  chan bool
 	rebalanceLock                  sync.Mutex
 	isShuttingdown                 bool
@@ -85,7 +84,6 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	c := &Consumer{
 		config:                         config,
 		unsubscribe:                    make(chan bool),
-		unsubscribeFinished:            make(chan bool),
 		closeFinished:                  make(chan bool),
 		topicPartitionsAndBuffers:      make(map[TopicAndPartition]*messageBuffer),
 		topicRegistry:                  make(map[string]map[int32]*partitionTopicInfo),
@@ -99,7 +97,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.Coordinator.Connect(); err != nil {
 		panic(err)
 	}
-	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch, newBarrier(int32(c.config.NumConsumerFetchers), c.applyNewDeployedTopics))
+	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
 
 	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
 	c.batchesSentToWorkerManagerCounter = metrics.NewRegisteredCounter(fmt.Sprintf("BatchesSentToWM-%s", c.String()), metrics.DefaultRegistry)
@@ -467,7 +465,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 								newTopics = append(newTopics, topics)
 							}
 							c.newDeployedTopics = newTopics
-							c.fetcher.switchTopic <- true
+							c.applyNewDeployedTopics()
 							go func() {
 								Debug(c, "Started notification cleaner thread")
 								for notificationId, deployedTopic := range deployedTopics {
