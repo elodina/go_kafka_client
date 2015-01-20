@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,14 +18,14 @@
 package main
 
 import (
-	"time"
 	"fmt"
+	metrics "github.com/rcrowley/go-metrics"
+	kafkaClient "github.com/stealthly/go_kafka_client"
+	"net"
 	"os"
 	"os/signal"
-	"net"
 	"strconv"
-	kafkaClient "github.com/stealthly/go_kafka_client"
-	metrics "github.com/rcrowley/go-metrics"
+	"time"
 )
 
 func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Duration) {
@@ -105,7 +105,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 	config.AutoOffsetReset = rawConfig["auto_offset_reset"]
 	config.OffsetsCommitMaxRetries = offsetsCommitMaxRetries
 	config.DeploymentTimeout = deploymentTimeout
-	
+
 	return config, rawConfig["topic"], numConsumers, rawConfig["graphite_connect"], flushInterval
 }
 
@@ -152,7 +152,7 @@ func startNewConsumer(config kafkaClient.ConsumerConfig, topic string) *kafkaCli
 	config.WorkerFailureCallback = FailedCallback
 	config.WorkerFailedAttemptCallback = FailedAttemptCallback
 	consumer := kafkaClient.NewConsumer(&config)
-	topics := map[string]int {topic : config.NumConsumerFetchers}
+	topics := map[string]int{topic: config.NumConsumerFetchers}
 	go func() {
 		consumer.StartStatic(topics)
 	}()
@@ -162,7 +162,7 @@ func startNewConsumer(config kafkaClient.ConsumerConfig, topic string) *kafkaCli
 func GetStrategy(consumerId string) func(*kafkaClient.Worker, *kafkaClient.Message, kafkaClient.TaskId) kafkaClient.WorkerResult {
 	consumeRate := metrics.NewRegisteredMeter(fmt.Sprintf("%s-ConsumeRate", consumerId), metrics.DefaultRegistry)
 	return func(_ *kafkaClient.Worker, msg *kafkaClient.Message, id kafkaClient.TaskId) kafkaClient.WorkerResult {
-		kafkaClient.Tracef("main", "Got a message: %s", string(msg.Value))
+		kafkaClient.Infof("main", "Got a message: %s", string(msg.Value))
 		consumeRate.Mark(1)
 
 		return kafkaClient.NewSuccessfulResult(id)
