@@ -375,7 +375,7 @@ func (this *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId
 }
 
 func (this *ZookeeperCoordinator) tryNotifyConsumerGroup(Groupid string, ConsumerId string) error {
-	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(Groupid).ConsumerChangesDir, ConsumerId, time.Now().Nanosecond())
+	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(Groupid).ConsumerApiDir, ConsumerId, time.Now().Nanosecond())
 	Debugf(this, "Sending notification to consumer group at %s", path)
 	return this.createOrUpdatePathParentMayNotExistFailFast(path, make([]byte, 0))
 }
@@ -395,7 +395,7 @@ func (this *ZookeeperCoordinator) PurgeNotificationForGroup(Groupid string, noti
 }
 
 func (this *ZookeeperCoordinator) tryPurgeNotificationForGroup(Groupid string, notificationId string) error {
-	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerChangesDir, notificationId)
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, notificationId)
 	return this.deleteNode(path)
 }
 
@@ -416,15 +416,13 @@ func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan Co
 
 func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
 	changes := make(chan CoordinatorEvent)
-
-	this.ensureZkPathsExist(Groupid)
 	Infof(this, "Subscribing for changes for %s", Groupid)
 
 	consumersWatcher, err := this.getConsumersInGroupWatcher(Groupid)
 	if err != nil {
 		return nil, err
 	}
-	consumerGroupChangesWatcher, err := this.getConsumerGroupChangesWatcher(Groupid)
+	consumerGroupApiWatcher, err := this.getConsumerGroupApiWatcher(Groupid)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +436,7 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 	}
 
 	inputChannels := make([]*<-chan zk.Event, 0)
-	inputChannels = append(inputChannels, &consumersWatcher, &consumerGroupChangesWatcher, &topicsWatcher, &brokersWatcher)
+	inputChannels = append(inputChannels, &consumersWatcher, &consumerGroupApiWatcher, &topicsWatcher, &brokersWatcher)
 	zkEvents := make(chan zk.Event)
 	stopRedirecting := redirectChannelsTo(inputChannels, zkEvents)
 
@@ -446,54 +444,54 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 		for {
 			select {
 			case e := <-zkEvents:
-				{
-					Trace(this, e)
-					if e != emptyEvent {
-						if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
-							if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
-								changes <- NewTopicDeployed
-							} else {
-								changes <- Regular
-							}
-						}
-
-						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
-							Info(this, "Trying to renew watcher for consumer registry")
-							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerChangesDir) {
-							Info(this, "Trying to renew watcher for consumer changes dir")
-							consumerGroupChangesWatcher, err = this.getConsumerGroupChangesWatcher(Groupid)
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
-							Info(this, "Trying to renew watcher for consumer topic dir")
-							topicsWatcher, err = this.getTopicsWatcher()
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, brokerIdsPath) {
-							Info(this, "Trying to renew watcher for brokers in cluster")
-							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
-							if err != nil {
-								panic(err)
-							}
+			{
+				Trace(this, e)
+				if e != emptyEvent {
+					if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerApiDir) {
+							changes <- NewTopicDeployed
 						} else {
-							Warnf(this, "Unknown event path: %s", e.Path)
+							changes <- Regular
 						}
-
-						stopRedirecting <- true
-						stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 					}
-				}
-			case <-this.unsubscribe:
-				{
+
+					if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
+						Info(this, "Trying to renew watcher for consumer registry")
+						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerApiDir) {
+						Info(this, "Trying to renew watcher for consumer API dir")
+						consumerGroupApiWatcher, err = this.getConsumerGroupApiWatcher(Groupid)
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
+						Info(this, "Trying to renew watcher for consumer topic dir")
+						topicsWatcher, err = this.getTopicsWatcher()
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, brokerIdsPath) {
+						Info(this, "Trying to renew watcher for brokers in cluster")
+						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+						if err != nil {
+							panic(err)
+						}
+					} else {
+						Warnf(this, "Unknown event path: %s", e.Path)
+					}
+
 					stopRedirecting <- true
-					return
+					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 				}
+			}
+			case <-this.unsubscribe:
+			{
+				stopRedirecting <- true
+				return
+			}
 			}
 		}
 	}()
@@ -517,15 +515,15 @@ func (this *ZookeeperCoordinator) GetNewDeployedTopics(Group string) (map[string
 }
 
 func (this *ZookeeperCoordinator) tryGetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error) {
-	changesPath := newZKGroupDirs(Group).ConsumerChangesDir
-	children, _, err := this.zkConn.Children(changesPath)
+	apiPath := newZKGroupDirs(Group).ConsumerApiDir
+	children, _, err := this.zkConn.Children(apiPath)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("Unable to get new deployed topics: %s", err.Error()))
 	}
 
 	deployedTopics := make(map[string]*DeployedTopics)
 	for _, child := range children {
-		entryPath := fmt.Sprintf("%s/%s", changesPath, child)
+		entryPath := fmt.Sprintf("%s/%s", apiPath, child)
 		rawDeployedTopicsEntry, _, err := this.zkConn.Get(entryPath)
 		if err != nil {
 			return nil, errors.New(fmt.Sprintf("Unable to fetch deployed topic entry %s: %s", entryPath, err.Error()))
@@ -560,12 +558,12 @@ func (this *ZookeeperCoordinator) tryDeployTopics(Group string, Topics DeployedT
 	if err != nil {
 		return err
 	}
-	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerChangesDir, time.Now().Unix()), data)
+	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", newZKGroupDirs(Group).ConsumerApiDir, time.Now().Unix()), data)
 }
 
 /*
  */
-func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
+func (this *ZookeeperCoordinator) JoinStateBarrier(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
 	this.ensureZkPathsExist(group)
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
 	var err error
@@ -619,7 +617,7 @@ func (this *ZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string
 
 /*
  */
-func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
+func (this *ZookeeperCoordinator) IsStateBarrierPassed(group string, stateHash string, expected int) (bool, error) {
 	Debugf(this, "Trying to assert rebalance state for group %s and hash %s with %d", group, stateHash, expected)
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
 	var children []string
@@ -641,10 +639,10 @@ func (this *ZookeeperCoordinator) AssertRebalanceState(group string, stateHash s
 
 /*
  */
-func (this *ZookeeperCoordinator) RemoveStateAssertionSeries(group string, stateHash string) error {
+func (this *ZookeeperCoordinator) RemoveStateBarrier(group string, stateHash string) error {
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err = this.tryRemoveStateAssertionSeries(group, stateHash)
+		err = this.tryRemoveStateBarrier(group, stateHash)
 		if err == nil || err == zk.ErrNoNode {
 			return nil
 		}
@@ -655,7 +653,7 @@ func (this *ZookeeperCoordinator) RemoveStateAssertionSeries(group string, state
 	return err
 }
 
-func (this *ZookeeperCoordinator) tryRemoveStateAssertionSeries(group string, stateHash string) error {
+func (this *ZookeeperCoordinator) tryRemoveStateBarrier(group string, stateHash string) error {
 	path := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerRebalanceDir, stateHash)
 	Debugf(this, "Trying to fail rebalance at path: %s", path)
 
@@ -772,7 +770,7 @@ func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {
 	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerDir, make([]byte, 0))
 	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerGroupDir, make([]byte, 0))
 	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerRegistryDir, make([]byte, 0))
-	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerChangesDir, make([]byte, 0))
+	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerApiDir, make([]byte, 0))
 	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerRebalanceDir, make([]byte, 0))
 }
 
@@ -796,9 +794,9 @@ func (this *ZookeeperCoordinator) getConsumersInGroupWatcher(group string) (<-ch
 	return watcher, nil
 }
 
-func (this *ZookeeperCoordinator) getConsumerGroupChangesWatcher(group string) (<-chan zk.Event, error) {
-	Debugf(this, "Getting watcher for consumer group '%s' changes", group)
-	_, _, watcher, err := this.zkConn.ChildrenW(newZKGroupDirs(group).ConsumerChangesDir)
+func (this *ZookeeperCoordinator) getConsumerGroupApiWatcher(group string) (<-chan zk.Event, error) {
+	Debugf(this, "Getting watcher for consumer group '%s' API", group)
+	_, _, watcher, err := this.zkConn.ChildrenW(newZKGroupDirs(group).ConsumerApiDir)
 	if err != nil {
 		return nil, err
 	}
@@ -929,9 +927,9 @@ type ZookeeperConfig struct {
 func NewZookeeperConfig() *ZookeeperConfig {
 	config := &ZookeeperConfig{}
 	config.ZookeeperConnect = []string{"localhost"}
-	config.ZookeeperTimeout = 1 * time.Second
+	config.ZookeeperTimeout = 1*time.Second
 	config.MaxRequestRetries = 3
-	config.RequestBackoff = 150 * time.Millisecond
+	config.RequestBackoff = 150*time.Millisecond
 
 	return config
 }
@@ -962,25 +960,22 @@ type zkGroupDirs struct {
 	ConsumerDir          string
 	ConsumerGroupDir     string
 	ConsumerRegistryDir  string
-	ConsumerChangesDir   string
+	ConsumerApiDir       string
 	ConsumerRebalanceDir string
-	ConsumerSyncDir      string
 }
 
 func newZKGroupDirs(group string) *zkGroupDirs {
 	consumerGroupDir := fmt.Sprintf("%s/%s", consumersPath, group)
 	consumerRegistryDir := fmt.Sprintf("%s/ids", consumerGroupDir)
-	consumerChangesDir := fmt.Sprintf("%s/changes", consumerGroupDir)
+	consumerApiDir := fmt.Sprintf("%s/api", consumerGroupDir)
 	consumerRebalanceDir := fmt.Sprintf("%s/rebalance", consumerGroupDir)
-	consumerSyncDir := fmt.Sprintf("%s/sync", consumerGroupDir)
 	return &zkGroupDirs{
 		Group:                group,
 		ConsumerDir:          consumersPath,
 		ConsumerGroupDir:     consumerGroupDir,
 		ConsumerRegistryDir:  consumerRegistryDir,
-		ConsumerChangesDir:   consumerChangesDir,
+		ConsumerApiDir:   	  consumerApiDir,
 		ConsumerRebalanceDir: consumerRebalanceDir,
-		ConsumerSyncDir:      consumerSyncDir,
 	}
 }
 
@@ -1048,13 +1043,13 @@ func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan C
 func (mzk *mockZookeeperCoordinator) GetNewDeployedTopics(Group string) (map[string]*DeployedTopics, error) {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
+func (mzk *mockZookeeperCoordinator) JoinStateBarrier(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error) {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) AssertRebalanceState(group string, stateHash string, expected int) (bool, error) {
+func (mzk *mockZookeeperCoordinator) IsStateBarrierPassed(group string, stateHash string, expected int) (bool, error) {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) RemoveStateAssertionSeries(group string, stateHash string) error {
+func (mzk *mockZookeeperCoordinator) RemoveStateBarrier(group string, stateHash string) error {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) Unsubscribe() { panic("Not implemented") }

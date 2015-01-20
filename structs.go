@@ -227,15 +227,15 @@ type ConsumerCoordinator interface {
 
 	/*
 	 */
-	CommenceStateAssertionSeries(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error)
+	JoinStateBarrier(consumerId string, group string, stateHash string, finished chan bool) (<-chan CoordinatorEvent, error)
 
 	/*
 	 */
-	AssertRebalanceState(group string, stateHash string, expected int) (bool, error)
+	IsStateBarrierPassed(group string, stateHash string, expected int) (bool, error)
 
 	/*
 	 */
-	RemoveStateAssertionSeries(group string, stateHash string) error
+	RemoveStateBarrier(group string, stateHash string) error
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()

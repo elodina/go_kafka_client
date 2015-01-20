@@ -555,26 +555,36 @@ func (c *Consumer) rebalance() {
 	if !c.isShuttingdown {
 		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
-		context, rebalanceRequired := c.startStateAssertionSeries()
-		for context == nil {
-			context, rebalanceRequired = c.startStateAssertionSeries()
-		}
-
-		if rebalanceRequired {
-			success := false
-			for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-				if tryRebalance(c, context, partitionAssignor) {
-					success = true
-					break
-				} else {
-					time.Sleep(c.config.RebalanceBackoff)
-				}
+		barrierPassed := false
+		for !barrierPassed {
+			context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid,
+				c.config.ExcludeInternalTopics, c.config.Coordinator)
+			if err != nil {
+				Errorf(c, "Failed to initialize assignment context: %s", err)
+				panic(err)
 			}
+			barrierSize := len(context.Consumers)
+			stateHash := context.hash()
 
-			if !success && !c.isShuttingdown {
-				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
-			} else {
-				Info(c, "Rebalance has been successfully completed")
+			if (c.lastSuccessfulRebalanceHash == stateHash) { break }
+
+			c.releasePartitionOwnership(c.topicRegistry)
+			if c.awaitOnStateBarrier(stateHash, barrierSize) {
+				success := false
+				for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
+					if tryRebalance(c, context, partitionAssignor) {
+						success = true
+						break
+					} else {
+						time.Sleep(c.config.RebalanceBackoff)
+					}
+				}
+				if !success && !c.isShuttingdown {
+					panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
+				} else {
+					c.lastSuccessfulRebalanceHash = stateHash
+					Info(c, "Rebalance has been successfully completed")
+				}
 			}
 		}
 	} else {
@@ -582,56 +592,38 @@ func (c *Consumer) rebalance() {
 	}
 }
 
-func (c *Consumer) startStateAssertionSeries() (*assignmentContext, bool) {
-	context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid,
-		c.config.ExcludeInternalTopics, c.config.Coordinator)
+func (c *Consumer) awaitOnStateBarrier(stateHash string, barrierSize int) bool {
+	finished := make(chan bool)
+	memberJoinedEvents, err := c.config.Coordinator.JoinStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash, finished)
 	if err != nil {
-		Errorf(c, "Failed to initialize assignment context: %s", err)
-		//TODO what to do next?
 		panic(err)
 	}
 
-	if context.hash() != c.lastSuccessfulRebalanceHash {
-		c.releasePartitionOwnership(c.topicRegistry)
-		finished := make(chan bool)
-		newConsumerAdded, err := c.config.Coordinator.CommenceStateAssertionSeries(c.config.Consumerid, c.config.Groupid, context.hash(), finished)
-		if err != nil {
-			//TODO what to do next?
-			panic(err)
-		}
-
-		passed, err := c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
-		for !passed {
-			select {
-			case <-newConsumerAdded:
-				{
-					passed, err = c.config.Coordinator.AssertRebalanceState(c.config.Groupid, context.hash(), len(context.Consumers))
-					if err != nil {
-						//TODO what to do next?
-						panic(err)
-					}
-				}
-			case <-time.After(c.config.RebalanceBarrierTimeout):
-				{
-					err = c.config.Coordinator.RemoveStateAssertionSeries(c.config.Groupid, context.hash())
-					if err != nil {
-						//TODO what to do next?
-						panic(err)
-					}
-					finished <- true
-					return nil, true
-				}
+	passed, err := c.config.Coordinator.IsStateBarrierPassed(c.config.Groupid, stateHash, barrierSize)
+	barrierLoop:
+	for !passed {
+		select {
+		case <-memberJoinedEvents:
+		{
+			passed, err = c.config.Coordinator.IsStateBarrierPassed(c.config.Groupid, stateHash, barrierSize)
+			if err != nil {
+				panic(err)
 			}
 		}
-
-		finished <- true
-
-		c.lastSuccessfulRebalanceHash = context.hash()
-
-		return context, true
-	} else {
-		return context, false
+		case <-time.After(c.config.BarrierTimeout):
+		{
+			err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, stateHash)
+				if err != nil {
+					panic(err)
+				}
+				break barrierLoop
+		}
+		}
 	}
+
+	finished <- true
+
+	return passed
 }
 
 func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor assignStrategy) bool {
