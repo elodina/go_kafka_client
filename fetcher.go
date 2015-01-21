@@ -470,7 +470,7 @@ func (f *consumerFetcherRoutine) start() {
 						fetchRequest := new(sarama.FetchRequest)
 						fetchRequest.MinBytes = config.FetchMinBytes
 						fetchRequest.MaxWaitTime = config.FetchWaitMaxMs
-						Infof(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, f.manager.config.FetchMessageMaxBytes)
+						Debugf(f, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, f.manager.config.FetchMessageMaxBytes)
 						fetchRequest.AddBlock(nextTopicPartition.Topic, int32(nextTopicPartition.Partition), offset, f.manager.config.FetchMessageMaxBytes)
 
 						var hasMessages bool
@@ -540,7 +540,7 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 }
 
 func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchRequest, requestedOffset int64) bool {
-	Info(f, "Started processing fetch request")
+	Debugf(f, "Started processing fetch request")
 	hasMessages := false
 	partitionsWithError := make(map[TopicAndPartition]bool)
 
@@ -625,7 +625,7 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 	partitionTopicInfo := f.allPartitionMap[topicAndPartition] //TODO this is potentially unsafe, maybe use allPartitionMapLock here?
 	if len(partitionData.MsgSet.Messages) > 0 {
 		partitionTopicInfo.Buffer.addBatch(&TopicPartitionData{topicAndPartition, partitionData})
-		Info(f, "Sent partition data")
+		Debug(f, "Sent partition data")
 	} else {
 		Debug(f, "Got empty message. Ignoring...")
 	}

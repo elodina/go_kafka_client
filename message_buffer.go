@@ -74,7 +74,7 @@ func (mb *messageBuffer) flush() {
 	if len(mb.Messages) > 0 {
 		Debug(mb, "Flushing")
 		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
-		flushLoop:
+	flushLoop:
 		for {
 			select {
 			case mb.OutputChannel <- mb.Messages:
