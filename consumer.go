@@ -327,6 +327,10 @@ func (c *Consumer) Close() <-chan bool {
 		}
 
 		c.stopStreams <- true
+
+		c.releasePartitionOwnership(c.topicRegistry)
+		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
+
 		c.closeFinished <- true
 	}()
 	return c.closeFinished
@@ -545,47 +549,52 @@ func (c *Consumer) subscribeForChanges(group string) {
 
 func (c *Consumer) unsubscribeFromChanges() {
 	c.unsubscribe <- true
-	coordinator := c.config.Coordinator
-	coordinator.Unsubscribe()
-	c.releasePartitionOwnership(c.topicRegistry)
-	coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
+	c.config.Coordinator.Unsubscribe()
 }
 
 func (c *Consumer) rebalance() {
 	if !c.isShuttingdown {
 		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
+		var context *assignmentContext
+		var err error
+		var stateHash string
 		barrierPassed := false
 		for !barrierPassed {
-			context, err := newAssignmentContext(c.config.Groupid, c.config.Consumerid,
+			context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
 				c.config.ExcludeInternalTopics, c.config.Coordinator)
 			if err != nil {
 				Errorf(c, "Failed to initialize assignment context: %s", err)
 				panic(err)
 			}
 			barrierSize := len(context.Consumers)
-			stateHash := context.hash()
+			stateHash = context.hash()
 
-			if (c.lastSuccessfulRebalanceHash == stateHash) { break }
+			if (c.lastSuccessfulRebalanceHash == stateHash) {
+				Info(c, "No need in rebalance this time")
+				return
+			}
 
 			c.releasePartitionOwnership(c.topicRegistry)
-			if c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash, barrierSize, Rebalance, c.config.BarrierTimeout) {
-				success := false
-				for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-					if tryRebalance(c, context, partitionAssignor) {
-						success = true
-						break
-					} else {
-						time.Sleep(c.config.RebalanceBackoff)
-					}
-				}
-				if !success && !c.isShuttingdown {
-					panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
-				} else {
-					c.lastSuccessfulRebalanceHash = stateHash
-					Info(c, "Rebalance has been successfully completed")
-				}
+			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
+																	 stateHash, barrierSize, Rebalance,
+																	 c.config.BarrierTimeout)
+		}
+
+		success := false
+		for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
+			if tryRebalance(c, context, partitionAssignor) {
+				success = true
+				break
+			} else {
+				time.Sleep(c.config.RebalanceBackoff)
 			}
+		}
+		if !success && !c.isShuttingdown {
+			panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
+		} else {
+			c.lastSuccessfulRebalanceHash = stateHash
+			Info(c, "Rebalance has been successfully completed")
 		}
 	} else {
 		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.Consumerid)
