@@ -213,10 +213,10 @@ type ConsumerCoordinator interface {
 
 	/* Gets all deployed topics for consume group Group from consumer coordinator.
 	Returns a map where keys are notification ids and values are DeployedTopics. May also return an error (e.g. if failed to reach coordinator). */
-	GetNewDeployedTopics(Group string) (map[string]*BlueGreenDeployment, error)
+	GetBlueGreenRequest(Group string) (map[string]*BlueGreenDeployment, error)
 
 	/* Implements classic barrier synchronization primitive via service coordinator facilities */
-	AwaitOnStateBarrier(consumerId string, group string, stateHash string, barrierSize int, api ConsumerGroupApi, timeout time.Duration) bool
+	AwaitOnStateBarrier(consumerId string, group string, stateHash string, barrierSize int, api string, timeout time.Duration) bool
 
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
@@ -232,6 +232,9 @@ type ConsumerCoordinator interface {
 	/* Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Group.
 	Returns error if failed to commit offset. */
 	CommitOffset(Group string, TopicPartition *TopicAndPartition, Offset int64) error
+
+	/* Removes old api objects */
+	RemoveOldApiRequests(group string) error
 }
 
 // CoordinatorEvent is sent by consumer coordinator representing some state change.
@@ -241,7 +244,7 @@ const (
 	Regular CoordinatorEvent = "Regular"
 
 	// A coordinator event that informs a consumer group of new deployed topics.
-	NewTopicDeployed CoordinatorEvent = "NewTopicDeployed"
+	BlueGreenRequest CoordinatorEvent = "BlueGreenRequest"
 )
 
 // Represents a consumer state snapshot.

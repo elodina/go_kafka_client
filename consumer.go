@@ -23,10 +23,9 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	metrics "github.com/rcrowley/go-metrics"
-	"reflect"
-	"strings"
 	"sync"
 	"time"
+	"strings"
 )
 
 const (
@@ -68,8 +67,6 @@ type Consumer struct {
 	pendingWMsTasksCounter            metrics.Counter
 	wmsBatchDurationTimer             metrics.Timer
 	wmsIdleTimer                      metrics.Timer
-
-	newDeployedTopics []*BlueGreenDeployment
 
 	lastSuccessfulRebalanceHash string
 }
@@ -264,8 +261,8 @@ func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) {
 }
 
 func (c *Consumer) reinitializeConsumer() {
-	c.rebalance()
 	c.subscribeForChanges(c.config.Groupid)
+	c.rebalance()
 }
 
 func (c *Consumer) initializeWorkerManagers() {
@@ -336,20 +333,83 @@ func (c *Consumer) Close() <-chan bool {
 	return c.closeFinished
 }
 
-func (c *Consumer) applyNewDeployedTopics() {
+func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *BlueGreenDeployment) {
+	var context *assignmentContext
+	//Waiting for everybody in group to acknowledge the request, then closing
 	inLock(&c.rebalanceLock, func() {
-		Debug(c, "Releasing parition ownership")
-		c.releasePartitionOwnership(c.topicRegistry)
-		Debug(c, "Released parition ownership")
+		Infof("Starting blue-green procedure for: %s", blueGreenRequest)
+		var err error
+		var stateHash string
+		barrierPassed := false
+		for !barrierPassed {
+			context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
+				c.config.ExcludeInternalTopics, c.config.Coordinator)
+			if err != nil {
+				Errorf(c, "Failed to initialize assignment context: %s", err)
+				panic(err)
+			}
+			barrierSize := len(context.Consumers)
+			stateHash = context.hash()
+			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash,
+																	 barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
+		}
 
-		currentDeployedTopics := c.newDeployedTopics[0]
-		topicCount := NewStaticTopicsToNumStreams(c.config.Consumerid,
-			currentDeployedTopics.Topics,
-			currentDeployedTopics.Pattern,
-			c.config.NumConsumerFetchers,
-			c.config.ExcludeInternalTopics,
-			c.config.Coordinator)
+		<-c.Close()
 
+		//Waiting for target group to leave the group
+		amountOfConsumersInTargetGroup := -1
+		for amountOfConsumersInTargetGroup != 0 {
+			consumersInTargetGroup, err := c.config.Coordinator.GetConsumersInGroup(blueGreenRequest.Group)
+			if err != nil {
+				panic(fmt.Sprintf("Failed to perform blue-green procedure due to: %s", err))
+			}
+			amountOfConsumersInTargetGroup = len(consumersInTargetGroup)
+			for _, consumer := range consumersInTargetGroup {
+				for _, myGroupConsumer := range context.Consumers {
+					if consumer == myGroupConsumer {
+						amountOfConsumersInTargetGroup--
+						break
+					}
+				}
+			}
+			time.Sleep(5 * time.Second)
+		}
+
+		//Removing obsolete api calls
+		c.config.Coordinator.RemoveOldApiRequests(blueGreenRequest.Group)
+
+		//Generating new topicCount
+		var topicCount TopicsToNumStreams
+		switch blueGreenRequest.Pattern {
+		case blackListPattern:
+			topicCount = &WildcardTopicsToNumStreams{
+			Coordinator:           c.config.Coordinator,
+			ConsumerId:            c.config.Consumerid,
+			TopicFilter:           NewBlackList(blueGreenRequest.Topics),
+			NumStreams:            c.config.NumConsumerFetchers,
+			ExcludeInternalTopics: c.config.ExcludeInternalTopics,
+		}
+		case whiteListPattern:
+			topicCount = &WildcardTopicsToNumStreams{
+			Coordinator:           c.config.Coordinator,
+			ConsumerId:            c.config.Consumerid,
+			TopicFilter:           NewWhiteList(blueGreenRequest.Topics),
+			NumStreams:            c.config.NumConsumerFetchers,
+			ExcludeInternalTopics: c.config.ExcludeInternalTopics,
+		}
+		case staticPattern: {
+			topicMap := make(map[string]int)
+			for _, topic := range strings.Split(blueGreenRequest.Topics, ",") {
+				topicMap[topic] = c.config.NumConsumerFetchers
+			}
+			topicCount = &StaticTopicsToNumStreams{
+				ConsumerId:            c.config.Consumerid,
+				TopicsToNumStreamsMap: topicMap,
+			}
+		}
+		}
+
+		//Getting the partitions for specified topics
 		myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 		topics := make([]string, 0)
 		for topic, _ := range myTopicThreadIds {
@@ -360,40 +420,54 @@ func (c *Consumer) applyNewDeployedTopics() {
 			panic(err)
 		}
 
-		c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
-		consumersInGroup, err := c.config.Coordinator.GetConsumersInGroup(c.config.Groupid)
-		if err != nil {
-			panic(err)
-		}
-		allTopics, err := c.config.Coordinator.GetAllTopics()
-		if err != nil {
-			panic(err)
-		}
-		brokers, err := c.config.Coordinator.GetAllBrokers()
-		if err != nil {
-			panic(err)
-		}
-		assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, consumersInGroup, allTopics, brokers, topicCount, topicPartitionMap)
-		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
-		partitionOwnershipDecision := partitionAssignor(assignmentContext)
-		topicPartitions := make([]*TopicAndPartition, 0)
-		for topicPartition, _ := range partitionOwnershipDecision {
-			topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
-		}
-		currentTopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
-		for _, topicPartition := range topicPartitions {
-			threadId := partitionOwnershipDecision[*topicPartition]
-			c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, InvalidOffset, threadId)
-		}
+		//Creating assignment context with new parameters
+		newContext := newStaticAssignmentContext(blueGreenRequest.Group, c.config.Consumerid, context.Consumers,
+												 context.AllTopics, context.Brokers, topicCount, topicPartitionMap)
+												 c.config.Groupid = blueGreenRequest.Group
 
-		if c.reflectPartitionOwnershipDecision(partitionOwnershipDecision) {
-			c.topicRegistry = currentTopicRegistry
-			c.initFetchersAndWorkers(assignmentContext)
-			c.newDeployedTopics = append(c.newDeployedTopics[:0], c.newDeployedTopics[1:]...)
-		} else {
-			panic("Failed to switch to new deployed topic")
-		}
+		//Resume consuming
+		c.resumeAfterClose(newContext)
+		Infof("Blue-green procedure has been successfully finished", blueGreenRequest)
 	})
+}
+
+func (c *Consumer) resumeAfterClose(context *assignmentContext) {
+	c.isShuttingdown = false
+	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
+	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
+	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
+
+	go c.fetcher.findLeaders()
+	go c.fetcher.waitForNextRequests()
+	go c.startStreams()
+
+	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
+	partitionOwnershipDecision := partitionAssignor(context)
+	topicPartitions := make([]*TopicAndPartition, 0)
+	for topicPartition, _ := range partitionOwnershipDecision {
+		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
+	}
+	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to fetch offsets during rebalance: %s", err))
+	}
+	currentTopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
+	for _, topicPartition := range topicPartitions {
+		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+		threadId := partitionOwnershipDecision[*topicPartition]
+		c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
+	}
+
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, context.MyTopicToNumStreams)
+	if c.reflectPartitionOwnershipDecision(partitionOwnershipDecision) {
+		c.topicRegistry = currentTopicRegistry
+		c.lastSuccessfulRebalanceHash = context.hash()
+		c.initFetchersAndWorkers(context)
+	} else {
+		panic("Failed to switch to new deployed topic")
+	}
+
+	c.subscribeForChanges(c.config.Groupid)
 }
 
 func (c *Consumer) stopWorkerManagers() bool {
@@ -456,83 +530,17 @@ func (c *Consumer) subscribeForChanges(group string) {
 			select {
 			case eventType := <-changes:
 				{
-					if eventType == NewTopicDeployed {
-						Info(c, "New topic deployed")
-						deployedTopics, err := c.config.Coordinator.GetNewDeployedTopics(group)
-						if len(deployedTopics) > 0 {
-							Info(c, "There are new deployed topics")
+					if eventType == BlueGreenRequest {
+						blueGreenRequests, err := c.config.Coordinator.GetBlueGreenRequest(group)
+						if len(blueGreenRequests) > 0 {
+							Info(c, "Blue-green deployment procedure has been requested")
 							if err != nil {
 								panic(err)
 							}
-							newTopics := make([]*BlueGreenDeployment, 0)
-							for _, topics := range deployedTopics {
-								newTopics = append(newTopics, topics)
+							for requestId, request := range blueGreenRequests {
+								go c.handleBlueGreenRequest(requestId, request)
+								break
 							}
-							c.newDeployedTopics = newTopics
-							c.applyNewDeployedTopics()
-							go func() {
-								Debug(c, "Started notification cleaner thread")
-								for notificationId, deployedTopic := range deployedTopics {
-									done := false
-									for ; !done; time.Sleep(5 * time.Second) {
-										consumersPerTopic, _ := c.config.Coordinator.GetConsumersPerTopic(group, c.config.ExcludeInternalTopics)
-										Tracef(c, "Consumers per topic %s", consumersPerTopic)
-										topics := make([]string, 0)
-										hasWhiteList := whiteListPattern == deployedTopic.Pattern
-										hasBlackList := blackListPattern == deployedTopic.Pattern
-										if hasWhiteList || hasBlackList {
-											regex := deployedTopic.Topics
-											var filter TopicFilter
-											if hasWhiteList {
-												filter = NewWhiteList(regex)
-											} else {
-												filter = NewBlackList(regex)
-											}
-
-											allTopics, err := c.config.Coordinator.GetAllTopics()
-											if err != nil {
-												Warn(c, err)
-												continue
-											}
-											for _, topic := range allTopics {
-												if filter.topicAllowed(topic, c.config.ExcludeInternalTopics) {
-													topics = append(topics, topic)
-												}
-											}
-										} else {
-											topics = strings.Split(deployedTopic.Topics, ",")
-										}
-
-										deployedTopicsPresent := true
-										for _, topic := range topics {
-											if _, exists := consumersPerTopic[topic]; !exists {
-												deployedTopicsPresent = false
-												break
-											}
-										}
-
-										if deployedTopicsPresent {
-											var headThreadIds []ConsumerThreadId
-											for _, headThreadIds = range consumersPerTopic {
-												break
-											}
-											for _, threadIds := range consumersPerTopic {
-												if !reflect.DeepEqual(threadIds, headThreadIds) {
-													done = false
-													break
-												} else {
-													done = true
-												}
-											}
-										} else {
-											Tracef(c, "Topics %s are not present in all consumers in group %s yet", topics, group)
-										}
-									}
-
-									c.config.Coordinator.PurgeNotificationForGroup(group, notificationId)
-									Trace(c, "Notification has been successfully handled by all consumers in group")
-								}
-							}()
 						}
 					} else {
 						inLock(&c.rebalanceLock, func() { c.rebalance() })
@@ -577,7 +585,7 @@ func (c *Consumer) rebalance() {
 
 			c.releasePartitionOwnership(c.topicRegistry)
 			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
-																	 stateHash, barrierSize, Rebalance,
+																	 stateHash, barrierSize, string(Rebalance),
 																	 c.config.BarrierTimeout)
 		}
 

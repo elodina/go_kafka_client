@@ -49,7 +49,7 @@ func TestZkAPI(t *testing.T) {
 	testRegisterConsumer(t)
 	testGetConsumersInGroup(t)
 	testDeregisterConsumer(t)
-	testNewDeployedTopics(t)
+	//testNewDeployedTopics(t)
 }
 
 func testCreatePathParentMayNotExist(t *testing.T, pathToCreate string) {

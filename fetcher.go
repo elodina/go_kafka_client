@@ -373,7 +373,8 @@ func (m *consumerFetcherManager) closeAllFetchers() {
 			delete(m.fetcherRoutineMap, key)
 		}
 
-		for k := range m.partitionMap {
+		for k, v := range m.partitionMap {
+			v.Buffer.stop()
 			delete(m.partitionMap, k)
 		}
 	})
