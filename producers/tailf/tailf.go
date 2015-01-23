@@ -24,18 +24,23 @@ import (
   "bufio"
   "flag"
   "log"
+  "os"
 )
 
 func main() {
-	var filename = flag.String("file", "", "The name of the file to tail")
 	var fromStart = flag.Bool("fromStart", true, "Read from beginning of file")
 	var topic = flag.String("topic", "tailf", "Kafka topic to produce to")
 	var clientId = flag.String("clientId", "tailf-client", "Kafka client ID")
 	var brokerList = flag.String("brokerList", "127.0.0.1:9092", "Kafka broker list, comma-delimited.")
 	var verbose = flag.Bool("verbose", false, "Verbose output")
 	flag.Parse()
-
-	follower, err := tailf.Follow(*filename, *fromStart)
+	if len(flag.Args()) != 1 { 
+	    flag.Usage()
+	    os.Exit(1)
+	}
+	var filename = flag.Arg(0)
+	
+	follower, err := tailf.Follow(filename, *fromStart)
 	if err != nil {
 		log.Fatalf("couldn't follow %q: %v", filename, err)
 	}
