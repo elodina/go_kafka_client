@@ -273,8 +273,22 @@ func TestBlueGreenDeployment(t *testing.T) {
 	blueGroup := fmt.Sprintf("blue-%d", time.Now().Unix())
 	greenGroup := fmt.Sprintf("green-%d", time.Now().Unix())
 
-	blueGroupConsumers := []*Consumer{ createConsumerForGroup(blueGroup), createConsumerForGroup(blueGroup) }
-	greenGroupConsumers := []*Consumer{ createConsumerForGroup(greenGroup), createConsumerForGroup(greenGroup) }
+	processedInactiveMessages := 0
+	var inactiveCounterLock sync.Mutex
+
+	processedActiveMessages := 0
+	var activeCounterLock sync.Mutex
+
+	inactiveStrategy := func(worker *Worker, msg *Message, taskId TaskId) WorkerResult {
+		atomicIncrement(&processedInactiveMessages, &inactiveCounterLock)
+		return NewSuccessfulResult(taskId)
+	}
+	activeStrategy := func(worker *Worker, msg *Message, taskId TaskId) WorkerResult {
+		atomicIncrement(&processedActiveMessages, &activeCounterLock)
+		return NewSuccessfulResult(taskId)
+	}
+	blueGroupConsumers := []*Consumer{ createConsumerForGroup(blueGroup, inactiveStrategy), createConsumerForGroup(blueGroup, inactiveStrategy) }
+	greenGroupConsumers := []*Consumer{ createConsumerForGroup(greenGroup, activeStrategy), createConsumerForGroup(greenGroup, activeStrategy) }
 
 	for _, consumer := range blueGroupConsumers {
 		go consumer.StartStatic(map[string]int{
@@ -296,7 +310,7 @@ func TestBlueGreenDeployment(t *testing.T) {
 
 	time.Sleep(30 * time.Second)
 
-	//All blue consumers should switch to green group and change topic to inactive
+	//All Blue consumers should switch to Green group and change topic to inactive
 	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
 	for _, consumer := range blueGroupConsumers {
 		found := false
@@ -308,7 +322,7 @@ func TestBlueGreenDeployment(t *testing.T) {
 		assert(t, found, true)
 	}
 
-	//All green consumers should switch to blue group and change topic to active
+	//All Green consumers should switch to Blue group and change topic to active
 	blueConsumerIds, _ := coordinator.GetConsumersInGroup(blueGroup)
 	for _, consumer := range greenGroupConsumers {
 		found := false
@@ -319,6 +333,24 @@ func TestBlueGreenDeployment(t *testing.T) {
 		}
 		assert(t, found, true)
 	}
+
+	//At this stage Blue group became Green group
+	//and Green group became Blue group
+
+	//Producing messages to both topics
+	produceMessages := 10
+	Infof(activeTopic, "Produce %d message", produceMessages)
+	go produceN(t, produceMessages, activeTopic, localBroker)
+
+	Infof(inactiveTopic, "Produce %d message", produceMessages)
+	go produceN(t, produceMessages, inactiveTopic, localBroker)
+
+	time.Sleep(30 * time.Second)
+
+	//Green group consumes from inactive topic
+	assert(t, processedInactiveMessages, produceMessages)
+	//Blue group consumes from active topic
+	assert(t, processedActiveMessages, produceMessages)
 
 	for _, consumer := range blueGroupConsumers {
 		closeWithin(t, 30*time.Second, consumer)
@@ -346,14 +378,14 @@ func testConsumerConfig() *ConsumerConfig {
 	return config
 }
 
-func createConsumerForGroup(group string) *Consumer {
+func createConsumerForGroup(group string, strategy WorkerStrategy) *Consumer {
 	config := testConsumerConfig()
 	config.Groupid = group
 	config.NumConsumerFetchers = 1
 	config.NumWorkers = 1
 	config.FetchBatchTimeout = 1
 	config.FetchBatchSize = 1
-	config.DeploymentTimeout = 5 * time.Second
+	config.Strategy = strategy
 
 	return NewConsumer(config)
 }
@@ -380,4 +412,10 @@ func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Durati
 		})
 		return NewSuccessfulResult(id)
 	}
+}
+
+func atomicIncrement(counter *int, lock *sync.Mutex) {
+	inLock(lock, func() {
+		*counter++
+	})
 }

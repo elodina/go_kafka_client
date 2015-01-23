@@ -562,35 +562,35 @@ func (c *Consumer) unsubscribeFromChanges() {
 
 func (c *Consumer) rebalance() {
 	if !c.isShuttingdown {
-		Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
-		partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
-		var context *assignmentContext
-		var err error
-		var stateHash string
-		barrierPassed := false
-		for !barrierPassed {
-			context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
-				c.config.ExcludeInternalTopics, c.config.Coordinator)
-			if err != nil {
-				Errorf(c, "Failed to initialize assignment context: %s", err)
-				panic(err)
-			}
-			barrierSize := len(context.Consumers)
-			stateHash = context.hash()
-
-			if (c.lastSuccessfulRebalanceHash == stateHash) {
-				Info(c, "No need in rebalance this time")
-				return
-			}
-
-			c.releasePartitionOwnership(c.topicRegistry)
-			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
-																	 stateHash, barrierSize, string(Rebalance),
-																	 c.config.BarrierTimeout)
-		}
-
 		success := false
+		var stateHash string
 		for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
+			Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
+			partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
+			var context *assignmentContext
+			var err error
+			barrierPassed := false
+			for !barrierPassed {
+				context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
+					c.config.ExcludeInternalTopics, c.config.Coordinator)
+				if err != nil {
+					Errorf(c, "Failed to initialize assignment context: %s", err)
+					panic(err)
+				}
+				barrierSize := len(context.Consumers)
+				stateHash = context.hash()
+
+				if (c.lastSuccessfulRebalanceHash == stateHash) {
+					Info(c, "No need in rebalance this time")
+					return
+				}
+
+				c.releasePartitionOwnership(c.topicRegistry)
+				barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
+																		 stateHash, barrierSize, string(Rebalance),
+																		 c.config.BarrierTimeout)
+			}
+
 			if tryRebalance(c, context, partitionAssignor) {
 				success = true
 				break
