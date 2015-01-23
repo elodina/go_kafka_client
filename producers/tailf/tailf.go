@@ -32,6 +32,7 @@ func main() {
 	var topic = flag.String("topic", "tailf", "Kafka topic to produce to")
 	var clientId = flag.String("clientId", "tailf-client", "Kafka client ID")
 	var brokerList = flag.String("brokerList", "127.0.0.1:9092", "Kafka broker list, comma-delimited.")
+	var verbose = flag.Bool("verbose", false, "Verbose output")
 	flag.Parse()
 
 	follower, err := tailf.Follow(*filename, *fromStart)
@@ -57,6 +58,9 @@ func main() {
 	scanner := bufio.NewScanner(follower)
 	for scanner.Scan() {
 		producer.Input() <- &sarama.MessageToSend{Topic: *topic, Key: nil, Value: sarama.ByteEncoder(scanner.Bytes())}
+		if *verbose {
+			log.Println("Produced message:", scanner.Text())
+		}
 	}
     if err := scanner.Err(); err != nil {
         log.Fatalf("scanner error: %v", err)
