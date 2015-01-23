@@ -255,6 +255,79 @@ func testCompression(t *testing.T, codec sarama.CompressionCodec) {
 	closeWithin(t, 10*time.Second, consumer)
 }
 
+func TestBlueGreenDeployment(t *testing.T) {
+	partitions := 2
+	activeTopic := fmt.Sprintf("active-%d", time.Now().Unix())
+	inactiveTopic := fmt.Sprintf("inactive-%d", time.Now().Unix())
+
+	zkConfig := NewZookeeperConfig()
+	zkConfig.ZookeeperConnect = []string{localZk}
+	coordinator := NewZookeeperCoordinator(zkConfig)
+	coordinator.Connect()
+
+	CreateMultiplePartitionsTopic(localZk, activeTopic, partitions)
+	EnsureHasLeader(localZk, activeTopic)
+	CreateMultiplePartitionsTopic(localZk, inactiveTopic, partitions)
+	EnsureHasLeader(localZk, inactiveTopic)
+
+	blueGroup := fmt.Sprintf("blue-%d", time.Now().Unix())
+	greenGroup := fmt.Sprintf("green-%d", time.Now().Unix())
+
+	blueGroupConsumers := []*Consumer{ createConsumerForGroup(blueGroup), createConsumerForGroup(blueGroup) }
+	greenGroupConsumers := []*Consumer{ createConsumerForGroup(greenGroup), createConsumerForGroup(greenGroup) }
+
+	for _, consumer := range blueGroupConsumers {
+		go consumer.StartStatic(map[string]int{
+			activeTopic: 1,
+		})
+	}
+	for _, consumer := range greenGroupConsumers {
+		go consumer.StartStatic(map[string]int{
+			inactiveTopic: 1,
+		})
+	}
+
+	blue := BlueGreenDeployment{activeTopic, "static", blueGroup}
+	green := BlueGreenDeployment{inactiveTopic, "static", greenGroup}
+
+	time.Sleep(15 * time.Second)
+
+	coordinator.RequestBlueGreenDeployment(blue, green)
+
+	time.Sleep(30 * time.Second)
+
+	//All blue consumers should switch to green group and change topic to inactive
+	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
+	for _, consumer := range blueGroupConsumers {
+		found := false
+		for _, consumerId := range greenConsumerIds {
+			if consumerId == consumer.config.Consumerid {
+				found = true
+			}
+		}
+		assert(t, found, true)
+	}
+
+	//All green consumers should switch to blue group and change topic to active
+	blueConsumerIds, _ := coordinator.GetConsumersInGroup(blueGroup)
+	for _, consumer := range greenGroupConsumers {
+		found := false
+		for _, consumerId := range blueConsumerIds {
+			if consumerId == consumer.config.Consumerid {
+				found = true
+			}
+		}
+		assert(t, found, true)
+	}
+
+	for _, consumer := range blueGroupConsumers {
+		closeWithin(t, 30*time.Second, consumer)
+	}
+	for _, consumer := range greenGroupConsumers {
+		closeWithin(t, 30*time.Second, consumer)
+	}
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset
@@ -271,6 +344,18 @@ func testConsumerConfig() *ConsumerConfig {
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 
 	return config
+}
+
+func createConsumerForGroup(group string) *Consumer {
+	config := testConsumerConfig()
+	config.Groupid = group
+	config.NumConsumerFetchers = 1
+	config.NumWorkers = 1
+	config.FetchBatchTimeout = 1
+	config.FetchBatchSize = 1
+	config.DeploymentTimeout = 5 * time.Second
+
+	return NewConsumer(config)
 }
 
 func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Duration, notify chan int) WorkerStrategy {

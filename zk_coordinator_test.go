@@ -49,7 +49,6 @@ func TestZkAPI(t *testing.T) {
 	testRegisterConsumer(t)
 	testGetConsumersInGroup(t)
 	testDeregisterConsumer(t)
-	//testNewDeployedTopics(t)
 }
 
 func testCreatePathParentMayNotExist(t *testing.T, pathToCreate string) {
@@ -130,41 +129,3 @@ func testDeregisterConsumer(t *testing.T) {
 	}
 	assert(t, exists, false)
 }
-
-/*func testNewDeployedTopics(t *testing.T) {
-	group := fmt.Sprintf("group-%d", time.Now().Unix())
-	coordinator.ensureZkPathsExist(group)
-	topics := DeployedTopics{
-		Topics:  "topic1",
-		Pattern: "static",
-	}
-
-	events, err := coordinator.SubscribeForChanges(group)
-	if err != nil {
-		panic(err)
-	}
-	go func() {
-		time.Sleep(1 * time.Second)
-		data, _ := json.Marshal(topics)
-		coordinator.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", newZKGroupDirs(group).ConsumerApiDir, time.Now().Unix()), data)
-	}()
-	select {
-	case event := <-events:
-		{
-			if event != NewTopicDeployed {
-				t.Errorf("Expected %s, actual %s", NewTopicDeployed, event)
-			}
-			deployedTopics, err := coordinator.GetNewDeployedTopics(group)
-			if err != nil {
-				panic(err)
-			}
-			var deployedTopic *DeployedTopics
-			for _, deployedTopic = range deployedTopics {
-				break
-			}
-			assert(t, *deployedTopic, topics)
-		}
-	case <-time.After(5 * time.Second):
-		t.Error("Failed to receive a Deployed Topic event from Zookeeper")
-	}
-}*/

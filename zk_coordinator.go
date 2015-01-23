@@ -1117,7 +1117,7 @@ func (mzk *mockZookeeperCoordinator) PurgeNotificationForGroup(Group string, not
 func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan CoordinatorEvent, error) {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) GetNewDeployedTopics(Group string) (map[string]*BlueGreenDeployment, error) {
+func (mzk *mockZookeeperCoordinator) GetBlueGreenRequest(Group string) (map[string]*BlueGreenDeployment, error) {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, stateHash string, barrierSize int, api string, timeout time.Duration) bool {
