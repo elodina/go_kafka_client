@@ -83,7 +83,7 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 	config.WorkerThresholdTimeWindow = workerConsideredFailedTimeWindow
 	config.WorkerTaskTimeout = workerTaskTimeout
 	config.WorkerManagersStopTimeout = workerManagersStopTimeout
-	config.RebalanceBarrierTimeout = rebalanceBarrierTimeout
+	config.BarrierTimeout = rebalanceBarrierTimeout
 	config.RebalanceMaxRetries = int32(rebalanceMaxRetries)
 	config.RebalanceBackoff = rebalanceBackoff
 	config.PartitionAssignmentStrategy = partitionAssignmentStrategy

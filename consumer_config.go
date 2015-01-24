@@ -147,8 +147,8 @@ type ConsumerConfig struct {
 	/* Time to wait after consumer has registered itself in group */
 	DeploymentTimeout time.Duration
 
-	/* Rebalance barrier timout */
-	RebalanceBarrierTimeout time.Duration
+	/* Service coordinator barrier timeout */
+	BarrierTimeout time.Duration
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.
@@ -192,7 +192,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 	config.BlueGreenDeploymentEnabled = true
 	config.DeploymentTimeout = 0 * time.Second
-	config.RebalanceBarrierTimeout = 30 * time.Second
+	config.BarrierTimeout = 30 * time.Second
 
 	return config
 }

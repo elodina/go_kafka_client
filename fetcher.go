@@ -45,16 +45,13 @@ type consumerFetcherManager struct {
 	numFetchRoutinesCounter metrics.Counter
 	idleTimer               metrics.Timer
 	fetchDurationTimer      metrics.Timer
-
-	switchTopic    chan bool
-	fetcherBarrier *barrier
 }
 
 func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.Consumerid)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPartition, fetcherBarrier *barrier) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPartition) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config:             config,
 		closeFinished:      make(chan bool),
@@ -64,8 +61,6 @@ func newConsumerFetcherManager(config *ConsumerConfig, askNext chan TopicAndPart
 		askNext:            askNext,
 		askNextStopper:     make(chan bool),
 		askNextFetchers:    make(map[TopicAndPartition]chan TopicAndPartition),
-		switchTopic:        make(chan bool),
-		fetcherBarrier:     fetcherBarrier,
 	}
 	manager.leaderCond = sync.NewCond(&manager.partitionMapLock)
 	manager.numFetchRoutinesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("NumFetchRoutines-%s", manager.String()), metrics.DefaultRegistry)
@@ -157,12 +152,6 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 func (m *consumerFetcherManager) waitForNextRequests() {
 	for {
 		select {
-		case <-m.switchTopic:
-			{
-				for _, routine := range m.fetcherRoutineMap {
-					routine.switchRequested = true
-				}
-			}
 		case topicPartition := <-m.askNext:
 			{
 				Tracef(m, "WaitForNextRequests: got asknext for partition=%d", topicPartition.Partition)
@@ -316,7 +305,7 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 				fetcherRoutine := newConsumerFetcher(m,
 					fmt.Sprintf("ConsumerFetcherRoutine-%s-%d-%d", m.config.Consumerid, brokerAndFetcherId.FetcherId, brokerAndFetcherId.Broker.Id),
 					brokerAndFetcherId.Broker,
-					m.partitionMap, m.fetcherBarrier)
+					m.partitionMap)
 				m.fetcherRoutineMap[brokerAndFetcherId] = fetcherRoutine
 				go fetcherRoutine.start()
 			}
@@ -363,7 +352,6 @@ func (m *consumerFetcherManager) shutdownIdleFetchers() {
 			if len(fetcher.partitionMap) <= 0 {
 				<-fetcher.close()
 				delete(m.fetcherRoutineMap, key)
-				m.fetcherBarrier.reset(m.fetcherBarrier.size - 1)
 			}
 		}
 	})
@@ -385,7 +373,8 @@ func (m *consumerFetcherManager) closeAllFetchers() {
 			delete(m.fetcherRoutineMap, key)
 		}
 
-		for k := range m.partitionMap {
+		for k, v := range m.partitionMap {
+			v.Buffer.stop()
 			delete(m.partitionMap, k)
 		}
 	})
@@ -419,16 +408,13 @@ type consumerFetcherRoutine struct {
 	closeFinished     chan bool
 	fetchStopper      chan bool
 	askNext           chan TopicAndPartition
-	fetcherBarrier    *barrier
-	switchRequested   bool
-	switchFetchesUsed int
 }
 
 func (f *consumerFetcherRoutine) String() string {
 	return f.name
 }
 
-func newConsumerFetcher(m *consumerFetcherManager, name string, broker BrokerInfo, allPartitionMap map[TopicAndPartition]*partitionTopicInfo, fetcherBarrier *barrier) *consumerFetcherRoutine {
+func newConsumerFetcher(m *consumerFetcherManager, name string, broker BrokerInfo, allPartitionMap map[TopicAndPartition]*partitionTopicInfo) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
 		manager:         m,
 		name:            name,
@@ -438,7 +424,6 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, broker BrokerInf
 		closeFinished:   make(chan bool),
 		fetchStopper:    make(chan bool),
 		askNext:         make(chan TopicAndPartition),
-		fetcherBarrier:  fetcherBarrier,
 	}
 }
 
@@ -477,25 +462,10 @@ func (f *consumerFetcherRoutine) start() {
 						f.manager.fetchDurationTimer.Time(func() { hasMessages = f.processFetchRequest(fetchRequest, offset) })
 
 						if !hasMessages {
-							if f.switchRequested {
-								f.switchFetchesUsed++
-								if config.FetchMaxRetries > f.switchFetchesUsed {
-									f.removePartitions([]TopicAndPartition{nextTopicPartition})
-								} else {
-									go f.requeue(nextTopicPartition)
-								}
-							} else {
-								go f.requeue(nextTopicPartition)
-							}
+							go f.requeue(nextTopicPartition)
 						}
 					}
 				})
-				if f.switchRequested && config.FetchMaxRetries > f.switchFetchesUsed {
-					if len(f.partitionMap) == 0 {
-						Debug(f, "fetcher started awaiting for barrier break")
-						f.fetcherBarrier.await()
-					}
-				}
 				time.Sleep(f.manager.config.FetchRequestBackoff)
 			}
 		case <-f.fetchStopper:

@@ -255,6 +255,111 @@ func testCompression(t *testing.T, codec sarama.CompressionCodec) {
 	closeWithin(t, 10*time.Second, consumer)
 }
 
+func TestBlueGreenDeployment(t *testing.T) {
+	partitions := 2
+	activeTopic := fmt.Sprintf("active-%d", time.Now().Unix())
+	inactiveTopic := fmt.Sprintf("inactive-%d", time.Now().Unix())
+
+	zkConfig := NewZookeeperConfig()
+	zkConfig.ZookeeperConnect = []string{localZk}
+	coordinator := NewZookeeperCoordinator(zkConfig)
+	coordinator.Connect()
+
+	CreateMultiplePartitionsTopic(localZk, activeTopic, partitions)
+	EnsureHasLeader(localZk, activeTopic)
+	CreateMultiplePartitionsTopic(localZk, inactiveTopic, partitions)
+	EnsureHasLeader(localZk, inactiveTopic)
+
+	blueGroup := fmt.Sprintf("blue-%d", time.Now().Unix())
+	greenGroup := fmt.Sprintf("green-%d", time.Now().Unix())
+
+	processedInactiveMessages := 0
+	var inactiveCounterLock sync.Mutex
+
+	processedActiveMessages := 0
+	var activeCounterLock sync.Mutex
+
+	inactiveStrategy := func(worker *Worker, msg *Message, taskId TaskId) WorkerResult {
+		atomicIncrement(&processedInactiveMessages, &inactiveCounterLock)
+		return NewSuccessfulResult(taskId)
+	}
+	activeStrategy := func(worker *Worker, msg *Message, taskId TaskId) WorkerResult {
+		atomicIncrement(&processedActiveMessages, &activeCounterLock)
+		return NewSuccessfulResult(taskId)
+	}
+	blueGroupConsumers := []*Consumer{ createConsumerForGroup(blueGroup, inactiveStrategy), createConsumerForGroup(blueGroup, inactiveStrategy) }
+	greenGroupConsumers := []*Consumer{ createConsumerForGroup(greenGroup, activeStrategy), createConsumerForGroup(greenGroup, activeStrategy) }
+
+	for _, consumer := range blueGroupConsumers {
+		go consumer.StartStatic(map[string]int{
+			activeTopic: 1,
+		})
+	}
+	for _, consumer := range greenGroupConsumers {
+		go consumer.StartStatic(map[string]int{
+			inactiveTopic: 1,
+		})
+	}
+
+	blue := BlueGreenDeployment{activeTopic, "static", blueGroup}
+	green := BlueGreenDeployment{inactiveTopic, "static", greenGroup}
+
+	time.Sleep(15 * time.Second)
+
+	coordinator.RequestBlueGreenDeployment(blue, green)
+
+	time.Sleep(30 * time.Second)
+
+	//All Blue consumers should switch to Green group and change topic to inactive
+	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
+	for _, consumer := range blueGroupConsumers {
+		found := false
+		for _, consumerId := range greenConsumerIds {
+			if consumerId == consumer.config.Consumerid {
+				found = true
+			}
+		}
+		assert(t, found, true)
+	}
+
+	//All Green consumers should switch to Blue group and change topic to active
+	blueConsumerIds, _ := coordinator.GetConsumersInGroup(blueGroup)
+	for _, consumer := range greenGroupConsumers {
+		found := false
+		for _, consumerId := range blueConsumerIds {
+			if consumerId == consumer.config.Consumerid {
+				found = true
+			}
+		}
+		assert(t, found, true)
+	}
+
+	//At this stage Blue group became Green group
+	//and Green group became Blue group
+
+	//Producing messages to both topics
+	produceMessages := 10
+	Infof(activeTopic, "Produce %d message", produceMessages)
+	go produceN(t, produceMessages, activeTopic, localBroker)
+
+	Infof(inactiveTopic, "Produce %d message", produceMessages)
+	go produceN(t, produceMessages, inactiveTopic, localBroker)
+
+	time.Sleep(30 * time.Second)
+
+	//Green group consumes from inactive topic
+	assert(t, processedInactiveMessages, produceMessages)
+	//Blue group consumes from active topic
+	assert(t, processedActiveMessages, produceMessages)
+
+	for _, consumer := range blueGroupConsumers {
+		closeWithin(t, 30*time.Second, consumer)
+	}
+	for _, consumer := range greenGroupConsumers {
+		closeWithin(t, 30*time.Second, consumer)
+	}
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset
@@ -271,6 +376,18 @@ func testConsumerConfig() *ConsumerConfig {
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 
 	return config
+}
+
+func createConsumerForGroup(group string, strategy WorkerStrategy) *Consumer {
+	config := testConsumerConfig()
+	config.Groupid = group
+	config.NumConsumerFetchers = 1
+	config.NumWorkers = 1
+	config.FetchBatchTimeout = 1
+	config.FetchBatchSize = 1
+	config.Strategy = strategy
+
+	return NewConsumer(config)
 }
 
 func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Duration, notify chan int) WorkerStrategy {
@@ -295,4 +412,10 @@ func newCountingStrategy(t *testing.T, expectedMessages int, timeout time.Durati
 		})
 		return NewSuccessfulResult(id)
 	}
+}
+
+func atomicIncrement(counter *int, lock *sync.Mutex) {
+	inLock(lock, func() {
+		*counter++
+	})
 }
