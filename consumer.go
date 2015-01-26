@@ -437,8 +437,6 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
 	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
 
-	go c.fetcher.findLeaders()
-	go c.fetcher.waitForNextRequests()
 	go c.startStreams()
 
 	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)

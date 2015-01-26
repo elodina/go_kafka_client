@@ -629,11 +629,14 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 		}
 		case <-time.After(timeout):
 		{
-			err = this.removeStateBarrier(group, barrierName, api)
-			if err != nil {
-				panic(err)
+			passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
+			if !passed {
+				err = this.removeStateBarrier(group, barrierName, api)
+				if err != nil {
+					panic(err)
+				}
+				break barrierLoop
 			}
-			break barrierLoop
 		}
 		}
 	}
