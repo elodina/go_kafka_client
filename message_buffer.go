@@ -64,14 +64,14 @@ func (mb *messageBuffer) autoFlush() {
 			{
 				Debug(mb, "Batch accumulation timed out. Flushing...")
 				mb.Timer.Reset(mb.Config.FetchBatchTimeout)
-				inLock(&mb.MessageLock, mb.flush)
+				go inLock(&mb.MessageLock, mb.flush)
 			}
 		}
 	}
 }
 
 func (mb *messageBuffer) flush() {
-	if len(mb.Messages) > 0 {
+	if len(mb.Messages) > 0 && !mb.stopSending {
 		Debug(mb, "Flushing")
 		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 		flushLoop:
