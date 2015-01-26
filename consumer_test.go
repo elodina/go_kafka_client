@@ -304,11 +304,11 @@ func TestBlueGreenDeployment(t *testing.T) {
 	blue := BlueGreenDeployment{activeTopic, "static", blueGroup}
 	green := BlueGreenDeployment{inactiveTopic, "static", greenGroup}
 
-	time.Sleep(15 * time.Second)
+	time.Sleep(20 * time.Second)
 
 	coordinator.RequestBlueGreenDeployment(blue, green)
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(60 * time.Second)
 
 	//All Blue consumers should switch to Green group and change topic to inactive
 	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
@@ -353,10 +353,10 @@ func TestBlueGreenDeployment(t *testing.T) {
 	assert(t, processedActiveMessages, produceMessages)
 
 	for _, consumer := range blueGroupConsumers {
-		closeWithin(t, 30*time.Second, consumer)
+		closeWithin(t, 60*time.Second, consumer)
 	}
 	for _, consumer := range greenGroupConsumers {
-		closeWithin(t, 30*time.Second, consumer)
+		closeWithin(t, 60*time.Second, consumer)
 	}
 }
 
@@ -373,6 +373,9 @@ func testConsumerConfig() *ConsumerConfig {
 
 	zkConfig := NewZookeeperConfig()
 	zkConfig.ZookeeperConnect = []string{localZk}
+	zkConfig.MaxRequestRetries = 10
+	zkConfig.ZookeeperTimeout = 30 * time.Second
+	zkConfig.RequestBackoff = 1 * time.Second
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 
 	return config

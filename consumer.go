@@ -327,6 +327,7 @@ func (c *Consumer) Close() <-chan bool {
 
 		c.releasePartitionOwnership(c.topicRegistry)
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
+		c.config.Coordinator.Disconnect()
 
 		c.closeFinished <- true
 	}()
@@ -355,6 +356,11 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		}
 
 		<-c.Close()
+
+		err = c.config.Coordinator.Connect()
+		if err != nil {
+			panic(fmt.Sprintf("Failed to connect to Coordinator: %s", err))
+		}
 
 		//Waiting for target group to leave the group
 		amountOfConsumersInTargetGroup := -1

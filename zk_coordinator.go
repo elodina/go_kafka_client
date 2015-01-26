@@ -75,6 +75,11 @@ func (this *ZookeeperCoordinator) tryConnect() error {
 	return err
 }
 
+func (this * ZookeeperCoordinator) Disconnect() {
+	Infof(this, "Closing connection to ZK at %s\n", this.config.ZookeeperConnect)
+	this.zkConn.Close()
+}
+
 /* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Groupid in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
 func (this *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid string, TopicCount TopicsToNumStreams) error {
 	this.ensureZkPathsExist(Groupid)
@@ -175,9 +180,10 @@ func (this *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid 
 // Gets the information about consumers per topic in consumer group Groupid excluding internal topics (such as offsets) if ExcludeInternalTopics = true.
 // Returns a map where keys are topic names and values are slices of consumer ids and fetcher ids associated with this topic and error on failure.
 func (this *ZookeeperCoordinator) GetConsumersPerTopic(Groupid string, ExcludeInternalTopics bool) (map[string][]ConsumerThreadId, error) {
+	var consumers map[string][]ConsumerThreadId
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		consumers, err := this.tryGetConsumersPerTopic(Groupid, ExcludeInternalTopics)
+		consumers, err = this.tryGetConsumersPerTopic(Groupid, ExcludeInternalTopics)
 		if err == nil {
 			return consumers, err
 		}
@@ -1089,6 +1095,7 @@ func newMockZookeeperCoordinator() *mockZookeeperCoordinator {
 }
 
 func (mzk *mockZookeeperCoordinator) Connect() error { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) Disconnect() { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) RegisterConsumer(consumerid string, group string, topicCount TopicsToNumStreams) error {
 	panic("Not implemented")
 }
