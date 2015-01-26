@@ -147,16 +147,17 @@ func (this *ZookeeperCoordinator) tryDeregisterConsumer(Consumerid string, Group
 // Gets the information about consumer with Consumerid id that is a part of consumer group Groupid from this ConsumerCoordinator.
 // Returns ConsumerInfo on success and error otherwise (For example if consumer with given Consumerid does not exist).
 func (this *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
+	var info *ConsumerInfo
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		info, err := this.tryGetConsumerInfo(Consumerid, Groupid)
+		info, err = this.tryGetConsumerInfo(Consumerid, Groupid)
 		if err == nil {
 			return info, err
 		}
 		Tracef(this, "GetConsumerInfo failed for consumer %s in group %s after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return info, err
 }
 
 func (this *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
