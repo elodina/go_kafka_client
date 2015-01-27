@@ -109,7 +109,9 @@ func testRegisterConsumer(t *testing.T) {
 	}
 	actualConsumerInfo, err := coordinator.GetConsumerInfo(fmt.Sprintf(consumerIdPattern, 0), consumerGroup)
 
-	assert(t, *actualConsumerInfo, *consumerInfo)
+	assert(t, actualConsumerInfo.Version, consumerInfo.Version)
+	assert(t, actualConsumerInfo.Subscription, consumerInfo.Subscription)
+	assert(t, actualConsumerInfo.Pattern, consumerInfo.Pattern)
 }
 
 func testGetConsumersInGroup(t *testing.T) {
