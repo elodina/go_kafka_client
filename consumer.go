@@ -326,7 +326,14 @@ func (c *Consumer) Close() <-chan bool {
 		c.stopStreams <- true
 
 		c.releasePartitionOwnership(c.topicRegistry)
+
+		Info(c, "Deregistering consumer")
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
+		Info(c, "Successfully deregistered consumer")
+
+		Info(c, "Disconnecting from consumer coordinator")
+		c.config.Coordinator.Disconnect()
+		Info(c, "Disconnected from consumer coordinator")
 
 		c.closeFinished <- true
 	}()
@@ -355,6 +362,11 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		}
 
 		<-c.Close()
+
+		err = c.config.Coordinator.Connect()
+		if err != nil {
+			panic(fmt.Sprintf("Failed to connect to Coordinator: %s", err))
+		}
 
 		//Waiting for target group to leave the group
 		amountOfConsumersInTargetGroup := -1
@@ -437,8 +449,6 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
 	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
 
-	go c.fetcher.findLeaders()
-	go c.fetcher.waitForNextRequests()
 	go c.startStreams()
 
 	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
@@ -543,7 +553,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 							}
 						}
 					} else {
-						inLock(&c.rebalanceLock, func() { c.rebalance() })
+						go c.rebalance()
 					}
 				}
 			case <-c.unsubscribe:
@@ -562,48 +572,49 @@ func (c *Consumer) unsubscribeFromChanges() {
 
 func (c *Consumer) rebalance() {
 	if !c.isShuttingdown {
-		success := false
-		var stateHash string
-		for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-			Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
-			partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
-			var context *assignmentContext
-			var err error
-			barrierPassed := false
-			for !barrierPassed {
-				context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
-					c.config.ExcludeInternalTopics, c.config.Coordinator)
-				if err != nil {
-					Errorf(c, "Failed to initialize assignment context: %s", err)
-					panic(err)
-				}
-				barrierSize := len(context.Consumers)
-				stateHash = context.hash()
+		inLock(&c.rebalanceLock, func() {
+			success := false
+			var stateHash string
+			for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
+				Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
+				partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
+				var context *assignmentContext
+				var err error
+				barrierPassed := false
+				for !barrierPassed {
+					context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
+						c.config.ExcludeInternalTopics, c.config.Coordinator)
+					if err != nil {
+						Errorf(c, "Failed to initialize assignment context: %s", err)
+						panic(err)
+					}
+					barrierSize := len(context.Consumers)
+					stateHash = context.hash()
 
-				if (c.lastSuccessfulRebalanceHash == stateHash) {
-					Info(c, "No need in rebalance this time")
-					return
+					if (c.lastSuccessfulRebalanceHash == stateHash) {
+						Info(c, "No need in rebalance this time")
+						return
+					}
+					c.releasePartitionOwnership(c.topicRegistry)
+					barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
+						stateHash, barrierSize, string(Rebalance),
+						c.config.BarrierTimeout)
 				}
 
-				c.releasePartitionOwnership(c.topicRegistry)
-				barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
-																		 stateHash, barrierSize, string(Rebalance),
-																		 c.config.BarrierTimeout)
+				if tryRebalance(c, context, partitionAssignor) {
+					success = true
+					break
+				} else {
+					time.Sleep(c.config.RebalanceBackoff)
+				}
 			}
-
-			if tryRebalance(c, context, partitionAssignor) {
-				success = true
-				break
+			if !success && !c.isShuttingdown {
+				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
 			} else {
-				time.Sleep(c.config.RebalanceBackoff)
+				c.lastSuccessfulRebalanceHash = stateHash
+				Info(c, "Rebalance has been successfully completed")
 			}
-		}
-		if !success && !c.isShuttingdown {
-			panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
-		} else {
-			c.lastSuccessfulRebalanceHash = stateHash
-			Info(c, "Rebalance has been successfully completed")
-		}
+		})
 	} else {
 		Infof(c, "Rebalance was triggered during consumer '%s' shutdown sequence. Ignoring...", c.config.Consumerid)
 	}
@@ -763,6 +774,7 @@ func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[i
 		}
 		delete(localtopicRegistry, topic)
 	}
+	Info(c, "Successfully released partition ownership")
 }
 
 // Returns a state snapshot for this consumer. State snapshot contains a set of metrics splitted by topics and partitions.

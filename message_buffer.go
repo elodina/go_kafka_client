@@ -62,9 +62,13 @@ func (mb *messageBuffer) autoFlush() {
 			return
 		case <-mb.Timer.C:
 			{
-				Debug(mb, "Batch accumulation timed out. Flushing...")
-				mb.Timer.Reset(mb.Config.FetchBatchTimeout)
-				inLock(&mb.MessageLock, mb.flush)
+				go inLock(&mb.MessageLock, func() {
+					if !mb.stopSending {
+						Debug(mb, "Batch accumulation timed out. Flushing...")
+						mb.Timer.Reset(mb.Config.FetchBatchTimeout)
+						mb.flush()
+					}
+				})
 			}
 		}
 	}

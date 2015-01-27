@@ -169,6 +169,9 @@ type ConsumerCoordinator interface {
 	/* Establish connection to this ConsumerCoordinator. Returns an error if fails to connect, nil otherwise. */
 	Connect() error
 
+	/* Close connection to this ConsumerCoordinator. */
+	Disconnect()
+
 	/* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Group in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
 	RegisterConsumer(Consumerid string, Group string, TopicCount TopicsToNumStreams) error
 
@@ -200,12 +203,6 @@ type ConsumerCoordinator interface {
 	/* Gets the offset for a given TopicPartition and consumer group Group.
 	Returns offset on sucess, error otherwise. */
 	GetOffsetForTopicPartition(Group string, TopicPartition *TopicAndPartition) (int64, error)
-
-	/* Notifies consumer group about new deployed topic, which should be taken after current one is exhausted */
-	NotifyConsumerGroup(Group string, ConsumerId string) error
-
-	/* Removes a notification notificationId for consumer group Group */
-	PurgeNotificationForGroup(Group string, notificationId string) error
 
 	/* Subscribes for any change that should trigger consumer rebalance on consumer group Group in this ConsumerCoordinator or trigger topic switch.
 	Returns a read-only channel of CoordinatorEvent that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */

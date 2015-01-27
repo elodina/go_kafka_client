@@ -182,18 +182,36 @@ func (context *assignmentContext) hash() string {
 }
 
 func newAssignmentContext(group string, consumerId string, excludeInternalTopics bool, coordinator ConsumerCoordinator) (*assignmentContext, error) {
-	brokers, _ := coordinator.GetAllBrokers()
-	allTopics, _ := coordinator.GetAllTopics()
+	brokers, err := coordinator.GetAllBrokers()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create topicCount: %s", err))
+	}
+	allTopics, err := coordinator.GetAllTopics()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create topicCount: %s", err))
+	}
 
-	topicCount, _ := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
+	topicCount, err := NewTopicsToNumStreams(group, consumerId, coordinator, excludeInternalTopics)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create topicCount: %s", err))
+	}
 	myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
 	myTopics := make([]string, 0)
 	for topic, _ := range myTopicThreadIds {
 		myTopics = append(myTopics, topic)
 	}
-	partitionsForTopic, _ := coordinator.GetPartitionsForTopics(myTopics)
-	consumersForTopic, _ := coordinator.GetConsumersPerTopic(group, excludeInternalTopics)
-	consumers, _ := coordinator.GetConsumersInGroup(group)
+	partitionsForTopic, err := coordinator.GetPartitionsForTopics(myTopics)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create topicCount: %s", err))
+	}
+	consumersForTopic, err := coordinator.GetConsumersPerTopic(group, excludeInternalTopics)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create topicCount: %s", err))
+	}
+	consumers, err := coordinator.GetConsumersInGroup(group)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create topicCount: %s", err))
+	}
 
 	return &assignmentContext{
 		ConsumerId:          consumerId,
