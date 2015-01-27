@@ -55,24 +55,22 @@ func NewZookeeperCoordinator(Config *ZookeeperConfig) *ZookeeperCoordinator {
 }
 
 /* Establish connection to this ConsumerCoordinator. Returns an error if fails to connect, nil otherwise. */
-func (this *ZookeeperCoordinator) Connect() error {
-	var err error
+func (this *ZookeeperCoordinator) Connect() (err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err := this.tryConnect()
+		this.zkConn, err = this.tryConnect()
 		if err == nil {
-			return err
+			return
 		}
 		Tracef(this, "Zookeeper connect failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return err
+	return
 }
 
-func (this *ZookeeperCoordinator) tryConnect() error {
+func (this *ZookeeperCoordinator) tryConnect() (zkConn *zk.Conn, err error) {
 	Infof(this, "Connecting to ZK at %s\n", this.config.ZookeeperConnect)
-	conn, _, err := zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperTimeout)
-	this.zkConn = conn
-	return err
+	zkConn, _, err = zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperTimeout)
+	return
 }
 
 func (this * ZookeeperCoordinator) Disconnect() {
@@ -81,21 +79,20 @@ func (this * ZookeeperCoordinator) Disconnect() {
 }
 
 /* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Groupid in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
-func (this *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid string, TopicCount TopicsToNumStreams) error {
+func (this *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid string, TopicCount TopicsToNumStreams) (err error) {
 	this.ensureZkPathsExist(Groupid)
-	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err := this.tryRegisterConsumer(Consumerid, Groupid, TopicCount)
+		err = this.tryRegisterConsumer(Consumerid, Groupid, TopicCount)
 		if err == nil {
-			return err
+			return
 		}
 		Tracef(this, "Registering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return err
+	return
 }
 
-func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid string, TopicCount TopicsToNumStreams) error {
+func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid string, TopicCount TopicsToNumStreams) (err error) {
 	Debugf(this, "Trying to register consumer %s at group %s in Zookeeper", Consumerid, Groupid)
 	registryDir := newZKGroupDirs(Groupid).ConsumerRegistryDir
 	pathToConsumer := fmt.Sprintf("%s/%s", registryDir, Consumerid)
@@ -111,58 +108,52 @@ func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid
 
 	Debugf(this, "Path: %s", pathToConsumer)
 
-	_, err := this.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	_, err = this.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	if err == zk.ErrNoNode {
 		err = this.createOrUpdatePathParentMayNotExistFailFast(registryDir, make([]byte, 0))
 		if err != nil {
-			return err
+			return
 		}
 		_, err = this.zkConn.Create(pathToConsumer, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	} else if err == zk.ErrNodeExists {
-		_, stat, err := this.zkConn.Get(pathToConsumer)
+		var stat *zk.Stat
+		_, stat, err = this.zkConn.Get(pathToConsumer)
 		if err != nil {
-			return err
+			return
 		}
 		_, err = this.zkConn.Set(pathToConsumer, data, stat.Version)
 	}
 
-	return err
+	return
 }
 
 /* Deregisters consumer with Consumerid id that is a part of consumer group Groupid form this ConsumerCoordinator. Returns an error if deregistration failed, nil otherwise. */
-func (this *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid string) error {
-	var err error
+func (this *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid string) (err error) {
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
+	Debugf(this, "Trying to deregister consumer at path: %s", path)
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err := this.tryDeregisterConsumer(Consumerid, Groupid)
+		err = this.deleteNode(path)
 		if err == nil {
-			return err
+			return
 		}
 		Tracef(this, "Deregistering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return err
-}
-
-func (this *ZookeeperCoordinator) tryDeregisterConsumer(Consumerid string, Groupid string) error {
-	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
-	Debugf(this, "Trying to deregister consumer at path: %s", path)
-	return this.deleteNode(path)
+	return
 }
 
 // Gets the information about consumer with Consumerid id that is a part of consumer group Groupid from this ConsumerCoordinator.
 // Returns ConsumerInfo on success and error otherwise (For example if consumer with given Consumerid does not exist).
-func (this *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
-	var info *ConsumerInfo
-	var err error
+func (this *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid string) (info *ConsumerInfo, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		info, err = this.tryGetConsumerInfo(Consumerid, Groupid)
 		if err == nil {
-			return info, err
+			return
 		}
 		Tracef(this, "GetConsumerInfo failed for consumer %s in group %s after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return info, err
+	return
 }
 
 func (this *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
@@ -171,26 +162,28 @@ func (this *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid 
 	if err != nil {
 		return nil, err
 	}
+
 	consumerInfo := &ConsumerInfo{}
-	json.Unmarshal(data, consumerInfo)
+	err = json.Unmarshal(data, consumerInfo)
+	if err != nil {
+		return nil, err
+	}
 
 	return consumerInfo, nil
 }
 
 // Gets the information about consumers per topic in consumer group Groupid excluding internal topics (such as offsets) if ExcludeInternalTopics = true.
 // Returns a map where keys are topic names and values are slices of consumer ids and fetcher ids associated with this topic and error on failure.
-func (this *ZookeeperCoordinator) GetConsumersPerTopic(Groupid string, ExcludeInternalTopics bool) (map[string][]ConsumerThreadId, error) {
-	var consumers map[string][]ConsumerThreadId
-	var err error
+func (this *ZookeeperCoordinator) GetConsumersPerTopic(Groupid string, ExcludeInternalTopics bool) (consumers map[string][]ConsumerThreadId, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		consumers, err = this.tryGetConsumersPerTopic(Groupid, ExcludeInternalTopics)
 		if err == nil {
-			return consumers, err
+			return
 		}
 		Tracef(this, "GetConsumersPerTopic failed for group %s after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return
 }
 
 func (this *ZookeeperCoordinator) tryGetConsumersPerTopic(Groupid string, ExcludeInternalTopics bool) (map[string][]ConsumerThreadId, error) {
@@ -220,61 +213,54 @@ func (this *ZookeeperCoordinator) tryGetConsumersPerTopic(Groupid string, Exclud
 }
 
 /* Gets the list of all consumer ids within a consumer group Groupid. Returns a slice containing all consumer ids in group and error on failure. */
-func (this *ZookeeperCoordinator) GetConsumersInGroup(Groupid string) ([]string, error) {
-	var err error
+func (this *ZookeeperCoordinator) GetConsumersInGroup(Groupid string) (consumers []string, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		consumers, err := this.tryGetConsumersInGroup(Groupid)
+		consumers, err = this.tryGetConsumersInGroup(Groupid)
 		if err == nil {
-			return consumers, err
+			return
 		}
 		Tracef(this, "GetConsumersInGroup failed for group %s after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return
 }
 
-func (this *ZookeeperCoordinator) tryGetConsumersInGroup(Groupid string) ([]string, error) {
+func (this *ZookeeperCoordinator) tryGetConsumersInGroup(Groupid string) (consumers []string, err error) {
 	Debugf(this, "Getting consumers in group %s", Groupid)
-	consumers, _, err := this.zkConn.Children(newZKGroupDirs(Groupid).ConsumerRegistryDir)
-	if err != nil {
-		return nil, err
-	}
-
-	return consumers, nil
+	consumers, _, err = this.zkConn.Children(newZKGroupDirs(Groupid).ConsumerRegistryDir)
+	return
 }
 
 /* Gets the list of all topics registered in this ConsumerCoordinator. Returns a slice conaining topic names and error on failure. */
-func (this *ZookeeperCoordinator) GetAllTopics() ([]string, error) {
-	var err error
+func (this *ZookeeperCoordinator) GetAllTopics() (topics []string, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		topics, err := this.tryGetAllTopics()
+		topics, err = this.tryGetAllTopics()
 		if err == nil {
-			return topics, err
+			return
 		}
 		Tracef(this, "GetAllTopics failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return
 }
 
-func (this *ZookeeperCoordinator) tryGetAllTopics() ([]string, error) {
-	topics, _, _, err := this.zkConn.ChildrenW(brokerTopicsPath)
-	return topics, err
+func (this *ZookeeperCoordinator) tryGetAllTopics() (topics []string, err error) {
+	topics, _, _, err = this.zkConn.ChildrenW(brokerTopicsPath)
+	return
 }
 
 // Gets the information about existing partitions for a given Topics.
 // Returns a map where keys are topic names and values are slices of partition ids associated with this topic and error on failure.
-func (this *ZookeeperCoordinator) GetPartitionsForTopics(Topics []string) (map[string][]int32, error) {
-	var err error
+func (this *ZookeeperCoordinator) GetPartitionsForTopics(Topics []string) (partitions map[string][]int32, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		partitions, err := this.tryGetPartitionsForTopics(Topics)
+		partitions, err = this.tryGetPartitionsForTopics(Topics)
 		if err == nil {
-			return partitions, err
+			return
 		}
 		Tracef(this, "GetPartitionsForTopics for topics %s failed after %d-th retry", Topics, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return
 }
 
 func (this *ZookeeperCoordinator) tryGetPartitionsForTopics(Topics []string) (map[string][]int32, error) {
@@ -298,17 +284,16 @@ func (this *ZookeeperCoordinator) tryGetPartitionsForTopics(Topics []string) (ma
 
 // Gets the information about all Kafka brokers registered in this ConsumerCoordinator.
 // Returns a slice of BrokerInfo and error on failure.
-func (this *ZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) {
-	var err error
+func (this *ZookeeperCoordinator) GetAllBrokers() (brokers []*BrokerInfo, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		brokers, err := this.tryGetAllBrokers()
+		brokers, err = this.tryGetAllBrokers()
 		if err == nil {
-			return brokers, err
+			return
 		}
 		Tracef(this, "GetAllBrokers failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return
 }
 
 func (this *ZookeeperCoordinator) tryGetAllBrokers() ([]*BrokerInfo, error) {
@@ -336,17 +321,16 @@ func (this *ZookeeperCoordinator) tryGetAllBrokers() ([]*BrokerInfo, error) {
 
 // Gets the offset for a given TopicPartition and consumer group Groupid.
 // Returns offset on sucess, error otherwise.
-func (this *ZookeeperCoordinator) GetOffsetForTopicPartition(Groupid string, TopicPartition *TopicAndPartition) (int64, error) {
-	var err error
+func (this *ZookeeperCoordinator) GetOffsetForTopicPartition(Groupid string, TopicPartition *TopicAndPartition) (offset int64, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		offset, err := this.tryGetOffsetForTopicPartition(Groupid, TopicPartition)
+		offset, err = this.tryGetOffsetForTopicPartition(Groupid, TopicPartition)
 		if err == nil {
-			return offset, err
+			return
 		}
 		Tracef(this, "GetOffsetForTopicPartition for group %s and topic-partitions %s failed after %d-th retry", Groupid, TopicPartition, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return InvalidOffset, err
+	return
 }
 
 func (this *ZookeeperCoordinator) tryGetOffsetForTopicPartition(Groupid string, TopicPartition *TopicAndPartition) (int64, error) {
@@ -368,58 +352,18 @@ func (this *ZookeeperCoordinator) tryGetOffsetForTopicPartition(Groupid string, 
 	return int64(offsetNum), nil
 }
 
-// Notifies consumer group about new deployed topic, which should be taken after current one is exhausted
-func (this *ZookeeperCoordinator) NotifyConsumerGroup(Groupid string, ConsumerId string) error {
-	var err error
-	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err := this.tryNotifyConsumerGroup(Groupid, ConsumerId)
-		if err == nil {
-			return err
-		}
-		Tracef(this, "NotifyConsumerGroup for consumer %s and group %s failed after %d-th retry", ConsumerId, Groupid, i)
-		time.Sleep(this.config.RequestBackoff)
-	}
-	return err
-}
-
-func (this *ZookeeperCoordinator) tryNotifyConsumerGroup(Groupid string, ConsumerId string) error {
-	path := fmt.Sprintf("%s/%s-%d", newZKGroupDirs(Groupid).ConsumerApiDir, ConsumerId, time.Now().Nanosecond())
-	Debugf(this, "Sending notification to consumer group at %s", path)
-	return this.createOrUpdatePathParentMayNotExistFailFast(path, make([]byte, 0))
-}
-
-// Removes a notification notificationId for consumer group Group
-func (this *ZookeeperCoordinator) PurgeNotificationForGroup(Groupid string, notificationId string) error {
-	var err error
-	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		err := this.tryPurgeNotificationForGroup(Groupid, notificationId)
-		if err == nil {
-			return err
-		}
-		Tracef(this, "PurgeNotificationForGroup for group %s and notification %s failed after %d-th retry", Groupid, notificationId, i)
-		time.Sleep(this.config.RequestBackoff)
-	}
-	return err
-}
-
-func (this *ZookeeperCoordinator) tryPurgeNotificationForGroup(Groupid string, notificationId string) error {
-	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, notificationId)
-	return this.deleteNode(path)
-}
-
 // Subscribes for any change that should trigger consumer rebalance on consumer group Groupid in this ConsumerCoordinator.
 // Returns a read-only channel of booleans that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe.
-func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
-	var err error
+func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (events <-chan CoordinatorEvent, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		events, err := this.trySubscribeForChanges(Groupid)
+		events, err = this.trySubscribeForChanges(Groupid)
 		if err == nil {
-			return events, err
+			return
 		}
 		Tracef(this, "SubscribeForChanges for group %s failed after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return
 }
 
 func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
@@ -509,17 +453,16 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 
 // Gets all deployed topics for consume group Group from consumer coordinator.
 // Returns a map where keys are notification ids and values are DeployedTopics. May also return an error (e.g. if failed to reach coordinator).
-func (this *ZookeeperCoordinator) GetBlueGreenRequest(Group string) (map[string]*BlueGreenDeployment, error) {
-	var err error
+func (this *ZookeeperCoordinator) GetBlueGreenRequest(Group string) (topics map[string]*BlueGreenDeployment, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		topics, err := this.tryGetBlueGreenRequest(Group)
+		topics, err = this.tryGetBlueGreenRequest(Group)
 		if err == nil {
-			return topics, err
+			return
 		}
 		Tracef(this, "GetNewDeployedTopics for group %s failed after %d-th retry", Group, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
-	return nil, err
+	return
 }
 
 func (this *ZookeeperCoordinator) tryGetBlueGreenRequest(Group string) (map[string]*BlueGreenDeployment, error) {
@@ -583,16 +526,14 @@ func (this *ZookeeperCoordinator) tryRequestBlueGreenDeployment(Group string, bl
 	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%s/%d", newZKGroupDirs(Group).ConsumerApiDir, BlueGreenDeploymentAPI, time.Now().Unix()), data)
 }
 
-func (this *ZookeeperCoordinator) RemoveOldApiRequests(group string) error {
-	var err error
+func (this *ZookeeperCoordinator) RemoveOldApiRequests(group string) (err error) {
 	for _, api := range availableAPIs {
 		err = this.tryRemoveOldApiRequests(group, api)
 		if err != nil {
 			break
 		}
 	}
-
-	return err
+	return
 }
 
 func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api ConsumerGroupApi) error {
@@ -966,6 +907,9 @@ func (this *ZookeeperCoordinator) createOrUpdatePathParentMayNotExist(pathToCrea
 			}
 		} else {
 			parent, _ := path.Split(pathToCreate)
+			if len(parent) == 0 {
+				return errors.New("Specified blank path")
+			}
 			err = this.createOrUpdatePathParentMayNotExist(parent[:len(parent)-1], make([]byte, 0), failSafe)
 			if err != nil {
 				if zk.ErrNodeExists != err {
@@ -1117,12 +1061,6 @@ func (mzk *mockZookeeperCoordinator) GetPartitionsForTopics(topics []string) (ma
 }
 func (mzk *mockZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error) {
-	panic("Not implemented")
-}
-func (mzk *mockZookeeperCoordinator) NotifyConsumerGroup(group string, consumerId string) error {
-	panic("Not implemented")
-}
-func (mzk *mockZookeeperCoordinator) PurgeNotificationForGroup(Group string, notificationId string) error {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan CoordinatorEvent, error) {

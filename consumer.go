@@ -326,8 +326,14 @@ func (c *Consumer) Close() <-chan bool {
 		c.stopStreams <- true
 
 		c.releasePartitionOwnership(c.topicRegistry)
+
+		Info(c, "Deregistering consumer")
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
+		Info(c, "Successfully deregistered consumer")
+
+		Info(c, "Disconnecting from consumer coordinator")
 		c.config.Coordinator.Disconnect()
+		Info(c, "Disconnected from consumer coordinator")
 
 		c.closeFinished <- true
 	}()

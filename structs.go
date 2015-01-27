@@ -204,12 +204,6 @@ type ConsumerCoordinator interface {
 	Returns offset on sucess, error otherwise. */
 	GetOffsetForTopicPartition(Group string, TopicPartition *TopicAndPartition) (int64, error)
 
-	/* Notifies consumer group about new deployed topic, which should be taken after current one is exhausted */
-	NotifyConsumerGroup(Group string, ConsumerId string) error
-
-	/* Removes a notification notificationId for consumer group Group */
-	PurgeNotificationForGroup(Group string, notificationId string) error
-
 	/* Subscribes for any change that should trigger consumer rebalance on consumer group Group in this ConsumerCoordinator or trigger topic switch.
 	Returns a read-only channel of CoordinatorEvent that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
 	SubscribeForChanges(Group string) (<-chan CoordinatorEvent, error)
