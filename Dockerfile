@@ -18,10 +18,11 @@ FROM stealthly/docker-java
 MAINTAINER stealthly
 
 #Kafka settings
-ENV KAFKA_VERSION 0.8.2-beta
+ENV KAFKA_VERSION 0.8.2.0
 ENV SCALA_VERSION 2.10
 ENV KAFKA_RELEASE kafka_$SCALA_VERSION-$KAFKA_VERSION
-ENV KAFKA_URL https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
+ENV KAFKA_URL https://people.apache.org/~junrao/kafka-0.8.2.0-candidate3/kafka_2.10-0.8.2.0.tgz
+#https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
 ENV KAFKA_PATH /opt/$KAFKA_RELEASE
 ENV BROKER_ID 1
 ENV HOST_IP localhost
