@@ -176,7 +176,7 @@ func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string]
 		panic(err)
 	}
 	for _, topic := range topics {
-		if tc.TopicFilter.topicAllowed(topic, tc.ExcludeInternalTopics) {
+		if tc.TopicFilter.TopicAllowed(topic, tc.ExcludeInternalTopics) {
 			topicsToNumStreams[topic] = tc.NumStreams
 		}
 	}
