@@ -107,7 +107,7 @@ func (a byName) Less(i, j int) bool {
 //Either a WhiteList or BlackList consumer topic filter.
 type TopicFilter interface {
 	regex() string
-	topicAllowed(topic string, excludeInternalTopics bool) bool
+	TopicAllowed(topic string, excludeInternalTopics bool) bool
 }
 
 //Type representing a single Kafka topic and partition

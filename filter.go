@@ -33,7 +33,7 @@ func (wl *WhiteList) regex() string {
 	return wl.rawRegex
 }
 
-func (wl *WhiteList) topicAllowed(topic string, excludeInternalTopics bool) bool {
+func (wl *WhiteList) TopicAllowed(topic string, excludeInternalTopics bool) bool {
 	return wl.compiledRegex.MatchString(topic) && !(topic == offsetsTopicName && excludeInternalTopics)
 }
 
@@ -59,7 +59,7 @@ func (bl *BlackList) regex() string {
 	return bl.rawRegex
 }
 
-func (bl *BlackList) topicAllowed(topic string, excludeInternalTopics bool) bool {
+func (bl *BlackList) TopicAllowed(topic string, excludeInternalTopics bool) bool {
 	return !bl.compiledRegex.MatchString(topic) && !(topic == offsetsTopicName && excludeInternalTopics)
 }
 
