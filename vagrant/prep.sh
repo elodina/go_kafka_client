@@ -5,7 +5,7 @@ wget https://storage.googleapis.com/golang/go1.4.linux-amd64.tar.gz
 tar -xvf go1.4.linux-amd64.tar.gz 
 mv go /usr/local
 
-export KAFKA_VERSION=0.8.2-beta
+export KAFKA_VERSION=0.8.2.0
 echo "export KAFKA_VERSION=$KAFKA_VERSION">> /home/vagrant/.bashrc
 echo "export KAFKA_VERSION=$KAFKA_VERSION">> /root/.bashrc
 
