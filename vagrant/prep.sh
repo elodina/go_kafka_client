@@ -17,8 +17,7 @@ export KAFKA_RELEASE=kafka_$SCALA_VERSION-$KAFKA_VERSION
 echo "export KAFKA_RELEASE=$KAFKA_RELEASE">> /home/vagrant/.bashrc
 echo "export KAFKA_RELEASE=$KAFKA_RELEASE">> /root/.bashrc
 
-export KAFKA_URL=https://people.apache.org/~junrao/kafka-0.8.2.0-candidate3/kafka_2.10-0.8.2.0.tgz
-#https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
+export KAFKA_URL=https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
 echo "export KAFKA_URL=$KAFKA_URL">> /home/vagrant/.bashrc
 echo "export KAFKA_URL=$KAFKA_URL">> /root/.bashrc
 
