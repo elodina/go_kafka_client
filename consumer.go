@@ -48,6 +48,7 @@ const (
 type Consumer struct {
 	config                         *ConsumerConfig
 	fetcher                        *consumerFetcherManager
+	shouldUnsubscribe			   bool
 	unsubscribe                    chan bool
 	closeFinished                  chan bool
 	rebalanceLock                  sync.Mutex
@@ -301,7 +302,9 @@ func (c *Consumer) Close() <-chan bool {
 	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true
 	go func() {
-		c.unsubscribeFromChanges()
+		if c.shouldUnsubscribe {
+			c.unsubscribeFromChanges()
+		}
 
 		Info(c, "Closing fetcher manager...")
 		<-c.fetcher.close()
@@ -519,6 +522,7 @@ func (c *Consumer) subscribeForChanges(group string) {
 	if err != nil {
 		panic(err)
 	}
+	c.shouldUnsubscribe = true
 
 	go func() {
 		for {
