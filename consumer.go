@@ -58,7 +58,6 @@ type Consumer struct {
 	disconnectChannelsForPartition chan TopicAndPartition
 	workerManagers                 map[TopicAndPartition]*WorkerManager
 	workerManagersLock             sync.Mutex
-	askNextBatch                   chan TopicAndPartition
 	stopStreams                    chan bool
 
 	numWorkerManagersGauge            metrics.Gauge
@@ -87,14 +86,13 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		connectChannels:                make(chan bool),
 		disconnectChannelsForPartition: make(chan TopicAndPartition),
 		workerManagers:                 make(map[TopicAndPartition]*WorkerManager),
-		askNextBatch:                   make(chan TopicAndPartition),
 		stopStreams:                    make(chan bool),
 	}
 
 	if err := c.config.Coordinator.Connect(); err != nil {
 		panic(err)
 	}
-	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition)
 
 	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
 	c.batchesSentToWorkerManagerCounter = metrics.NewRegisteredCounter(fmt.Sprintf("BatchesSentToWM-%s", c.String()), metrics.DefaultRegistry)
@@ -190,6 +188,17 @@ func (c *Consumer) startStreams() {
 				Tracef(c, "Disconnecting %s", tp)
 				stopRedirects[tp] <- true
 				delete(stopRedirects, tp)
+
+				Debugf(c, "Stopping worker manager for %s", tp)
+				select {
+				case <-c.workerManagers[tp].Stop():
+				case <-time.After(5 * time.Second):
+				}
+				delete(c.workerManagers, tp)
+
+				Debugf(c, "Stopping buffer: %s", c.topicPartitionsAndBuffers[tp])
+				c.topicPartitionsAndBuffers[tp].stop()
+				delete(c.topicPartitionsAndBuffers, tp)
 			}
 		case <-c.connectChannels:
 			{
@@ -202,7 +211,7 @@ func (c *Consumer) startStreams() {
 
 func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 	inLock(&c.workerManagersLock, func() {
-		Tracef(c, "connect channels registry: %v", c.topicRegistry)
+		Debugf(c, "connect channels registry: %v", c.topicRegistry)
 		for topic, partitions := range c.topicRegistry {
 			for partition, info := range partitions {
 				topicPartition := TopicAndPartition{topic, partition}
@@ -212,7 +221,7 @@ func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 						Infof(c, "WM > Failed to pipe message buffer to workermanager on partition %s", topicPartition)
 						continue
 					}
-					Tracef(c, "Piping %s", topicPartition)
+					Debugf(c, "Piping %s", topicPartition)
 					stopRedirects[topicPartition] = pipe(info.Buffer.OutputChannel, to.inputChannel)
 				}
 			}
@@ -222,6 +231,7 @@ func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
 
 func (c *Consumer) disconnectChannels(stopRedirects map[TopicAndPartition]chan bool) {
 	for tp, stopRedirect := range stopRedirects {
+		Debugf(c, "Disconnecting channel for %s", tp)
 		stopRedirect <- true
 		delete(stopRedirects, tp)
 	}
@@ -276,36 +286,13 @@ func (c *Consumer) initializeWorkerManagers() {
 					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.wmsIdleTimer,
 						c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
 					c.workerManagers[topicPartition] = workerManager
+					go workerManager.Start()
 				}
-				go workerManager.Start()
 			}
 		}
-		c.removeObsoleteWorkerManagers()
 	})
 	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
 
-}
-
-func (c *Consumer) removeObsoleteWorkerManagers() {
-	//safely copy current workerManagers map to temp map
-	obsoleteWms := make(map[TopicAndPartition]*WorkerManager)
-	for tp, wm := range c.workerManagers {
-		obsoleteWms[tp] = wm
-	}
-	//remove all valid partitions from temp map, so only obsolete left after
-	for topic, partitions := range c.topicRegistry {
-		for partition := range partitions {
-			delete(obsoleteWms, TopicAndPartition{topic, partition})
-		}
-	}
-	//stopping and removing obsolete worker managers from consumer registry
-	for tp := range obsoleteWms {
-		select {
-		case <-c.workerManagers[tp].Stop():
-		case <-time.After(5 * time.Second):
-		}
-		delete(c.workerManagers, tp)
-	}
 }
 
 // Tells the Consumer to close all existing connections and stop.
@@ -439,7 +426,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 
 		//Resume consuming
 		c.resumeAfterClose(newContext)
-		Infof("Blue-green procedure has been successfully finished", blueGreenRequest)
+		Infof(c, "Blue-green procedure has been successfully finished %s", blueGreenRequest)
 	})
 }
 
@@ -447,7 +434,7 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.isShuttingdown = false
 	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
-	c.fetcher = newConsumerFetcherManager(c.config, c.askNextBatch)
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition)
 
 	go c.startStreams()
 
@@ -523,10 +510,8 @@ func (c *Consumer) updateFetcher(numStreams int) {
 		}
 	}
 
-	Infof(c, "Restarted streams")
 	c.fetcher.startConnections(allPartitionInfos, numStreams)
 	Infof(c, "Updated fetcher")
-	c.connectChannels <- true
 }
 
 func (c *Consumer) subscribeForChanges(group string) {
@@ -679,6 +664,9 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 	}
 	Infof(c, "Fetcher has been updated %s", assignmentContext)
 	c.initializeWorkerManagers()
+
+	Infof(c, "Restarted streams")
+	c.connectChannels <- true
 }
 
 func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.OffsetFetchResponse, error) {
@@ -723,7 +711,7 @@ func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int
 
 	buffer := c.topicPartitionsAndBuffers[*topicPartition]
 	if buffer == nil {
-		buffer = newMessageBuffer(*topicPartition, make(chan []*Message, c.config.QueuedMaxMessages), c.config, c.askNextBatch, c.disconnectChannelsForPartition)
+		buffer = newMessageBuffer(*topicPartition, make(chan []*Message, c.config.QueuedMaxMessages), c.config)
 		c.topicPartitionsAndBuffers[*topicPartition] = buffer
 	}
 

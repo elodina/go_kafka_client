@@ -31,10 +31,9 @@ type messageBuffer struct {
 	stopSending                    bool
 	TopicPartition                 TopicAndPartition
 	askNextBatch                   chan TopicAndPartition
-	disconnectChannelsForPartition chan TopicAndPartition
 }
 
-func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig, askNextBatch chan TopicAndPartition, disconnectChannelsForPartition chan TopicAndPartition) *messageBuffer {
+func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig) *messageBuffer {
 	buffer := &messageBuffer{
 		OutputChannel:                  outputChannel,
 		Messages:                       make([]*Message, 0),
@@ -42,11 +41,7 @@ func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Me
 		Timer:                          time.NewTimer(config.FetchBatchTimeout),
 		Close:                          make(chan bool),
 		TopicPartition:                 topicPartition,
-		askNextBatch:                   askNextBatch,
-		disconnectChannelsForPartition: disconnectChannelsForPartition,
 	}
-
-	go buffer.autoFlush()
 
 	return buffer
 }
@@ -64,7 +59,7 @@ func (mb *messageBuffer) autoFlush() {
 			{
 				go inLock(&mb.MessageLock, func() {
 					if !mb.stopSending {
-						Debug(mb, "Batch accumulation timed out. Flushing...")
+						Trace(mb, "Batch accumulation timed out. Flushing...")
 						mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 						mb.flush()
 					}
@@ -76,9 +71,9 @@ func (mb *messageBuffer) autoFlush() {
 
 func (mb *messageBuffer) flush() {
 	if len(mb.Messages) > 0 {
-		Debug(mb, "Flushing")
+		Trace(mb, "Flushing")
 		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
-	flushLoop:
+		flushLoop:
 		for {
 			select {
 			case mb.OutputChannel <- mb.Messages:
@@ -89,9 +84,14 @@ func (mb *messageBuffer) flush() {
 				}
 			}
 		}
-		Debug(mb, "Flushed")
+		Trace(mb, "Flushed")
 		mb.Messages = make([]*Message, 0)
 	}
+}
+
+func (mb *messageBuffer) start(fetcherChannel chan TopicAndPartition) {
+	mb.askNextBatch = fetcherChannel
+	go mb.autoFlush()
 }
 
 func (mb *messageBuffer) stop() {
@@ -101,8 +101,6 @@ func (mb *messageBuffer) stop() {
 		inLock(&mb.MessageLock, func() {
 			Info(mb, "Stopping message buffer")
 			mb.Close <- true
-			Info(mb, "Disconnecting channels for partitions")
-			mb.disconnectChannelsForPartition <- mb.TopicPartition
 			Info(mb, "Stopped message buffer")
 		})
 	}
@@ -110,7 +108,9 @@ func (mb *messageBuffer) stop() {
 
 func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 	inLock(&mb.MessageLock, func() {
+		Trace(mb, "Trying to add messages to message buffer")
 		if mb.stopSending {
+			Debug(mb, "Message buffer has been stopped, batch shall not be added.")
 			return
 		}
 		fetchResponseBlock := data.Data
@@ -141,12 +141,15 @@ func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 				}
 			}
 		}
+		Trace(mb, "Added messages")
 
-	askNextLoop:
+		askNextLoop:
 		for !mb.stopSending {
 			select {
-			case mb.askNextBatch <- mb.TopicPartition:
+			case mb.askNextBatch <- mb.TopicPartition: {
+				Trace(mb, "Asking for next batch")
 				break askNextLoop
+			}
 			case <-time.After(200 * time.Millisecond):
 			}
 		}
@@ -154,10 +157,10 @@ func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 }
 
 func (mb *messageBuffer) add(msg *Message) {
-	Debugf(mb, "Added message: %s", msg)
+	Tracef(mb, "Added message: %s", msg)
 	mb.Messages = append(mb.Messages, msg)
 	if len(mb.Messages) == mb.Config.FetchBatchSize {
-		Debug(mb, "Batch is ready. Flushing")
+		Trace(mb, "Batch is ready. Flushing")
 		mb.flush()
 	}
 }
