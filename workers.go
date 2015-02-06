@@ -102,11 +102,11 @@ func (wm *WorkerManager) Start() {
 		case batch := <-wm.inputChannel:
 			{
 				wm.idleTimer.Update(time.Since(startIdle))
-				Debug(wm, "WorkerManager got batch")
+				Trace(wm, "WorkerManager got batch")
 				wm.batchDurationTimer.Time(func() {
 					wm.startBatch(batch)
 				})
-				Debug(wm, "WorkerManager got batch processed")
+				Trace(wm, "WorkerManager got batch processed")
 			}
 		case <-wm.managerStop:
 			return
@@ -188,10 +188,10 @@ func (wm *WorkerManager) commitOffset() {
 		err := wm.config.Coordinator.CommitOffset(wm.config.Groupid, &wm.topicPartition, largestOffset)
 		if err == nil {
 			success = true
-			Debugf(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
+			Tracef(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
 			break
 		} else {
-			Infof(wm, "Failed to commit offset %d for %s. Retying...", largestOffset, &wm.topicPartition)
+			Warnf(wm, "Failed to commit offset %d for %s. Retrying...", largestOffset, &wm.topicPartition)
 		}
 	}
 
@@ -271,9 +271,9 @@ func (wm *WorkerManager) processBatch() {
 				}
 
 				if wm.IsBatchProcessed() {
-					Debug(wm, "Sending batch processed")
+					Trace(wm, "Sending batch processed")
 					wm.batchProcessed <- true
-					Debug(wm, "Received batch processed")
+					Trace(wm, "Received batch processed")
 				}
 			}
 		case <-wm.processingStop:
