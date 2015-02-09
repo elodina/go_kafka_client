@@ -29,7 +29,7 @@ type WhiteList struct {
 	compiledRegex *regexp.Regexp
 }
 
-func (wl *WhiteList) regex() string {
+func (wl *WhiteList) Regex() string {
 	return wl.rawRegex
 }
 
@@ -55,7 +55,7 @@ type BlackList struct {
 	compiledRegex *regexp.Regexp
 }
 
-func (bl *BlackList) regex() string {
+func (bl *BlackList) Regex() string {
 	return bl.rawRegex
 }
 

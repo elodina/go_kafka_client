@@ -106,7 +106,7 @@ func (a byName) Less(i, j int) bool {
 
 //Either a WhiteList or BlackList consumer topic filter.
 type TopicFilter interface {
-	regex() string
+	Regex() string
 	TopicAllowed(topic string, excludeInternalTopics bool) bool
 }
 
