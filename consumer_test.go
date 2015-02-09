@@ -344,7 +344,7 @@ func TestBlueGreenDeployment(t *testing.T) {
 
 	coordinator.RequestBlueGreenDeployment(blue, green)
 
-	time.Sleep(60 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	//All Blue consumers should switch to Green group and change topic to inactive
 	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
@@ -394,6 +394,40 @@ func TestBlueGreenDeployment(t *testing.T) {
 	for _, consumer := range greenGroupConsumers {
 		closeWithin(t, 60*time.Second, consumer)
 	}
+}
+
+func TestConsumeAfterRebalance(t *testing.T) {
+	partitions := 10
+	topic := fmt.Sprintf("testConsumeAfterRebalance-%d", time.Now().Unix())
+	group := fmt.Sprintf("consumeAfterRebalanceGroup-%d", time.Now().Unix())
+
+	CreateMultiplePartitionsTopic(localZk, topic, partitions)
+	EnsureHasLeader(localZk, topic)
+
+	consumeMessages := 10
+	delayTimeout := 10 * time.Second
+	consumeTimeout := 60 * time.Second
+	consumeStatus1 := make(chan int)
+	consumeStatus2 := make(chan int)
+
+	consumer1 := createConsumerForGroup(group, newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus1))
+	consumer2 := createConsumerForGroup(group, newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus2))
+
+	go consumer1.StartStatic(map[string]int{topic: 1})
+	time.Sleep(delayTimeout)
+	go consumer2.StartStatic(map[string]int{topic: 1})
+	time.Sleep(delayTimeout)
+
+	closeWithin(t, delayTimeout, consumer2)
+
+	Infof(topic, "Produce %d message", consumeMessages)
+	produceN(t, consumeMessages, topic, localBroker)
+
+	if actual := <-consumeStatus1; actual != consumeMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+	}
+
+	closeWithin(t, delayTimeout, consumer1)
 }
 
 func testConsumerConfig() *ConsumerConfig {
