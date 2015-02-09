@@ -165,11 +165,16 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 	}
 
 	if c.reflectPartitionOwnershipDecision(partitionOwnershipDecision) {
+		c.updateFetcher(c.config.NumConsumerFetchers)
 		c.initializeWorkerManagers()
-		go c.updateFetcher(c.config.NumConsumerFetchers)
 	} else {
 		panic("Could not reflect partition ownership")
 	}
+
+	go func() {
+		Infof(c, "Restarted streams")
+		c.connectChannels <- true
+	}()
 
 	c.startStreams()
 }
