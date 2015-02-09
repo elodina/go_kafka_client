@@ -186,7 +186,7 @@ func (tc *WildcardTopicsToNumStreams) GetConsumerThreadIdsPerTopic() map[string]
 //Creates a map descibing consumer subscription where keys are topic names and values are number of fetchers used to fetch these topics.
 func (tc *WildcardTopicsToNumStreams) GetTopicsToNumStreamsMap() map[string]int {
 	result := make(map[string]int)
-	result[tc.TopicFilter.regex()] = tc.NumStreams
+	result[tc.TopicFilter.Regex()] = tc.NumStreams
 	return result
 }
 
