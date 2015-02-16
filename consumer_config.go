@@ -176,6 +176,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.NumWorkers = 10
 	config.MaxWorkerRetries = 3
 	config.WorkerRetryThreshold = 100
+	config.WorkerThresholdTimeWindow = 1 * time.Minute
 	config.WorkerBackoff = 500 * time.Millisecond
 	config.WorkerTaskTimeout = 1 * time.Minute
 	config.WorkerManagersStopTimeout = 1 * time.Minute
@@ -296,6 +297,10 @@ func (c *ConsumerConfig) Validate() error {
 
 	if c.WorkerFailedAttemptCallback == nil {
 		return errors.New("Please provide a WorkerFailedAttemptCallback")
+	}
+
+	if c.WorkerThresholdTimeWindow < time.Millisecond {
+		return errors.New("WorkerThresholdTimeWindow must be at least 1ms")
 	}
 
 	if c.Strategy == nil {
