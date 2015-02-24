@@ -144,6 +144,7 @@ func TestMirrorMakerPreservesPartitions(t *testing.T) {
 		t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
 	}
 	closeWithin(t, 10*time.Second, destConsumer)
+	mirrorMaker.Stop()
 }
 
 func TestMirrorMakerPreservesOrder(t *testing.T) {
@@ -229,6 +230,7 @@ func TestMirrorMakerPreservesOrder(t *testing.T) {
 		t.Errorf("Failed to consume %d messages within %s", consumeMessages, timeout)
 	}
 	closeWithin(t, 10*time.Second, destConsumer)
+	mirrorMaker.Stop()
 }
 
 func createConsumerConfig(t *testing.T, id int) string {

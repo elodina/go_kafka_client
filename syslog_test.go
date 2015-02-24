@@ -16,10 +16,7 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"encoding/json"
 	"fmt"
-	sl "github.com/mcuadros/go-syslog"
-	"github.com/stealthly/go-kafka/producer"
 	"net"
 	"testing"
 	"time"
@@ -32,14 +29,6 @@ var rfc3164message = `<34>Jan 12 06:30:00 1.2.3.4 some_server: 1.2.3.4 - - [12/J
 //TODO any parser for this? what kind of RFC log/syslog is using at all?
 //<PRI>TIMESTAMP HOSTNAME TAG[PID]: MSG
 //<132>2014-12-30T11:51:47+02:00 localhost go_kafka_client[13128]: woohoo!
-
-func TestSyslogRFC5424(t *testing.T) {
-	testSyslog(t, sl.RFC5424)
-}
-
-func TestSyslogRFC3164(t *testing.T) {
-	testSyslog(t, sl.RFC3164)
-}
 
 func TestSyslogProducer(t *testing.T) {
 	Logger = NewDefaultLogger(TraceLevel)
@@ -64,7 +53,7 @@ func TestSyslogProducer(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 	for i := 0; i < 100; i++ {
-		logMessage(sl.RFC5424)
+		logMessage()
 	}
 
 	consumerConfig := testConsumerConfig()
@@ -78,69 +67,13 @@ func TestSyslogProducer(t *testing.T) {
 	syslogProducer.Stop()
 }
 
-func testSyslog(t *testing.T, format sl.Format) {
-	topic := fmt.Sprintf("syslog-%d", time.Now().Unix())
-	numMessages := 1
-	consumeTimeout := 10 * time.Second
-
-	CreateMultiplePartitionsTopic(localZk, topic, 1)
-	EnsureHasLeader(localZk, topic)
-
-	server, channel := startServer(format)
-
-	kafkaProducer := producer.NewKafkaProducer(topic, []string{localBroker})
-	go func() {
-		for part := range channel {
-			b, err := json.Marshal(part)
-			if err != nil {
-				t.Fatal(err)
-			}
-			fmt.Println("sending", string(b))
-			kafkaProducer.SendBytesSync(b)
-		}
-	}()
-
-	logMessage(format)
-
-	consumeStatus := make(chan int)
-
-	config := testConsumerConfig()
-	config.Strategy = newCountingStrategy(t, numMessages, consumeTimeout, consumeStatus)
-	consumer := NewConsumer(config)
-	go consumer.StartStatic(map[string]int{topic: 1})
-	if actual := <-consumeStatus; actual != numMessages {
-		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actual)
-	}
-	kafkaProducer.Close()
-	server.Kill()
-	close(channel)
-	closeWithin(t, 10*time.Second, consumer)
-}
-
-func startServer(format sl.Format) (*sl.Server, sl.LogPartsChannel) {
-	channel := make(sl.LogPartsChannel)
-	handler := sl.NewChannelHandler(channel)
-
-	server := sl.NewServer()
-	server.SetFormat(format)
-	server.SetHandler(handler)
-	server.ListenTCP(tcpAddr)
-	server.Boot()
-
-	return server, channel
-}
-
 //TODO use log/syslog somehow?
-func logMessage(format sl.Format) {
+func logMessage() {
 	serverAddr, _ := net.ResolveTCPAddr("tcp", tcpAddr)
 	con, err := net.DialTCP("tcp", nil, serverAddr)
 	if err != nil {
 		panic(err)
 	}
-	if format == sl.RFC5424 {
-		con.Write([]byte(rfc5424message))
-	} else {
-		con.Write([]byte(rfc3164message))
-	}
+	con.Write([]byte(rfc5424message))
 	con.Close()
 }
