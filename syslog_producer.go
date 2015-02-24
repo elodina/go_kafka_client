@@ -197,6 +197,7 @@ func (this *SyslogProducer) startProducers() {
 		config.RetryBackoff = conf.RetryBackoff
 		config.Timeout = conf.Timeout
 
+		Tracef(this, "Starting new producer with config: %#v", config)
 		producer, err := sarama.NewProducer(client, config)
 		if err != nil {
 			panic(err)
