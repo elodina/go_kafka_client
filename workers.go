@@ -98,18 +98,24 @@ func (wm *WorkerManager) Start() {
 	go wm.commitBatch()
 	for {
 		startIdle := time.Now()
+		// force manager stop to be checked first
 		select {
-		case batch := <-wm.inputChannel:
-			{
-				wm.idleTimer.Update(time.Since(startIdle))
-				Trace(wm, "WorkerManager got batch")
-				wm.batchDurationTimer.Time(func() {
-					wm.startBatch(batch)
-				})
-				Trace(wm, "WorkerManager got batch processed")
-			}
 		case <-wm.managerStop:
 			return
+		default:
+			select {
+			case batch := <-wm.inputChannel:
+				{
+					wm.idleTimer.Update(time.Since(startIdle))
+					Trace(wm, "WorkerManager got batch")
+					wm.batchDurationTimer.Time(func() {
+						wm.startBatch(batch)
+					})
+					Trace(wm, "WorkerManager got batch processed")
+				}
+			case <-wm.managerStop:
+				return
+			}
 		}
 	}
 }
