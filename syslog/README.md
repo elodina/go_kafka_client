@@ -25,6 +25,10 @@ This tool setups a Syslog server listening for syslog messages via TCP, parses t
 
 `--num.producers` - number of producer instances. This can be used to increase throughput. *Defaults to 1*.
 
+`--required.acks` - required acks for producer. `0` - no server response. `1` - the server will wait the data is written to the local log. `-1` - the server will block until the message is committed by all in sync replicas. More on this [here](https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-ProduceRequest). *Defaults to 1*.
+
+`--acks.timeout` - provides a maximum time in milliseconds the server can await the receipt of the number of acknowledgements in `--required.acks`. *Defaults to 1000*.
+
 `--queue.size` - number of messages that are buffered for producing. *Defaults to 10000*.
 
 `--log.level` - log level for built-in logger. Possible values are: `trace`, `debug`, `info`, `warn`, `error`, `critical`. *Defaults to info*.
