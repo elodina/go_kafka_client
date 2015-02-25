@@ -19,7 +19,7 @@ package main
 
 import (
   "github.com/aybabtme/tailf"
-  "github.com/shopify/sarama"
+  "github.com/Shopify/sarama"
   "strings"
   "bufio"
   "flag"
