@@ -93,6 +93,9 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.Coordinator.Connect(); err != nil {
 		panic(err)
 	}
+	if err := c.config.LowLevelClient.Initialize(); err != nil {
+		panic(err)
+	}
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition)
 
 	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)

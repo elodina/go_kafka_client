@@ -16,7 +16,6 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"github.com/Shopify/sarama"
 	"testing"
 	"time"
 )
@@ -60,18 +59,11 @@ func expectAskNext(t *testing.T, askNext chan TopicAndPartition, timeout time.Du
 	}
 }
 
-func generateBatch(topicPartition TopicAndPartition, size int) *TopicPartitionData {
-	messages := make([]*sarama.MessageBlock, 0)
+func generateBatch(topicPartition TopicAndPartition, size int) []*Message {
+	messages := make([]*Message, 0)
 	for i := 0; i < size; i++ {
-		messages = append(messages, &sarama.MessageBlock{int64(i), &sarama.Message{}})
+		messages = append(messages, &Message{Key: nil, Value: []byte{}, Topic: topicPartition.Topic, Partition: topicPartition.Partition, Offset: int64(i)})
 	}
 
-	return &TopicPartitionData{
-		TopicPartition: topicPartition,
-		Data: &sarama.FetchResponseBlock{
-			MsgSet: sarama.MessageSet{
-				Messages: messages,
-			},
-		},
-	}
+	return messages
 }

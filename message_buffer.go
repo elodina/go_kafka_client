@@ -56,15 +56,15 @@ func (mb *messageBuffer) autoFlush() {
 		case <-mb.Close:
 			return
 		case <-mb.Timer.C:
-			{
-				go inLock(&mb.MessageLock, func() {
+		{
+			go inLock(&mb.MessageLock, func() {
 					if !mb.stopSending {
 						Trace(mb, "Batch accumulation timed out. Flushing...")
 						mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 						mb.flush()
 					}
 				})
-			}
+		}
 		}
 	}
 }
@@ -73,7 +73,7 @@ func (mb *messageBuffer) flush() {
 	if len(mb.Messages) > 0 {
 		Trace(mb, "Flushing")
 		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
-		flushLoop:
+	flushLoop:
 		for {
 			select {
 			case mb.OutputChannel <- mb.Messages:
@@ -99,61 +99,38 @@ func (mb *messageBuffer) stop() {
 		mb.stopSending = true
 		Info(mb, "Trying to stop message buffer")
 		inLock(&mb.MessageLock, func() {
-			Info(mb, "Stopping message buffer")
-			mb.Close <- true
-			Info(mb, "Stopped message buffer")
-		})
+				Info(mb, "Stopping message buffer")
+				mb.Close <- true
+				Info(mb, "Stopped message buffer")
+			})
 	}
 }
 
-func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
+func (mb *messageBuffer) addBatch(messages []*Message) {
 	inLock(&mb.MessageLock, func() {
-		Trace(mb, "Trying to add messages to message buffer")
-		if mb.stopSending {
-			Debug(mb, "Message buffer has been stopped, batch shall not be added.")
-			return
-		}
-		fetchResponseBlock := data.Data
-		topicPartition := data.TopicPartition
-		if topicPartition != mb.TopicPartition {
-			panic(fmt.Sprintf("%s got batch for wrong topic and partition: %s", mb, topicPartition))
-		}
-		if fetchResponseBlock != nil {
-			for _, message := range fetchResponseBlock.MsgSet.Messages {
-				if message.Msg.Set != nil {
-					for _, wrapped := range message.Msg.Set.Messages {
-						mb.add(&Message{
-							Key:       wrapped.Msg.Key,
-							Value:     wrapped.Msg.Value,
-							Topic:     topicPartition.Topic,
-							Partition: topicPartition.Partition,
-							Offset:    wrapped.Offset,
-						})
-					}
-				} else {
-					mb.add(&Message{
-						Key:       message.Msg.Key,
-						Value:     message.Msg.Value,
-						Topic:     topicPartition.Topic,
-						Partition: topicPartition.Partition,
-						Offset:    message.Offset,
-					})
-				}
+			Trace(mb, "Trying to add messages to message buffer")
+			if mb.stopSending {
+				Debug(mb, "Message buffer has been stopped, batch shall not be added.")
+				return
 			}
-		}
-		Trace(mb, "Added messages")
+
+			for _, message := range messages {
+				mb.add(message)
+			}
+
+			Trace(mb, "Added messages")
 
 		askNextLoop:
-		for !mb.stopSending {
-			select {
-			case mb.askNextBatch <- mb.TopicPartition: {
-				Trace(mb, "Asking for next batch")
-				break askNextLoop
+			for !mb.stopSending {
+				select {
+				case mb.askNextBatch <- mb.TopicPartition: {
+					Trace(mb, "Asking for next batch")
+					break askNextLoop
+				}
+				case <-time.After(200 * time.Millisecond):
+				}
 			}
-			case <-time.After(200 * time.Millisecond):
-			}
-		}
-	})
+		})
 }
 
 func (mb *messageBuffer) add(msg *Message) {

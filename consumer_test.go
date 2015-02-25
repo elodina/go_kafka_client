@@ -456,7 +456,7 @@ func createConsumerForGroup(group string, strategy WorkerStrategy) *Consumer {
 	config.Groupid = group
 	config.NumConsumerFetchers = 1
 	config.NumWorkers = 1
-	config.FetchBatchTimeout = 1
+	config.FetchBatchTimeout = 1 * time.Second
 	config.FetchBatchSize = 1
 	config.Strategy = strategy
 
