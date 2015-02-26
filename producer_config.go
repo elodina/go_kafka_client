@@ -41,7 +41,7 @@ func DefaultProducerConfig() *ProducerConfig {
 	return &ProducerConfig{
 		Clientid:        "mirrormaker",
 		MaxMessageBytes: 1000000,
-		Acks:            -1,
+		Acks:            1,
 		RetryBackoff:    250 * time.Millisecond,
 	}
 }
