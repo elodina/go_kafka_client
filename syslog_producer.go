@@ -51,7 +51,7 @@ type SyslogProducerConfig struct {
 	BrokerList string
 
 	//	Transformer func(message syslogparser.LogParts, topic string) *sarama.MessageToSend
-	Transformer func(message *SyslogMessage, topic string) *sarama.MessageToSend
+	Transformer func(message *SyslogMessage, topic string) *sarama.ProducerMessage
 }
 
 // Creates an empty SyslogProducerConfig.
@@ -214,6 +214,6 @@ func (this *SyslogProducer) produceRoutine(producer *sarama.Producer) {
 	}
 }
 
-func simpleTransformFunc(msg *SyslogMessage, topic string) *sarama.MessageToSend {
-	return &sarama.MessageToSend{Topic: topic, Value: sarama.StringEncoder(msg.Message)}
+func simpleTransformFunc(msg *SyslogMessage, topic string) *sarama.ProducerMessage {
+	return &sarama.ProducerMessage{Topic: topic, Value: sarama.StringEncoder(msg.Message)}
 }
