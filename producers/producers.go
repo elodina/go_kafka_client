@@ -18,74 +18,136 @@
 package main
 
 import (
-	kafkaClient "github.com/stealthly/go_kafka_client"
-	"time"
-	"github.com/stealthly/go-kafka/producer"
-	"fmt"
-	"strconv"
-	"os"
-	"os/signal"
-	metrics "github.com/rcrowley/go-metrics"
-	"net"
+    "code.google.com/p/go-uuid/uuid"
+    "fmt"
+    "github.com/Shopify/sarama"
+    metrics "github.com/rcrowley/go-metrics"
+    kafkaClient "github.com/stealthly/go_kafka_client"
+    "net"
+    "os"
+    "os/signal"
+    "runtime"
+    "strconv"
+    "time"
 )
 
-func resolveConfig() (string, string, string, int, time.Duration, string, time.Duration) {
-	rawConfig, err := kafkaClient.LoadConfiguration("producers.properties")
-	if err != nil {
-		panic(err)
-	}
+func resolveConfig() (string, string, time.Duration, string, time.Duration, int, time.Duration, int, int) {
+    rawConfig, err := kafkaClient.LoadConfiguration("producers.properties")
+    if err != nil {
+        panic(err)
+    }
 
-	zkConnect := rawConfig["zookeeper_connect"]
-	brokerConnect := rawConfig["broker_connect"]
-	topic := rawConfig["topic"]
-	numPartitions, _ := strconv.Atoi(rawConfig["num_partitions"])
-	sleepTime, _ := time.ParseDuration(rawConfig["sleep_time"])
-	flushInterval, _ := time.ParseDuration(rawConfig["flush_interval"])
+    //zkConnect := rawConfig["zookeeper_connect"]
+    brokerConnect := rawConfig["broker_connect"]
+    topic := rawConfig["topic"]
+    //numPartitions, _ := strconv.Atoi(rawConfig["num_partitions"])
+    sleepTime, _ := time.ParseDuration(rawConfig["sleep_time"])
+    flushInterval, _ := time.ParseDuration(rawConfig["flush_interval"])
 
-	return zkConnect, brokerConnect, topic, numPartitions, sleepTime, rawConfig["graphite_connect"], flushInterval
+    flushMsgCount, _ := strconv.Atoi(rawConfig["flush_msg_count"])
+    flushFrequency, _ := time.ParseDuration(rawConfig["flush_frequency"])
+    producerCount, _ := strconv.Atoi(rawConfig["producer_count"])
+    maxMessagesPerReq, _ := strconv.Atoi(rawConfig["max_messages_per_req"])
+
+    return brokerConnect, topic, sleepTime, rawConfig["graphite_connect"], flushInterval, flushMsgCount, flushFrequency, producerCount, maxMessagesPerReq
 }
 
 func startMetrics(graphiteConnect string, graphiteFlushInterval time.Duration) {
-	addr, err := net.ResolveTCPAddr("tcp", graphiteConnect)
-	if err != nil {
-		panic(err)
-	}
-	go metrics.GraphiteWithConfig(metrics.GraphiteConfig{
-		Addr:          addr,
-		Registry:      metrics.DefaultRegistry,
-		FlushInterval: graphiteFlushInterval,
-		DurationUnit:  time.Second,
-		Prefix:        "metrics",
-		Percentiles:   []float64{0.5, 0.75, 0.95, 0.99, 0.999},
-	})
+    addr, err := net.ResolveTCPAddr("tcp", graphiteConnect)
+    if err != nil {
+        panic(err)
+    }
+    go metrics.GraphiteWithConfig(metrics.GraphiteConfig{
+        Addr:          addr,
+        Registry:      metrics.DefaultRegistry,
+        FlushInterval: graphiteFlushInterval,
+        DurationUnit:  time.Second,
+        Prefix:        "metrics",
+        Percentiles:   []float64{0.5, 0.75, 0.95, 0.99, 0.999},
+    })
 }
 
 func main() {
-	numMessage := 0
+    fmt.Println(("Starting Producer"))
+    runtime.GOMAXPROCS(runtime.NumCPU())
+    numMessage := 0
 
-	zkConnect, brokerConnect, topic, numPartitions, sleepTime, graphiteConnect, graphiteFlushInterval := resolveConfig()
+    brokerConnect, topic, sleepTime, graphiteConnect, graphiteFlushInterval, flushMsgCount, flushFrequency, producerCount, maxMessagesPerReq := resolveConfig()
 
-	_ = graphiteConnect
-	_ = graphiteFlushInterval
-	startMetrics(graphiteConnect, graphiteFlushInterval)
-	produceRate := metrics.NewRegisteredMeter("ProduceRate", metrics.DefaultRegistry)
+    _ = graphiteConnect
+    _ = graphiteFlushInterval
+    startMetrics(graphiteConnect, graphiteFlushInterval)
+    produceRate := metrics.NewRegisteredMeter("ProduceRate", metrics.DefaultRegistry)
 
-	kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
+    //kafkaClient.CreateMultiplePartitionsTopic(zkConnect, topic, numPartitions)
 
-	p := producer.NewKafkaProducer(topic, []string{brokerConnect})
-	defer p.Close()
-	go func() {
-		for {
-			if err := p.SendStringSync(fmt.Sprintf("message %d!", numMessage)); err != nil {
-				panic(err)
-			}
-			numMessage++
-			produceRate.Mark(1)
-			time.Sleep(sleepTime)
-		}
-	}()
+    //p := producer.NewKafkaProducer(topic, []string{brokerConnect})
 
-	ctrlc := make(chan os.Signal, 1)
-	signal.Notify(ctrlc, os.Interrupt)
-	<-ctrlc
+    //defer producer.Close()
+    //defer p.Close()
+
+    saramaError := make(chan *sarama.ProducerError)
+    saramaSuccess := make(chan *sarama.ProducerMessage)
+
+    for i := 0; i < producerCount; i++ {
+        client, err := sarama.NewClient(uuid.New(), []string{brokerConnect}, sarama.NewClientConfig())
+        if err != nil {
+            panic(err)
+        }
+
+        config := sarama.NewProducerConfig()
+        config.FlushMsgCount = flushMsgCount
+        config.FlushFrequency = flushFrequency
+        config.AckSuccesses = true
+        config.RequiredAcks = sarama.NoResponse //WaitForAll
+        config.MaxMessagesPerReq = maxMessagesPerReq
+        config.Timeout = 1000 * time.Millisecond
+        //		config.Compression = 2
+        producer, err := sarama.NewProducer(client, config)
+        go func() {
+            if err != nil {
+                panic(err)
+            }
+            for {
+                message := &sarama.ProducerMessage{Topic: topic, Key: sarama.StringEncoder(fmt.Sprintf("%d", numMessage)), Value: sarama.StringEncoder(fmt.Sprintf("message %d!", numMessage))}
+                numMessage++
+                producer.Input() <- message
+                time.Sleep(sleepTime)
+            }
+        }()
+
+        go func() {
+            for {
+                select {
+                case error := <-producer.Errors():
+                    saramaError <- error
+                case success := <-producer.Successes():
+                    saramaSuccess <- success
+                }
+            }
+        }()
+    }
+
+    ctrlc := make(chan os.Signal, 1)
+    signal.Notify(ctrlc, os.Interrupt)
+    go func() {
+        start := time.Now()
+        count := 0
+        for {
+            select {
+            case err := <-saramaError:
+                fmt.Println(err)
+            case <-saramaSuccess:
+                produceRate.Mark(1)
+                count++
+                elapsed := time.Since(start)
+                if elapsed.Seconds() >= 1 {
+                    fmt.Println(fmt.Sprintf("Per Second %d", count))
+                    count = 0
+                    start = time.Now()
+                }
+            }
+        }
+    }()
+    <-ctrlc
 }
