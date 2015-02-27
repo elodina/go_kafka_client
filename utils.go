@@ -284,6 +284,14 @@ func (b *barrier) reset(size int32) {
 	})
 }
 
+type hashArray []*TopicAndPartition
+
+func (s hashArray) Len() int           { return len(s) }
+func (s hashArray) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s hashArray) Less(i, j int) bool {
+    return hash(s[i].String()) < hash(s[j].String())
+}
+
 func setStringConfig(where *string, what string) {
 	if what != "" {
 		*where = what
