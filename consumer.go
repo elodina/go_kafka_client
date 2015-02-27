@@ -699,7 +699,7 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.O
 					blocks[topicPartition.Topic][int32(topicPartition.Partition)] = &sarama.OffsetFetchResponseBlock{
 						Offset:   offset,
 						Metadata: "",
-						Err:      sarama.NoError,
+						Err:      sarama.ErrNoError,
 					}
 				}
 			}

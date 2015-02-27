@@ -160,7 +160,7 @@ func main() {
 	producer.Stop()
 }
 
-func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.MessageToSend {
+func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.ProducerMessage {
 	line := &sp.LogLine{}
 
 	line.Line = proto.String(msg.Message)
@@ -178,5 +178,5 @@ func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.Message
 		kafka.Errorf("protobuf-transformer", "Failed to marshal %s as Protocol Buffer", msg)
 	}
 
-	return &sarama.MessageToSend{Topic: topic, Key: sarama.StringEncoder(*source), Value: sarama.ByteEncoder(protobuf)}
+	return &sarama.ProducerMessage{Topic: topic, Key: sarama.StringEncoder(*source), Value: sarama.ByteEncoder(protobuf)}
 }

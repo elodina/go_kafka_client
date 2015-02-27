@@ -19,7 +19,7 @@ import (
 	"github.com/Shopify/sarama"
 	"fmt"
 	"github.com/stealthly/siesta"
-	"time"
+//	"time"
 )
 
 // LowLevelClient is a low-level Kafka client that manages broker connections, responsible to fetch metadata and is able
@@ -100,7 +100,7 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 		for topic, partitionAndData := range response.Blocks {
 			for partition, data := range partitionAndData {
 				switch data.Err {
-				case sarama.NoError:
+				case sarama.ErrNoError:
 				{
 					if len(data.MsgSet.Messages) > 0 {
 						this.filterPartitionData(data, offset)
@@ -122,7 +122,7 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 }
 
 func (this *SaramaClient) IsOffsetOutOfRange(err error) bool {
-	return err == sarama.OffsetOutOfRange
+	return err == sarama.ErrOffsetOutOfRange
 }
 
 func (this *SaramaClient) GetAvailableOffset(topic string, partition int32, offsetTime string) (int64, error) {
@@ -203,20 +203,31 @@ func (this *SiestaClient) Initialize() error {
 		return err
 	}
 
-	connectorConfig := &siesta.ConnectorConfig{
-		BrokerList:              bootstrapBrokers,
-		ReadTimeout:             this.config.SocketTimeout,
-		WriteTimeout:            this.config.SocketTimeout,
-		ConnectTimeout:          this.config.SocketTimeout,
-		KeepAlive:               true,
-		KeepAliveTimeout:        1 * time.Minute,
-		MaxConnections:          5,
-		MaxConnectionsPerBroker: 5,
-		FetchSize:               this.config.FetchMessageMaxBytes,
-		ClientId:                this.config.Clientid,
-	}
+    connectorConfig := siesta.NewConnectorConfig()
+    connectorConfig.BrokerList = bootstrapBrokers
+    connectorConfig.ReadTimeout = this.config.SocketTimeout
+    connectorConfig.WriteTimeout = this.config.SocketTimeout
+    connectorConfig.ConnectTimeout = this.config.SocketTimeout
+    connectorConfig.FetchSize = this.config.FetchMessageMaxBytes
+    connectorConfig.ClientId = this.config.Clientid
 
-	this.connector = siesta.NewDefaultConnector(connectorConfig)
+//	connectorConfig := &siesta.ConnectorConfig{
+//		BrokerList:              bootstrapBrokers,
+//		ReadTimeout:             this.config.SocketTimeout,
+//		WriteTimeout:            this.config.SocketTimeout,
+//		ConnectTimeout:          this.config.SocketTimeout,
+//		KeepAlive:               true,
+//		KeepAliveTimeout:        1 * time.Minute,
+//		MaxConnections:          5,
+//		MaxConnectionsPerBroker: 5,
+//		FetchSize:               this.config.FetchMessageMaxBytes,
+//		ClientId:                this.config.Clientid,
+//	}
+
+	this.connector, err = siesta.NewDefaultConnector(connectorConfig)
+    if err != nil {
+        return err
+    }
 
 	return nil
 }
