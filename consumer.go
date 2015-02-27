@@ -23,9 +23,9 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	metrics "github.com/rcrowley/go-metrics"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 )
 
 const (
@@ -48,7 +48,7 @@ const (
 type Consumer struct {
 	config                         *ConsumerConfig
 	fetcher                        *consumerFetcherManager
-	shouldUnsubscribe			   bool
+	shouldUnsubscribe              bool
 	unsubscribe                    chan bool
 	closeFinished                  chan bool
 	rebalanceLock                  sync.Mutex
@@ -356,7 +356,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 			barrierSize := len(context.Consumers)
 			stateHash = context.hash()
 			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash,
-																	 barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
+				barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
 		}
 
 		<-c.Close()
@@ -393,30 +393,31 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		switch blueGreenRequest.Pattern {
 		case blackListPattern:
 			topicCount = &WildcardTopicsToNumStreams{
-			Coordinator:           c.config.Coordinator,
-			ConsumerId:            c.config.Consumerid,
-			TopicFilter:           NewBlackList(blueGreenRequest.Topics),
-			NumStreams:            c.config.NumConsumerFetchers,
-			ExcludeInternalTopics: c.config.ExcludeInternalTopics,
-		}
+				Coordinator:           c.config.Coordinator,
+				ConsumerId:            c.config.Consumerid,
+				TopicFilter:           NewBlackList(blueGreenRequest.Topics),
+				NumStreams:            c.config.NumConsumerFetchers,
+				ExcludeInternalTopics: c.config.ExcludeInternalTopics,
+			}
 		case whiteListPattern:
 			topicCount = &WildcardTopicsToNumStreams{
-			Coordinator:           c.config.Coordinator,
-			ConsumerId:            c.config.Consumerid,
-			TopicFilter:           NewWhiteList(blueGreenRequest.Topics),
-			NumStreams:            c.config.NumConsumerFetchers,
-			ExcludeInternalTopics: c.config.ExcludeInternalTopics,
-		}
-		case staticPattern: {
-			topicMap := make(map[string]int)
-			for _, topic := range strings.Split(blueGreenRequest.Topics, ",") {
-				topicMap[topic] = c.config.NumConsumerFetchers
-			}
-			topicCount = &StaticTopicsToNumStreams{
+				Coordinator:           c.config.Coordinator,
 				ConsumerId:            c.config.Consumerid,
-				TopicsToNumStreamsMap: topicMap,
+				TopicFilter:           NewWhiteList(blueGreenRequest.Topics),
+				NumStreams:            c.config.NumConsumerFetchers,
+				ExcludeInternalTopics: c.config.ExcludeInternalTopics,
 			}
-		}
+		case staticPattern:
+			{
+				topicMap := make(map[string]int)
+				for _, topic := range strings.Split(blueGreenRequest.Topics, ",") {
+					topicMap[topic] = c.config.NumConsumerFetchers
+				}
+				topicCount = &StaticTopicsToNumStreams{
+					ConsumerId:            c.config.Consumerid,
+					TopicsToNumStreamsMap: topicMap,
+				}
+			}
 		}
 
 		//Getting the partitions for specified topics
@@ -432,8 +433,8 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 
 		//Creating assignment context with new parameters
 		newContext := newStaticAssignmentContext(blueGreenRequest.Group, c.config.Consumerid, context.Consumers,
-												 context.AllTopics, context.Brokers, topicCount, topicPartitionMap)
-												 c.config.Groupid = blueGreenRequest.Group
+			context.AllTopics, context.Brokers, topicCount, topicPartitionMap)
+		c.config.Groupid = blueGreenRequest.Group
 
 		//Resume consuming
 		c.resumeAfterClose(newContext)
@@ -588,7 +589,7 @@ func (c *Consumer) rebalance() {
 					barrierSize := len(context.Consumers)
 					stateHash = context.hash()
 
-					if (c.lastSuccessfulRebalanceHash == stateHash) {
+					if c.lastSuccessfulRebalanceHash == stateHash {
 						Info(c, "No need in rebalance this time")
 						return
 					}

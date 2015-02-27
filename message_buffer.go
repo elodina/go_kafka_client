@@ -22,25 +22,25 @@ import (
 )
 
 type messageBuffer struct {
-	OutputChannel                  chan []*Message
-	Messages                       []*Message
-	Config                         *ConsumerConfig
-	Timer                          *time.Timer
-	MessageLock                    sync.Mutex
-	Close                          chan bool
-	stopSending                    bool
-	TopicPartition                 TopicAndPartition
-	askNextBatch                   chan TopicAndPartition
+	OutputChannel  chan []*Message
+	Messages       []*Message
+	Config         *ConsumerConfig
+	Timer          *time.Timer
+	MessageLock    sync.Mutex
+	Close          chan bool
+	stopSending    bool
+	TopicPartition TopicAndPartition
+	askNextBatch   chan TopicAndPartition
 }
 
 func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig) *messageBuffer {
 	buffer := &messageBuffer{
-		OutputChannel:                  outputChannel,
-		Messages:                       make([]*Message, 0),
-		Config:                         config,
-		Timer:                          time.NewTimer(config.FetchBatchTimeout),
-		Close:                          make(chan bool),
-		TopicPartition:                 topicPartition,
+		OutputChannel:  outputChannel,
+		Messages:       make([]*Message, 0),
+		Config:         config,
+		Timer:          time.NewTimer(config.FetchBatchTimeout),
+		Close:          make(chan bool),
+		TopicPartition: topicPartition,
 	}
 
 	return buffer
@@ -56,15 +56,15 @@ func (mb *messageBuffer) autoFlush() {
 		case <-mb.Close:
 			return
 		case <-mb.Timer.C:
-		{
-			go inLock(&mb.MessageLock, func() {
+			{
+				go inLock(&mb.MessageLock, func() {
 					if !mb.stopSending {
 						Trace(mb, "Batch accumulation timed out. Flushing...")
 						mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 						mb.flush()
 					}
 				})
-		}
+			}
 		}
 	}
 }
@@ -99,38 +99,39 @@ func (mb *messageBuffer) stop() {
 		mb.stopSending = true
 		Info(mb, "Trying to stop message buffer")
 		inLock(&mb.MessageLock, func() {
-				Info(mb, "Stopping message buffer")
-				mb.Close <- true
-				Info(mb, "Stopped message buffer")
-			})
+			Info(mb, "Stopping message buffer")
+			mb.Close <- true
+			Info(mb, "Stopped message buffer")
+		})
 	}
 }
 
 func (mb *messageBuffer) addBatch(messages []*Message) {
 	inLock(&mb.MessageLock, func() {
-			Trace(mb, "Trying to add messages to message buffer")
-			if mb.stopSending {
-				Debug(mb, "Message buffer has been stopped, batch shall not be added.")
-				return
-			}
+		Trace(mb, "Trying to add messages to message buffer")
+		if mb.stopSending {
+			Debug(mb, "Message buffer has been stopped, batch shall not be added.")
+			return
+		}
 
-			for _, message := range messages {
-				mb.add(message)
-			}
+		for _, message := range messages {
+			mb.add(message)
+		}
 
-			Trace(mb, "Added messages")
+		Trace(mb, "Added messages")
 
-		askNextLoop:
-			for !mb.stopSending {
-				select {
-				case mb.askNextBatch <- mb.TopicPartition: {
+	askNextLoop:
+		for !mb.stopSending {
+			select {
+			case mb.askNextBatch <- mb.TopicPartition:
+				{
 					Trace(mb, "Asking for next batch")
 					break askNextLoop
 				}
-				case <-time.After(200 * time.Millisecond):
-				}
+			case <-time.After(200 * time.Millisecond):
 			}
-		})
+		}
+	})
 }
 
 func (mb *messageBuffer) add(msg *Message) {

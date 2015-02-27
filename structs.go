@@ -236,6 +236,7 @@ type ConsumerCoordinator interface {
 
 // CoordinatorEvent is sent by consumer coordinator representing some state change.
 type CoordinatorEvent string
+
 const (
 	// A regular coordinator event that should normally trigger consumer rebalance.
 	Regular CoordinatorEvent = "Regular"

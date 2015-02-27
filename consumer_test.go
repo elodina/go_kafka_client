@@ -133,12 +133,12 @@ func TestStaticPartitionConsuming(t *testing.T) {
 	go produceN(t, numMessages, topic, localBroker)
 
 	checkPartition := int32(0)
-//	expectedMessages := numMessages * 2
+	//	expectedMessages := numMessages * 2
 
 	config := testConsumerConfig()
 	config.Strategy = newPartitionTrackingStrategy(t, numMessages, consumeTimeout, consumeStatus, checkPartition)
 	consumer := NewConsumer(config)
-	go consumer.StartStatic(map[string]int {topic : 2})
+	go consumer.StartStatic(map[string]int{topic: 2})
 
 	actual := <-consumeStatus
 	expectedForPartition := <-consumeStatus
@@ -151,7 +151,7 @@ func TestStaticPartitionConsuming(t *testing.T) {
 	staticConfig.Groupid = "static-test-group"
 	staticConfig.Strategy = newCountingStrategy(t, expectedForPartition, consumeTimeout, consumeStatus)
 	staticConsumer := NewConsumer(staticConfig)
-	go staticConsumer.StartStaticPartitions(map[string][]int32{topic : []int32{checkPartition}})
+	go staticConsumer.StartStaticPartitions(map[string][]int32{topic: []int32{checkPartition}})
 
 	if actualForPartition := <-consumeStatus; actualForPartition != expectedForPartition {
 		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", numMessages, consumeTimeout, actualForPartition)
@@ -323,8 +323,8 @@ func TestBlueGreenDeployment(t *testing.T) {
 		atomicIncrement(&processedActiveMessages, &activeCounterLock)
 		return NewSuccessfulResult(taskId)
 	}
-	blueGroupConsumers := []*Consumer{ createConsumerForGroup(blueGroup, inactiveStrategy), createConsumerForGroup(blueGroup, inactiveStrategy) }
-	greenGroupConsumers := []*Consumer{ createConsumerForGroup(greenGroup, activeStrategy), createConsumerForGroup(greenGroup, activeStrategy) }
+	blueGroupConsumers := []*Consumer{createConsumerForGroup(blueGroup, inactiveStrategy), createConsumerForGroup(blueGroup, inactiveStrategy)}
+	greenGroupConsumers := []*Consumer{createConsumerForGroup(greenGroup, activeStrategy), createConsumerForGroup(greenGroup, activeStrategy)}
 
 	for _, consumer := range blueGroupConsumers {
 		go consumer.StartStatic(map[string]int{
@@ -478,22 +478,22 @@ func newPartitionTrackingStrategy(t *testing.T, expectedMessages int, timeout ti
 		case <-time.After(timeout):
 		}
 		inLock(&consumedMessagesLock, func() {
-				notify <- allConsumedMessages
-				if trackPartition != -1 {
-					notify <- partitionConsumedMessages
-				}
-			})
+			notify <- allConsumedMessages
+			if trackPartition != -1 {
+				notify <- partitionConsumedMessages
+			}
+		})
 	}()
 	return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 		inLock(&consumedMessagesLock, func() {
-				if msg.Partition == trackPartition || trackPartition == -1 {
-					partitionConsumedMessages++
-				}
-				allConsumedMessages++
-				if allConsumedMessages == expectedMessages {
-					consumeFinished <- true
-				}
-			})
+			if msg.Partition == trackPartition || trackPartition == -1 {
+				partitionConsumedMessages++
+			}
+			allConsumedMessages++
+			if allConsumedMessages == expectedMessages {
+				consumeFinished <- true
+			}
+		})
 		return NewSuccessfulResult(id)
 	}
 }

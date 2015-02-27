@@ -16,10 +16,9 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"github.com/Shopify/sarama"
 	"fmt"
+	"github.com/Shopify/sarama"
 	"github.com/stealthly/siesta"
-//	"time"
 )
 
 // LowLevelClient is a low-level Kafka client that manages broker connections, responsible to fetch metadata and is able
@@ -101,18 +100,18 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 			for partition, data := range partitionAndData {
 				switch data.Err {
 				case sarama.ErrNoError:
-				{
-					if len(data.MsgSet.Messages) > 0 {
-						this.filterPartitionData(data, offset)
-						messages = this.collectMessages(data, topic, partition)
-					} else {
-						Debugf(this, "No messages in %s:%d at offset %d", topic, partition, offset)
+					{
+						if len(data.MsgSet.Messages) > 0 {
+							this.filterPartitionData(data, offset)
+							messages = this.collectMessages(data, topic, partition)
+						} else {
+							Debugf(this, "No messages in %s:%d at offset %d", topic, partition, offset)
+						}
 					}
-				}
 				default:
-				{
-					return nil, data.Err
-				}
+					{
+						return nil, data.Err
+					}
 				}
 			}
 		}
@@ -146,7 +145,7 @@ func (this *SaramaClient) filterPartitionData(partitionData *sarama.FetchRespons
 	lowestCorrectIndex := 0
 	for i, v := range partitionData.MsgSet.Messages {
 		if v.Offset < requestedOffset {
-			lowestCorrectIndex = i+1
+			lowestCorrectIndex = i + 1
 		} else {
 			break
 		}
@@ -161,21 +160,21 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 		if message.Msg.Set != nil {
 			for _, wrapped := range message.Msg.Set.Messages {
 				messages = append(messages, &Message{
-						Key:       wrapped.Msg.Key,
-						Value:     wrapped.Msg.Value,
-						Topic:     topic,
-						Partition: partition,
-						Offset:    wrapped.Offset,
-					})
+					Key:       wrapped.Msg.Key,
+					Value:     wrapped.Msg.Value,
+					Topic:     topic,
+					Partition: partition,
+					Offset:    wrapped.Offset,
+				})
 			}
 		} else {
 			messages = append(messages, &Message{
-					Key:       message.Msg.Key,
-					Value:     message.Msg.Value,
-					Topic:     topic,
-					Partition: partition,
-					Offset:    message.Offset,
-				})
+				Key:       message.Msg.Key,
+				Value:     message.Msg.Value,
+				Topic:     topic,
+				Partition: partition,
+				Offset:    message.Offset,
+			})
 		}
 	}
 
@@ -183,7 +182,7 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 }
 
 type SiestaClient struct {
-	config *ConsumerConfig
+	config    *ConsumerConfig
 	connector siesta.Connector
 }
 
@@ -203,37 +202,24 @@ func (this *SiestaClient) Initialize() error {
 		return err
 	}
 
-    connectorConfig := siesta.NewConnectorConfig()
-    connectorConfig.BrokerList = bootstrapBrokers
-    connectorConfig.ReadTimeout = this.config.SocketTimeout
-    connectorConfig.WriteTimeout = this.config.SocketTimeout
-    connectorConfig.ConnectTimeout = this.config.SocketTimeout
-    connectorConfig.FetchSize = this.config.FetchMessageMaxBytes
-    connectorConfig.ClientId = this.config.Clientid
-
-//	connectorConfig := &siesta.ConnectorConfig{
-//		BrokerList:              bootstrapBrokers,
-//		ReadTimeout:             this.config.SocketTimeout,
-//		WriteTimeout:            this.config.SocketTimeout,
-//		ConnectTimeout:          this.config.SocketTimeout,
-//		KeepAlive:               true,
-//		KeepAliveTimeout:        1 * time.Minute,
-//		MaxConnections:          5,
-//		MaxConnectionsPerBroker: 5,
-//		FetchSize:               this.config.FetchMessageMaxBytes,
-//		ClientId:                this.config.Clientid,
-//	}
+	connectorConfig := siesta.NewConnectorConfig()
+	connectorConfig.BrokerList = bootstrapBrokers
+	connectorConfig.ReadTimeout = this.config.SocketTimeout
+	connectorConfig.WriteTimeout = this.config.SocketTimeout
+	connectorConfig.ConnectTimeout = this.config.SocketTimeout
+	connectorConfig.FetchSize = this.config.FetchMessageMaxBytes
+	connectorConfig.ClientId = this.config.Clientid
 
 	this.connector, err = siesta.NewDefaultConnector(connectorConfig)
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]*Message, error) {
-	Tracef(this, "FETCHING %s %d from %d", topic, partition, offset)
+	Tracef(this, "Fetching %s %d from %d", topic, partition, offset)
 	siestaMessages, err := this.connector.Consume(topic, partition, offset)
 	if err != nil {
 		return nil, err

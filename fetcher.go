@@ -24,15 +24,15 @@ import (
 )
 
 type consumerFetcherManager struct {
-	config                *ConsumerConfig
-	numStreams            int
-	closeFinished         chan bool
-	updateLock     		  sync.RWMutex
-	partitionMap          map[TopicAndPartition]*partitionTopicInfo
-	fetcherRoutineMap     map[int]*consumerFetcherRoutine
-	shuttingDown          bool
-	updateInProgress	  bool
-	updatedCond           *sync.Cond
+	config                         *ConsumerConfig
+	numStreams                     int
+	closeFinished                  chan bool
+	updateLock                     sync.RWMutex
+	partitionMap                   map[TopicAndPartition]*partitionTopicInfo
+	fetcherRoutineMap              map[int]*consumerFetcherRoutine
+	shuttingDown                   bool
+	updateInProgress               bool
+	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
 
 	numFetchRoutinesCounter metrics.Counter
@@ -48,10 +48,10 @@ func (m *consumerFetcherManager) String() string {
 
 func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
-		config:             config,
-		closeFinished:      make(chan bool),
-		partitionMap:       make(map[TopicAndPartition]*partitionTopicInfo),
-		fetcherRoutineMap:  make(map[int]*consumerFetcherRoutine),
+		config:                         config,
+		closeFinished:                  make(chan bool),
+		partitionMap:                   make(map[TopicAndPartition]*partitionTopicInfo),
+		fetcherRoutineMap:              make(map[int]*consumerFetcherRoutine),
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
 		client: config.LowLevelClient,
 	}
@@ -204,14 +204,14 @@ func (m *consumerFetcherManager) close() <-chan bool {
 }
 
 type consumerFetcherRoutine struct {
-	manager           *consumerFetcherManager
-	name              string
-	allPartitionMap   map[TopicAndPartition]*partitionTopicInfo
-	partitionMap      map[TopicAndPartition]int64
-	lock  sync.Mutex
-	closeFinished     chan bool
-	fetchStopper      chan bool
-	askNext           chan TopicAndPartition
+	manager         *consumerFetcherManager
+	name            string
+	allPartitionMap map[TopicAndPartition]*partitionTopicInfo
+	partitionMap    map[TopicAndPartition]int64
+	lock            sync.Mutex
+	closeFinished   chan bool
+	fetchStopper    chan bool
+	askNext         chan TopicAndPartition
 }
 
 func (f *consumerFetcherRoutine) String() string {
@@ -260,7 +260,9 @@ func (f *consumerFetcherRoutine) start() {
 
 						var messages []*Message
 						var err error
-						f.manager.fetchDurationTimer.Time(func() { messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset) })
+						f.manager.fetchDurationTimer.Time(func() {
+							messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset)
+						})
 
 						if err != nil {
 							if f.manager.client.IsOffsetOutOfRange(err) {
@@ -319,15 +321,17 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 
 	for topicAndPartition, askNext := range newPartitions {
 		Debugf(f, "Sending ask next to %s for %s", f, topicAndPartition)
-		Loop:
+	Loop:
 		for {
 			select {
-			case askNext <- topicAndPartition: break Loop
-			case <-time.After(1 * time.Second): {
-				if f.manager.shuttingDown {
-					return
+			case askNext <- topicAndPartition:
+				break Loop
+			case <-time.After(1 * time.Second):
+				{
+					if f.manager.shuttingDown {
+						return
+					}
 				}
-			}
 			}
 		}
 		Debugf(f, "Sent ask next to %s for %s", f, topicAndPartition)
@@ -336,19 +340,19 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, messages []*Message) {
 	Trace(f, "Trying to acquire lock for partition processing")
-	inReadLock(&f.manager.updateLock, func(){
-			for f.manager.updateInProgress {
-				f.manager.updatedCond.Wait()
-			}
-			Tracef(f, "Processing partition data for %s", topicAndPartition)
-			if len(messages) > 0 {
-				f.partitionMap[topicAndPartition] = messages[len(messages)-1].Offset + 1
-				f.allPartitionMap[topicAndPartition].Buffer.addBatch(messages)
-				Debugf(f, "Sent partition data to %s", topicAndPartition)
-			} else {
-				Trace(f, "Got empty message. Ignoring...")
-			}
-		})
+	inReadLock(&f.manager.updateLock, func() {
+		for f.manager.updateInProgress {
+			f.manager.updatedCond.Wait()
+		}
+		Tracef(f, "Processing partition data for %s", topicAndPartition)
+		if len(messages) > 0 {
+			f.partitionMap[topicAndPartition] = messages[len(messages)-1].Offset + 1
+			f.allPartitionMap[topicAndPartition].Buffer.addBatch(messages)
+			Debugf(f, "Sent partition data to %s", topicAndPartition)
+		} else {
+			Trace(f, "Got empty message. Ignoring...")
+		}
+	})
 }
 
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) {

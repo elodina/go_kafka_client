@@ -331,7 +331,7 @@ func (c *ConsumerConfig) Validate() error {
 		return errors.New("In order to use Blue-Green deployment Range partition assignment strategy should be used")
 	}
 
-	if (c.LowLevelClient == nil) {
+	if c.LowLevelClient == nil {
 		return errors.New("Low level client is not set")
 	}
 
