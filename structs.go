@@ -17,7 +17,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/Shopify/sarama"
 	"time"
 )
 
@@ -130,30 +129,6 @@ type partitionTopicInfo struct {
 func (p *partitionTopicInfo) String() string {
 	return fmt.Sprintf("{Topic: %s, Partition: %d, FetchedOffset: %d, Buffer: %s}",
 		p.Topic, p.Partition, p.FetchedOffset, p.Buffer)
-}
-
-type brokerAndInitialOffset struct {
-	Broker     BrokerInfo
-	InitOffset int64
-}
-
-func (b *brokerAndInitialOffset) String() string {
-	return fmt.Sprintf("{Broker: %s, InitialOffset: %d}", b.Broker, b.InitOffset)
-}
-
-type brokerAndFetcherId struct {
-	Broker    BrokerInfo
-	FetcherId int
-}
-
-func (b *brokerAndFetcherId) String() string {
-	return fmt.Sprintf("{Broker: %s, FetcherId: %d}", b.Broker, b.FetcherId)
-}
-
-//Fetched data from Kafka broker for a particular topic and partition
-type TopicPartitionData struct {
-	TopicPartition TopicAndPartition
-	Data           *sarama.FetchResponseBlock
 }
 
 type intArray []int32

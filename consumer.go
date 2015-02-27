@@ -21,7 +21,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/Shopify/sarama"
 	metrics "github.com/rcrowley/go-metrics"
 	"strings"
 	"sync"
@@ -157,12 +156,12 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 	}
 
-	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	offsets, err := c.fetchOffsets(topicPartitions)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to fetch offsets during rebalance: %s", err))
 	}
 	for _, topicPartition := range topicPartitions {
-		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+		offset := offsets[*topicPartition]
 		threadId := partitionOwnershipDecision[*topicPartition]
 		c.addPartitionTopicInfo(c.topicRegistry, topicPartition, offset, threadId)
 	}
@@ -456,13 +455,13 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	for topicPartition, _ := range partitionOwnershipDecision {
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 	}
-	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	offsets, err := c.fetchOffsets(topicPartitions)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to fetch offsets during rebalance: %s", err))
 	}
 	currentTopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
 	for _, topicPartition := range topicPartitions {
-		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+		offset := offsets[*topicPartition]
 		threadId := partitionOwnershipDecision[*topicPartition]
 		c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
 	}
@@ -625,7 +624,7 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 	}
 
-	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	offsets, err := c.fetchOffsets(topicPartitions)
 	if err != nil {
 		Errorf(c, "Failed to fetch offsets during rebalance: %s", err)
 		return false
@@ -638,7 +637,7 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		return true
 	} else {
 		for _, topicPartition := range topicPartitions {
-			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+			offset := offsets[*topicPartition]
 			threadId := partitionOwnershipDecision[*topicPartition]
 			c.addPartitionTopicInfo(currenttopicRegistry, topicPartition, offset, threadId)
 		}
@@ -682,34 +681,22 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 	c.connectChannels <- true
 }
 
-func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.OffsetFetchResponse, error) {
-	if len(topicPartitions) == 0 {
-		return &sarama.OffsetFetchResponse{}, nil
-	} else {
-		blocks := make(map[string]map[int32]*sarama.OffsetFetchResponseBlock)
-		if c.config.OffsetsStorage == "zookeeper" {
-			for _, topicPartition := range topicPartitions {
-				offset, err := c.config.Coordinator.GetOffsetForTopicPartition(c.config.Groupid, topicPartition)
-				_, exists := blocks[topicPartition.Topic]
-				if !exists {
-					blocks[topicPartition.Topic] = make(map[int32]*sarama.OffsetFetchResponseBlock)
-				}
-				if err != nil {
-					return nil, err
-				} else {
-					blocks[topicPartition.Topic][int32(topicPartition.Partition)] = &sarama.OffsetFetchResponseBlock{
-						Offset:   offset,
-						Metadata: "",
-						Err:      sarama.ErrNoError,
-					}
-				}
+func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[TopicAndPartition]int64, error) {
+	offsets := make(map[TopicAndPartition]int64)
+	if c.config.OffsetsStorage == "zookeeper" {
+		for _, topicPartition := range topicPartitions {
+			offset, err := c.config.Coordinator.GetOffsetForTopicPartition(c.config.Groupid, topicPartition)
+			if err != nil {
+				return nil, err
+			} else {
+				offsets[*topicPartition] = offset
 			}
-		} else {
-			panic(fmt.Sprintf("Offset storage '%s' is not supported", c.config.OffsetsStorage))
 		}
-
-		return &sarama.OffsetFetchResponse{Blocks: blocks}, nil
+	} else {
+		panic(fmt.Sprintf("Offset storage '%s' is not supported", c.config.OffsetsStorage))
 	}
+
+	return offsets, nil
 }
 
 func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
