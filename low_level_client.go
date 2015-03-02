@@ -46,21 +46,26 @@ type LowLevelClient interface {
 	Close()
 }
 
+// SaramaClient implements LowLevelClient and uses github.com/Shopify/sarama as underlying implementation.
 type SaramaClient struct {
 	config *ConsumerConfig
 	client *sarama.Client
 }
 
+// Creates a new SaramaClient using a given ConsumerConfig.
 func NewSaramaClient(config *ConsumerConfig) *SaramaClient {
 	return &SaramaClient{
 		config: config,
 	}
 }
 
+// Returns a string representation of this SaramaClient.
 func (this *SaramaClient) String() string {
 	return "Sarama client"
 }
 
+// This will be called right after connecting to ConsumerCoordinator so this client can initialize itself
+// with bootstrap broker list for example. May return an error to signal this client is unable to work with given configuration.
 func (this *SaramaClient) Initialize() error {
 	bootstrapBrokers, err := BootstrapBrokers(this.config.Coordinator)
 	if err != nil {
@@ -76,6 +81,8 @@ func (this *SaramaClient) Initialize() error {
 	return nil
 }
 
+// This will be called each time the fetch request to Kafka should be issued. Topic, partition and offset are self-explanatory.
+// Returns slice of Messages and an error if a fetch error occurred.
 func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]*Message, error) {
 	leader, err := this.client.Leader(topic, partition)
 	if err != nil {
@@ -120,10 +127,12 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 	return messages, nil
 }
 
+// Checks whether the given error indicates an OffsetOutOfRange error.
 func (this *SaramaClient) IsOffsetOutOfRange(err error) bool {
 	return err == sarama.ErrOffsetOutOfRange
 }
 
+// This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
 func (this *SaramaClient) GetAvailableOffset(topic string, partition int32, offsetTime string) (int64, error) {
 	time := sarama.LatestOffsets
 	if offsetTime == "smallest" {
@@ -137,6 +146,7 @@ func (this *SaramaClient) GetAvailableOffset(topic string, partition int32, offs
 	return offset, nil
 }
 
+// Gracefully shuts down this client.
 func (this *SaramaClient) Close() {
 	this.client.Close()
 }
@@ -181,21 +191,26 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 	return messages
 }
 
+// SiestaClient implements LowLevelClient and uses github.com/stealthly/siesta as underlying implementation.
 type SiestaClient struct {
 	config    *ConsumerConfig
 	connector siesta.Connector
 }
 
+// Creates a new SiestaClient using a given ConsumerConfig.
 func NewSiestaClient(config *ConsumerConfig) *SiestaClient {
 	return &SiestaClient{
 		config: config,
 	}
 }
 
+// Returns a string representation of this SaramaClient.
 func (this *SiestaClient) String() string {
 	return "Siesta client"
 }
 
+// This will be called right after connecting to ConsumerCoordinator so this client can initialize itself
+// with bootstrap broker list for example. May return an error to signal this client is unable to work with given configuration.
 func (this *SiestaClient) Initialize() error {
 	bootstrapBrokers, err := BootstrapBrokers(this.config.Coordinator)
 	if err != nil {
@@ -218,6 +233,8 @@ func (this *SiestaClient) Initialize() error {
 	return nil
 }
 
+// This will be called each time the fetch request to Kafka should be issued. Topic, partition and offset are self-explanatory.
+// Returns slice of Messages and an error if a fetch error occurred.
 func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]*Message, error) {
 	Tracef(this, "Fetching %s %d from %d", topic, partition, offset)
 	siestaMessages, err := this.connector.Consume(topic, partition, offset)
@@ -241,10 +258,12 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 	return messages, nil
 }
 
+// Checks whether the given error indicates an OffsetOutOfRange error.
 func (this *SiestaClient) IsOffsetOutOfRange(err error) bool {
 	return err == siesta.OffsetOutOfRange
 }
 
+// This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
 func (this *SiestaClient) GetAvailableOffset(topic string, partition int32, offsetTime string) (int64, error) {
 	time := siesta.LatestTime
 	if offsetTime == "smallest" {
@@ -253,10 +272,12 @@ func (this *SiestaClient) GetAvailableOffset(topic string, partition int32, offs
 	return this.connector.GetAvailableOffset(topic, partition, time)
 }
 
+// Gracefully shuts down this client.
 func (this *SiestaClient) Close() {
 	<-this.connector.Close()
 }
 
+// BootstrapBrokers queries the ConsumerCoordinator for all known brokers in the cluster to be used later as a bootstrap list for the LowLevelClient.
 func BootstrapBrokers(coordinator ConsumerCoordinator) ([]string, error) {
 	bootstrapBrokers := make([]string, 0)
 	brokers, err := coordinator.GetAllBrokers()
