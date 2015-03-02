@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+    "sort"
 )
 
 const (
@@ -87,13 +88,10 @@ func roundRobinAssignor(context *assignmentContext) map[TopicAndPartition]Consum
 
 		fmt.Printf("%v\n", topicsAndPartitions)
 
-		shuffledTopicsAndPartitions := make([]*TopicAndPartition, len(topicsAndPartitions))
-		shuffleArray(&topicsAndPartitions, &shuffledTopicsAndPartitions)
+        sort.Sort(hashArray(topicsAndPartitions))
 		threadIdsIterator := circularIterator(&headThreadIds)
 
-		fmt.Printf("%v\n", shuffledTopicsAndPartitions)
-
-		for _, topicPartition := range shuffledTopicsAndPartitions {
+		for _, topicPartition := range topicsAndPartitions {
 			consumerThreadId := threadIdsIterator.Value.(ConsumerThreadId)
 			if consumerThreadId.Consumer == context.ConsumerId {
 				ownershipDecision[*topicPartition] = consumerThreadId
