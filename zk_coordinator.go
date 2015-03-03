@@ -986,13 +986,13 @@ func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 	setStringSliceConfig(&config.ZookeeperConnect, z["zookeeper.connect"], ",")
 	setStringConfig(&config.Root, z["zookeeper.kafka.Root"])
 
-	if setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]) != nil {
+	if err = setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]) != nil {
+	if err = setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.RequestBackoff, z["zookeeper.request.backoff"]) != nil {
+	if err = setDurationConfig(&config.RequestBackoff, z["zookeeper.request.backoff"]); err != nil {
 		return nil, err
 	}
 
