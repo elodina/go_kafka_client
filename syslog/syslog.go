@@ -61,6 +61,8 @@ var udpPort = flag.String("udp.port", "5141", "UDP port to listen for incoming m
 var udpHost = flag.String("udp.host", "0.0.0.0", "UDP host to listen for incoming messages.")
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 var brokerList = flag.String("broker.list", "", "Broker List to produce messages too.")
+var requiredAcks = flag.Int("required.acks", 1, "Required acks for producer. 0 - no server response. 1 - the server will wait the data is written to the local log. -1 - the server will block until the message is committed by all in sync replicas.")
+var acksTimeout = flag.Int("acks.timeout", 1000, "This provides a maximum time in milliseconds the server can await the receipt of the number of acknowledgements in RequiredAcks.")
 
 //additional params
 var source = flag.String("source", "", "")
@@ -106,6 +108,8 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 		config.ProducerConfig = conf
 	} else {
 		config.ProducerConfig = kafka.DefaultProducerConfig()
+		config.ProducerConfig.Acks = *requiredAcks
+		config.ProducerConfig.Timeout = time.Duration(*acksTimeout) * time.Millisecond
 	}
 	config.NumProducers = *numProducers
 	config.ChannelSize = *queueSize
@@ -156,7 +160,7 @@ func main() {
 	producer.Stop()
 }
 
-func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.MessageToSend {
+func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.ProducerMessage {
 	line := &sp.LogLine{}
 
 	line.Line = proto.String(msg.Message)
@@ -174,5 +178,5 @@ func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.Message
 		kafka.Errorf("protobuf-transformer", "Failed to marshal %s as Protocol Buffer", msg)
 	}
 
-	return &sarama.MessageToSend{Topic: topic, Key: sarama.StringEncoder(*source), Value: sarama.ByteEncoder(protobuf)}
+	return &sarama.ProducerMessage{Topic: topic, Key: sarama.StringEncoder(*source), Value: sarama.ByteEncoder(protobuf)}
 }

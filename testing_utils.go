@@ -158,7 +158,7 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 	}
 	defer producer.Close()
 	for i := 0; i < n; i++ {
-		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+		producer.Input() <- &sarama.ProducerMessage{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
 	}
 	select {
 	case e := <-producer.Errors():
@@ -182,7 +182,7 @@ func produce(t *testing.T, messages []string, topic string, brokerAddr string, c
 	}
 	defer producer.Close()
 	for _, message := range messages {
-		producer.Input() <- &sarama.MessageToSend{Topic: topic, Key: nil, Value: sarama.StringEncoder(message)}
+		producer.Input() <- &sarama.ProducerMessage{Topic: topic, Key: nil, Value: sarama.StringEncoder(message)}
 	}
 	select {
 	case e := <-producer.Errors():

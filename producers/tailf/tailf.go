@@ -19,7 +19,7 @@ package main
 
 import (
   "github.com/aybabtme/tailf"
-  "github.com/shopify/sarama"
+  "github.com/Shopify/sarama"
   "strings"
   "bufio"
   "flag"
@@ -62,7 +62,7 @@ func main() {
 
 	scanner := bufio.NewScanner(follower)
 	for scanner.Scan() {
-		producer.Input() <- &sarama.MessageToSend{Topic: *topic, Key: nil, Value: sarama.ByteEncoder(scanner.Bytes())}
+		producer.Input() <- &sarama.ProducerMessage{Topic: *topic, Key: nil, Value: sarama.ByteEncoder(scanner.Bytes())}
 		if *verbose {
 			log.Println("Produced message:", scanner.Text())
 		}

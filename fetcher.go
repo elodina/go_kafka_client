@@ -477,7 +477,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 				topicAndPartition := TopicAndPartition{topic, partition}
 				if currentOffset, exists := f.partitionMap[topicAndPartition]; exists {
 					switch data.Err {
-					case sarama.NoError:
+					case sarama.ErrNoError:
 						{
 							messages := data.MsgSet.Messages
 							if len(messages) > 0 {
@@ -489,7 +489,7 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 								Debugf(f, "No messages in %s at offset %d", topicAndPartition, currentOffset)
 							}
 						}
-					case sarama.OffsetOutOfRange:
+					case sarama.ErrOffsetOutOfRange:
 						{
 							newOffset := f.handleOffsetOutOfRange(&topicAndPartition)
 							f.partitionMap[topicAndPartition] = newOffset

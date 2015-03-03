@@ -222,7 +222,7 @@ func (this *MirrorMaker) produceRoutine(producer *sarama.Producer, channelIndex 
 		} else {
 			key = Int32Encoder(msg.Partition)
 		}
-		producer.Input() <- &sarama.MessageToSend{Topic: this.config.TopicPrefix + msg.Topic, Key: key, Value: sarama.ByteEncoder(msg.Value)}
+		producer.Input() <- &sarama.ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: key, Value: sarama.ByteEncoder(msg.Value)}
 	}
 }
 
