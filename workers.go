@@ -17,7 +17,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	metrics "github.com/rcrowley/go-metrics"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -44,16 +43,11 @@ type WorkerManager struct {
 	processingStop      chan bool
 	commitStop          chan bool
 
-	activeWorkersCounter metrics.Counter
-	pendingTasksCounter  metrics.Counter
-	batchDurationTimer   metrics.Timer
-	idleTimer            metrics.Timer
+    metrics *consumerMetrics
 }
 
 // Creates a new WorkerManager with given id using a given ConsumerConfig and responsible for managing given TopicAndPartition.
-func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition,
-	wmsIdleTimer metrics.Timer, batchDurationTimer metrics.Timer, activeWorkersCounter metrics.Counter,
-	pendingWMsTasksCounter metrics.Counter) *WorkerManager {
+func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, metrics *consumerMetrics) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -79,10 +73,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		managerStop:          make(chan bool),
 		processingStop:       make(chan bool),
 		commitStop:           make(chan bool),
-		activeWorkersCounter: activeWorkersCounter,
-		pendingTasksCounter:  pendingWMsTasksCounter,
-		batchDurationTimer:   batchDurationTimer,
-		idleTimer:            wmsIdleTimer,
+        metrics: metrics,
 	}
 }
 
@@ -106,9 +97,9 @@ func (wm *WorkerManager) Start() {
 			select {
 			case batch := <-wm.inputChannel:
 				{
-					wm.idleTimer.Update(time.Since(startIdle))
+					wm.metrics.WMsIdleTimer().Update(time.Since(startIdle))
 					Trace(wm, "WorkerManager got batch")
-					wm.batchDurationTimer.Time(func() {
+					wm.metrics.WMsBatchDurationTimer().Time(func() {
 						wm.startBatch(batch)
 					})
 					Trace(wm, "WorkerManager got batch processed")
@@ -153,12 +144,12 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			wm.batchOrder = append(wm.batchOrder, id)
 			wm.currentBatch[id] = &Task{Msg: message}
 		}
-		wm.pendingTasksCounter.Inc(int64(len(wm.currentBatch)))
+		wm.metrics.PendingWMsTasksCounter().Inc(int64(len(wm.currentBatch)))
 		for _, id := range wm.batchOrder {
 			task := wm.currentBatch[id]
 			worker := <-wm.availableWorkers
-			wm.activeWorkersCounter.Inc(1)
-			wm.pendingTasksCounter.Dec(1)
+			wm.metrics.ActiveWorkersCounter().Inc(1)
+			wm.metrics.PendingWMsTasksCounter().Dec(1)
 			worker.Start(task, wm.config.Strategy)
 		}
 
@@ -305,7 +296,7 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	Tracef(wm, "Task is done: %d", result.Id().Offset)
 	wm.UpdateLargestOffset(result.Id().Offset)
 	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
-	wm.activeWorkersCounter.Dec(1)
+	wm.metrics.ActiveWorkersCounter().Dec(1)
 	delete(wm.currentBatch, result.Id())
 }
 

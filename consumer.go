@@ -21,7 +21,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	metrics "github.com/rcrowley/go-metrics"
 	"strings"
 	"sync"
 	"time"
@@ -60,12 +59,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 
-	numWorkerManagersGauge            metrics.Gauge
-	batchesSentToWorkerManagerCounter metrics.Counter
-	activeWorkersCounter              metrics.Counter
-	pendingWMsTasksCounter            metrics.Counter
-	wmsBatchDurationTimer             metrics.Timer
-	wmsIdleTimer                      metrics.Timer
+    metrics *consumerMetrics
 
 	lastSuccessfulRebalanceHash string
 }
@@ -95,14 +89,8 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.LowLevelClient.Initialize(); err != nil {
 		panic(err)
 	}
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition)
-
-	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
-	c.batchesSentToWorkerManagerCounter = metrics.NewRegisteredCounter(fmt.Sprintf("BatchesSentToWM-%s", c.String()), metrics.DefaultRegistry)
-	c.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", c.String()), metrics.DefaultRegistry)
-	c.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", c.String()), metrics.DefaultRegistry)
-	c.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", c.String()), metrics.DefaultRegistry)
-	c.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", c.String()), metrics.DefaultRegistry)
+    c.metrics = newConsumerMetrics(c.String())
+    c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
 
 	return c
 }
@@ -291,16 +279,14 @@ func (c *Consumer) initializeWorkerManagers() {
 				topicPartition := TopicAndPartition{topic, partition}
 				workerManager, exists := c.workerManagers[topicPartition]
 				if !exists {
-					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.wmsIdleTimer,
-						c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
+					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.metrics)
 					c.workerManagers[topicPartition] = workerManager
 					go workerManager.Start()
 				}
 			}
 		}
 	})
-	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
-
+	c.metrics.NumWorkerManagersGauge().Update(int64(len(c.workerManagers)))
 }
 
 // Tells the Consumer to close all existing connections and stop.
@@ -328,9 +314,14 @@ func (c *Consumer) Close() <-chan bool {
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
 		Info(c, "Successfully deregistered consumer")
 
+        Info(c, "Closing low-level client")
+        c.config.LowLevelClient.Close()
 		Info(c, "Disconnecting from consumer coordinator")
 		c.config.Coordinator.Disconnect()
 		Info(c, "Disconnected from consumer coordinator")
+
+        Info(c, "Unregistering all metrics")
+        c.metrics.Close()
 
 		c.closeFinished <- true
 	}()
@@ -445,7 +436,9 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.isShuttingdown = false
 	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition)
+    c.config.LowLevelClient.Initialize()
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+    c.metrics = newConsumerMetrics(c.String())
 
 	go c.startStreams()
 
@@ -767,52 +760,7 @@ func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[i
 
 // Returns a state snapshot for this consumer. State snapshot contains a set of metrics splitted by topics and partitions.
 func (c *Consumer) StateSnapshot() *StateSnapshot {
-	metricsMap := make(map[string]map[string]float64)
-	metrics.DefaultRegistry.Each(func(name string, metric interface{}) {
-		metricsMap[name] = make(map[string]float64)
-		switch entry := metric.(type) {
-		case metrics.Counter:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-			}
-		case metrics.Gauge:
-			{
-				metricsMap[name]["value"] = float64(entry.Value())
-			}
-		case metrics.Histogram:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-				metricsMap[name]["max"] = float64(entry.Max())
-				metricsMap[name]["min"] = float64(entry.Min())
-				metricsMap[name]["mean"] = entry.Mean()
-				metricsMap[name]["stdDev"] = entry.StdDev()
-				metricsMap[name]["sum"] = float64(entry.Sum())
-				metricsMap[name]["variance"] = entry.Variance()
-			}
-		case metrics.Meter:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-				metricsMap[name]["rate1"] = entry.Rate1()
-				metricsMap[name]["rate5"] = entry.Rate5()
-				metricsMap[name]["rate15"] = entry.Rate15()
-				metricsMap[name]["rateMean"] = entry.RateMean()
-			}
-		case metrics.Timer:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-				metricsMap[name]["max"] = float64(entry.Max())
-				metricsMap[name]["min"] = float64(entry.Min())
-				metricsMap[name]["mean"] = entry.Mean()
-				metricsMap[name]["rate1"] = entry.Rate1()
-				metricsMap[name]["rate5"] = entry.Rate5()
-				metricsMap[name]["rate15"] = entry.Rate15()
-				metricsMap[name]["rateMean"] = entry.RateMean()
-				metricsMap[name]["stdDev"] = entry.StdDev()
-				metricsMap[name]["sum"] = float64(entry.Sum())
-				metricsMap[name]["variance"] = entry.Variance()
-			}
-		}
-	})
+	metricsMap := c.metrics.Stats()
 
 	offsetsMap := make(map[string]map[int32]int64)
 	for topicAndPartition, workerManager := range c.workerManagers {

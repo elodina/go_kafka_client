@@ -17,7 +17,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	metrics "github.com/rcrowley/go-metrics"
 	"math"
 	"sync"
 	"time"
@@ -35,10 +34,7 @@ type consumerFetcherManager struct {
 	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
 
-	numFetchRoutinesCounter metrics.Counter
-	idleTimer               metrics.Timer
-	fetchDurationTimer      metrics.Timer
-
+    metrics *consumerMetrics
 	client LowLevelClient
 }
 
@@ -46,7 +42,7 @@ func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.Consumerid)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition, metrics *consumerMetrics) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config:                         config,
 		closeFinished:                  make(chan bool),
@@ -54,11 +50,9 @@ func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPart
 		fetcherRoutineMap:              make(map[int]*consumerFetcherRoutine),
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
 		client: config.LowLevelClient,
+        metrics: metrics,
 	}
 	manager.updatedCond = sync.NewCond(manager.updateLock.RLocker())
-	manager.numFetchRoutinesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("NumFetchRoutines-%s", manager.String()), metrics.DefaultRegistry)
-	manager.idleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchersIdleTime-%s", manager.String()), metrics.DefaultRegistry)
-	manager.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchDuration-%s", manager.String()), metrics.DefaultRegistry)
 
 	return manager
 }
@@ -238,7 +232,7 @@ func (f *consumerFetcherRoutine) start() {
 		select {
 		case nextTopicPartition := <-f.askNext:
 			{
-				f.manager.idleTimer.Update(time.Since(ts))
+				f.manager.metrics.FetchersIdleTimer().Update(time.Since(ts))
 				Debugf(f, "Received asknext for %s", &nextTopicPartition)
 				inLock(&f.lock, func() {
 					if !f.manager.shuttingDown {
@@ -260,7 +254,7 @@ func (f *consumerFetcherRoutine) start() {
 
 						var messages []*Message
 						var err error
-						f.manager.fetchDurationTimer.Time(func() {
+						f.manager.metrics.FetchDurationTimer().Time(func() {
 							messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset)
 						})
 
