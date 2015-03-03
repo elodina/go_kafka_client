@@ -44,7 +44,6 @@ before_install:
 - sed -r -i "s/^(port)=(.*)/\\1=$PORT/g" $KAFKA_PATH/config/server.properties
 - sed -r -i "s/^(log4j.rootLogger)=(.*)( stdout)/\\1=WARN\\3/g" $KAFKA_PATH/config/log4j.properties
 - $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
-- gpm install
 
 after_script:
 - $KAFKA_PATH/bin/kafka-server-stop.sh
