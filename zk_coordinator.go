@@ -73,7 +73,7 @@ func (this *ZookeeperCoordinator) tryConnect() (zkConn *zk.Conn, err error) {
 	return
 }
 
-func (this * ZookeeperCoordinator) Disconnect() {
+func (this *ZookeeperCoordinator) Disconnect() {
 	Infof(this, "Closing connection to ZK at %s\n", this.config.ZookeeperConnect)
 	this.zkConn.Close()
 }
@@ -396,54 +396,54 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 		for {
 			select {
 			case e := <-zkEvents:
-			{
-				Trace(this, e)
-				if e != emptyEvent {
-					if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
-						if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
-							changes <- BlueGreenRequest
+				{
+					Trace(this, e)
+					if e != emptyEvent {
+						if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+							if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+								changes <- BlueGreenRequest
+							} else {
+								changes <- Regular
+							}
+						}
+
+						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
+							Info(this, "Trying to renew watcher for consumer registry")
+							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+							Info(this, "Trying to renew watcher for consumer API dir")
+							blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
+							Info(this, "Trying to renew watcher for consumer topic dir")
+							topicsWatcher, err = this.getTopicsWatcher()
+							if err != nil {
+								panic(err)
+							}
+						} else if strings.HasPrefix(e.Path, brokerIdsPath) {
+							Info(this, "Trying to renew watcher for brokers in cluster")
+							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+							if err != nil {
+								panic(err)
+							}
 						} else {
-							changes <- Regular
+							Warnf(this, "Unknown event path: %s", e.Path)
 						}
-					}
 
-					if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
-						Info(this, "Trying to renew watcher for consumer registry")
-						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
-						if err != nil {
-							panic(err)
-						}
-					} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
-						Info(this, "Trying to renew watcher for consumer API dir")
-						blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
-						if err != nil {
-							panic(err)
-						}
-					} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
-						Info(this, "Trying to renew watcher for consumer topic dir")
-						topicsWatcher, err = this.getTopicsWatcher()
-						if err != nil {
-							panic(err)
-						}
-					} else if strings.HasPrefix(e.Path, brokerIdsPath) {
-						Info(this, "Trying to renew watcher for brokers in cluster")
-						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
-						if err != nil {
-							panic(err)
-						}
-					} else {
-						Warnf(this, "Unknown event path: %s", e.Path)
+						stopRedirecting <- true
+						stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 					}
-
-					stopRedirecting <- true
-					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 				}
-			}
 			case <-this.unsubscribe:
-			{
-				stopRedirecting <- true
-				return
-			}
+				{
+					stopRedirecting <- true
+					return
+				}
 			}
 		}
 	}()
@@ -557,7 +557,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 }
 
 func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, barrierName string,
-												   	  barrierSize int, api string, timeout time.Duration) bool {
+	barrierSize int, api string, timeout time.Duration) bool {
 	finished := make(chan bool)
 	memberJoinedEvents, err := this.joinStateBarrier(consumerId, group, barrierName, api, finished)
 	if err != nil {
@@ -565,27 +565,27 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 	}
 
 	passed, err := this.isStateBarrierPassed(group, barrierName, api, barrierSize)
-	barrierLoop:
+barrierLoop:
 	for !passed {
 		select {
 		case <-memberJoinedEvents:
-		{
-			passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
-			if err != nil {
-				panic(err)
-			}
-		}
-		case <-time.After(timeout):
-		{
-			passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
-			if !passed {
-				err = this.removeStateBarrier(group, barrierName, api)
+			{
+				passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
 				if err != nil {
 					panic(err)
 				}
-				break barrierLoop
 			}
-		}
+		case <-time.After(timeout):
+			{
+				passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
+				if !passed {
+					err = this.removeStateBarrier(group, barrierName, api)
+					if err != nil {
+						panic(err)
+					}
+					break barrierLoop
+				}
+			}
 		}
 	}
 
@@ -665,7 +665,7 @@ func (this *ZookeeperCoordinator) isStateBarrierPassed(group string, stateHash s
 	return false, err
 }
 
-func (this *ZookeeperCoordinator) removeStateBarrier(group string, stateHash string, api string	) error {
+func (this *ZookeeperCoordinator) removeStateBarrier(group string, stateHash string, api string) error {
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		err = this.tryRemoveStateBarrier(group, stateHash, api)
@@ -958,9 +958,9 @@ type ZookeeperConfig struct {
 func NewZookeeperConfig() *ZookeeperConfig {
 	config := &ZookeeperConfig{}
 	config.ZookeeperConnect = []string{"localhost"}
-	config.ZookeeperTimeout = 1*time.Second
+	config.ZookeeperTimeout = 1 * time.Second
 	config.MaxRequestRetries = 3
-	config.RequestBackoff = 150*time.Millisecond
+	config.RequestBackoff = 150 * time.Millisecond
 
 	return config
 }
@@ -1005,7 +1005,7 @@ func newZKGroupDirs(group string) *zkGroupDirs {
 		ConsumerDir:          consumersPath,
 		ConsumerGroupDir:     consumerGroupDir,
 		ConsumerRegistryDir:  consumerRegistryDir,
-		ConsumerApiDir:   	  consumerApiDir,
+		ConsumerApiDir:       consumerApiDir,
 		ConsumerRebalanceDir: consumerRebalanceDir,
 	}
 }
@@ -1039,7 +1039,7 @@ func newMockZookeeperCoordinator() *mockZookeeperCoordinator {
 }
 
 func (mzk *mockZookeeperCoordinator) Connect() error { panic("Not implemented") }
-func (mzk *mockZookeeperCoordinator) Disconnect() { panic("Not implemented") }
+func (mzk *mockZookeeperCoordinator) Disconnect()    { panic("Not implemented") }
 func (mzk *mockZookeeperCoordinator) RegisterConsumer(consumerid string, group string, topicCount TopicsToNumStreams) error {
 	panic("Not implemented")
 }

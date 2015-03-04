@@ -16,58 +16,58 @@ limitations under the License. */
 package go_kafka_client
 
 import (
+	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	"github.com/mesos/mesos-go/scheduler"
-	"github.com/golang/protobuf/proto"
 )
 
 // SchedulerConfig defines configuration options for GoKafkaClientScheduler
 type SchedulerConfig struct {
 	// Number of CPUs allocated for each created Mesos task.
-	CpuPerTask          float64
+	CpuPerTask float64
 
 	// Number of RAM allocated for each created Mesos task.
-	MemPerTask          float64
+	MemPerTask float64
 
 	// A WhiteList or BlackList of topics to consume.
-	Filter              TopicFilter
+	Filter TopicFilter
 
 	// Zookeeper hosts for consumers to use.
-	Zookeeper           []string
+	Zookeeper []string
 
 	// Consumer group id for all consumers started with the given scheduler.
-	GroupId             string
+	GroupId string
 
 	// Artifact server host name. Will be used to fetch the executor.
-	ArtifactServerHost  string
+	ArtifactServerHost string
 
 	// Artifact server port.Will be used to fetch the executor.
-	ArtifactServerPort  int
+	ArtifactServerPort int
 
 	// Name of the executor archive file.
 	ExecutorArchiveName string
 
 	// Name of the executor binary file contained in the executor archive.
-	ExecutorBinaryName  string
+	ExecutorBinaryName string
 
 	// Maximum retries to kill a task.
-	KillTaskRetries     int
+	KillTaskRetries int
 
 	// Flag to use static partitioning strategy.
-	Static              bool
+	Static bool
 
 	// Number of consumers to use for load balancing strategy.
-	NumConsumers        int
+	NumConsumers int
 
 	// Log level for the scheduler and all executors to use.
-	LogLevel            string
+	LogLevel string
 }
 
 // Creates a SchedulerConfig with some basic configurations set.
 func NewSchedulerConfig() *SchedulerConfig {
 	return &SchedulerConfig{
-		CpuPerTask: 0.2,
-		MemPerTask: 256,
+		CpuPerTask:      0.2,
+		MemPerTask:      256,
 		KillTaskRetries: 3,
 	}
 }
@@ -84,7 +84,7 @@ type GoKafkaClientScheduler struct {
 // Creates a new GoKafkaClientScheduler with a given config and tracker.
 func NewGoKafkaClientScheduler(config *SchedulerConfig, tracker ConsumerTracker) *GoKafkaClientScheduler {
 	return &GoKafkaClientScheduler{
-		Config: config,
+		Config:  config,
 		Tracker: tracker,
 	}
 }

@@ -22,9 +22,9 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
-    "sort"
 )
 
 const (
@@ -88,7 +88,7 @@ func roundRobinAssignor(context *assignmentContext) map[TopicAndPartition]Consum
 
 		fmt.Printf("%v\n", topicsAndPartitions)
 
-        sort.Sort(hashArray(topicsAndPartitions))
+		sort.Sort(hashArray(topicsAndPartitions))
 		threadIdsIterator := circularIterator(&headThreadIds)
 
 		for _, topicPartition := range topicsAndPartitions {

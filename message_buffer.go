@@ -22,25 +22,25 @@ import (
 )
 
 type messageBuffer struct {
-	OutputChannel                  chan []*Message
-	Messages                       []*Message
-	Config                         *ConsumerConfig
-	Timer                          *time.Timer
-	MessageLock                    sync.Mutex
-	Close                          chan bool
-	stopSending                    bool
-	TopicPartition                 TopicAndPartition
-	askNextBatch                   chan TopicAndPartition
+	OutputChannel  chan []*Message
+	Messages       []*Message
+	Config         *ConsumerConfig
+	Timer          *time.Timer
+	MessageLock    sync.Mutex
+	Close          chan bool
+	stopSending    bool
+	TopicPartition TopicAndPartition
+	askNextBatch   chan TopicAndPartition
 }
 
 func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig) *messageBuffer {
 	buffer := &messageBuffer{
-		OutputChannel:                  outputChannel,
-		Messages:                       make([]*Message, 0),
-		Config:                         config,
-		Timer:                          time.NewTimer(config.FetchBatchTimeout),
-		Close:                          make(chan bool),
-		TopicPartition:                 topicPartition,
+		OutputChannel:  outputChannel,
+		Messages:       make([]*Message, 0),
+		Config:         config,
+		Timer:          time.NewTimer(config.FetchBatchTimeout),
+		Close:          make(chan bool),
+		TopicPartition: topicPartition,
 	}
 
 	return buffer
@@ -73,7 +73,7 @@ func (mb *messageBuffer) flush() {
 	if len(mb.Messages) > 0 {
 		Trace(mb, "Flushing")
 		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
-		flushLoop:
+	flushLoop:
 		for {
 			select {
 			case mb.OutputChannel <- mb.Messages:
@@ -143,13 +143,14 @@ func (mb *messageBuffer) addBatch(data *TopicPartitionData) {
 		}
 		Trace(mb, "Added messages")
 
-		askNextLoop:
+	askNextLoop:
 		for !mb.stopSending {
 			select {
-			case mb.askNextBatch <- mb.TopicPartition: {
-				Trace(mb, "Asking for next batch")
-				break askNextLoop
-			}
+			case mb.askNextBatch <- mb.TopicPartition:
+				{
+					Trace(mb, "Asking for next batch")
+					break askNextLoop
+				}
 			case <-time.After(200 * time.Millisecond):
 			}
 		}

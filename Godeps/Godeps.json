@@ -1,6 +1,9 @@
 {
 	"ImportPath": "github.com/stealthly/go_kafka_client",
 	"GoVersion": "go1.3.3",
+	"Packages": [
+		"./..."
+	],
 	"Deps": [
 		{
 			"ImportPath": "code.google.com/p/go-uuid/uuid",
@@ -15,6 +18,10 @@
 		{
 			"ImportPath": "github.com/Shopify/sarama",
 			"Rev": "e5e8ace555208299fd79a051b0910e56ce8d4cb9"
+		},
+		{
+			"ImportPath": "github.com/aybabtme/tailf",
+			"Rev": "d14324237929cb81857080f417ada24417ca49d1"
 		},
 		{
 			"ImportPath": "github.com/cihub/seelog",
@@ -91,8 +98,17 @@
 			"Rev": "da775f0337260efbac0fce9764cee5bd3e8c85b8"
 		},
 		{
+			"ImportPath": "golang.org/x/crypto/ssh/terminal",
+			"Rev": "1351f936d976c60a0a48d728281922cf63eafb8d"
+		},
+		{
 			"ImportPath": "golang.org/x/net/context",
 			"Rev": "cbcac7bb8415db9b6cb4d1ebab1dc9afbd688b97"
+		},
+		{
+			"ImportPath": "gopkg.in/fsnotify.v1",
+			"Comment": "v1.2.0",
+			"Rev": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0"
 		}
 	]
 }

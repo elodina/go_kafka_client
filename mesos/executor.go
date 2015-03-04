@@ -18,10 +18,10 @@ limitations under the License. */
 package main
 
 import (
-	kafka "github.com/stealthly/go_kafka_client"
-	"github.com/mesos/mesos-go/executor"
-	"fmt"
 	"flag"
+	"fmt"
+	"github.com/mesos/mesos-go/executor"
+	kafka "github.com/stealthly/go_kafka_client"
 	"os"
 	"strings"
 )
@@ -79,10 +79,10 @@ func setLogLevel() {
 	case "critical":
 		level = kafka.CriticalLevel
 	default:
-	{
-		fmt.Printf("Invalid log level: %s\n", *logLevel)
-		os.Exit(1)
-	}
+		{
+			fmt.Printf("Invalid log level: %s\n", *logLevel)
+			os.Exit(1)
+		}
 	}
 	kafka.Logger = kafka.NewDefaultLogger(level)
 }

@@ -46,7 +46,7 @@ func TestRoundRobinAssignor(t *testing.T) {
 		Consumers:          consumers,
 	}
 
-    assignments := make(map[TopicAndPartition]string)
+	assignments := make(map[TopicAndPartition]string)
 	var totalDecisions = 0
 	for _, consumer := range consumers {
 		context.ConsumerId = consumer
@@ -61,12 +61,12 @@ func TestRoundRobinAssignor(t *testing.T) {
 			t.Errorf("Too many partitions assigned to consumer %s", consumer)
 		}
 
-        for topicAndPartition := range ownershipDecision {
-            if owner, exists := assignments[topicAndPartition]; exists {
-                t.Errorf("Consumer %s tried to own topic %s and partition %d previously owned by consumer %s", consumer, topicAndPartition.Topic, topicAndPartition.Partition, owner)
-            }
-            assignments[topicAndPartition] = consumer
-        }
+		for topicAndPartition := range ownershipDecision {
+			if owner, exists := assignments[topicAndPartition]; exists {
+				t.Errorf("Consumer %s tried to own topic %s and partition %d previously owned by consumer %s", consumer, topicAndPartition.Topic, topicAndPartition.Partition, owner)
+			}
+			assignments[topicAndPartition] = consumer
+		}
 
 		totalDecisions += decisionsNum
 	}

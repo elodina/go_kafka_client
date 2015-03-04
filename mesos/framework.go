@@ -18,16 +18,16 @@ limitations under the License. */
 package main
 
 import (
-	kafka "github.com/stealthly/go_kafka_client"
-	"github.com/mesos/mesos-go/mesosproto"
-	"github.com/mesos/mesos-go/scheduler"
-	"github.com/golang/protobuf/proto"
-	"net/http"
 	"flag"
 	"fmt"
+	"github.com/golang/protobuf/proto"
+	"github.com/mesos/mesos-go/mesosproto"
+	"github.com/mesos/mesos-go/scheduler"
+	kafka "github.com/stealthly/go_kafka_client"
+	"net/http"
 	"os"
-	"strings"
 	"os/signal"
+	"strings"
 )
 
 var artifactServerHost = flag.String("artifact.host", "master", "Binding host for artifact server.")
@@ -85,10 +85,10 @@ func setLogLevel() {
 	case "critical":
 		level = kafka.CriticalLevel
 	default:
-	{
-		fmt.Printf("Invalid log level: %s\n", *logLevel)
-		os.Exit(1)
-	}
+		{
+			fmt.Printf("Invalid log level: %s\n", *logLevel)
+			os.Exit(1)
+		}
 	}
 	kafka.Logger = kafka.NewDefaultLogger(level)
 }
@@ -97,8 +97,8 @@ func startArtifactServer() {
 	//if the full path is given, take the last token only
 	path := strings.Split(*executorArchiveName, "/")
 	http.HandleFunc(fmt.Sprintf("/%s", path[len(path)-1]), func(w http.ResponseWriter, r *http.Request) {
-			http.ServeFile(w, r, *executorArchiveName)
-		})
+		http.ServeFile(w, r, *executorArchiveName)
+	})
 	http.ListenAndServe(fmt.Sprintf("%s:%d", *artifactServerHost, *artifactServerPort), nil)
 }
 

@@ -16,10 +16,10 @@ limitations under the License. */
 package go_kafka_client
 
 import (
+	"fmt"
+	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	util "github.com/mesos/mesos-go/mesosutil"
-	"github.com/golang/protobuf/proto"
-	"fmt"
 	"strings"
 )
 
@@ -42,8 +42,8 @@ type ConsumerTracker interface {
 // e.g. if the whitelist matches 2 topics with 5 partitions each, 10 tasks will be created (assuming enough resources have been offered).
 type StaticConsumerTracker struct {
 	// Configuration options for the tracker.
-	Config *SchedulerConfig
-	zookeeper *ZookeeperCoordinator
+	Config      *SchedulerConfig
+	zookeeper   *ZookeeperCoordinator
 	consumerMap map[string]map[int32]*mesos.TaskID
 }
 
@@ -59,8 +59,8 @@ func NewStaticConsumerTracker(config *SchedulerConfig) (*StaticConsumerTracker, 
 	}
 
 	return &StaticConsumerTracker{
-		Config: config,
-		zookeeper: zookeeper,
+		Config:      config,
+		zookeeper:   zookeeper,
 		consumerMap: make(map[string]map[int32]*mesos.TaskID),
 	}, nil
 }
@@ -96,7 +96,7 @@ func (this *StaticConsumerTracker) CreateTasks(offers []*mesos.Offer) map[*mesos
 		var tasks []*mesos.TaskInfo
 		for len(topicPartitions) > 0 && this.Config.CpuPerTask <= remainingCpus && this.Config.MemPerTask <= remainingMems {
 			topic, partition := this.takeTopicPartition(topicPartitions)
-			taskId := &mesos.TaskID {
+			taskId := &mesos.TaskID{
 				Value: proto.String(fmt.Sprintf("%s-%d", topic, partition)),
 			}
 
@@ -226,8 +226,8 @@ func (this *StaticConsumerTracker) createExecutorForTopicPartition(topic string,
 		Source:     proto.String("go-kafka"),
 		Command: &mesos.CommandInfo{
 			Value: proto.String(fmt.Sprintf("./%s --zookeeper %s --group %s --topic %s --partition %d --log.level %s", this.Config.ExecutorBinaryName, strings.Join(this.Config.Zookeeper, ","), this.Config.GroupId, topic, partition, this.Config.LogLevel)),
-			Uris:  []*mesos.CommandInfo_URI{&mesos.CommandInfo_URI{
-				Value: proto.String(fmt.Sprintf("http://%s:%d/%s", this.Config.ArtifactServerHost, this.Config.ArtifactServerPort, path[len(path)-1])),
+			Uris: []*mesos.CommandInfo_URI{&mesos.CommandInfo_URI{
+				Value:   proto.String(fmt.Sprintf("http://%s:%d/%s", this.Config.ArtifactServerHost, this.Config.ArtifactServerPort, path[len(path)-1])),
 				Extract: proto.Bool(true),
 			}},
 		},
@@ -241,17 +241,17 @@ type LoadBalancingConsumerTracker struct {
 	Config *SchedulerConfig
 
 	// Target number of consumers to be running.
-	NumConsumers int
+	NumConsumers   int
 	aliveConsumers int
-	consumerMap map[int]*mesos.TaskID
+	consumerMap    map[int]*mesos.TaskID
 }
 
 // Creates a new LoadBalancingConsumerTracker with a given scheduler config and target number of consumers.
 func NewLoadBalancingConsumerTracker(config *SchedulerConfig, numConsumers int) *LoadBalancingConsumerTracker {
 	return &LoadBalancingConsumerTracker{
-		Config: config,
+		Config:       config,
 		NumConsumers: numConsumers,
-		consumerMap: make(map[int]*mesos.TaskID),
+		consumerMap:  make(map[int]*mesos.TaskID),
 	}
 }
 
@@ -276,7 +276,7 @@ func (this *LoadBalancingConsumerTracker) CreateTasks(offers []*mesos.Offer) map
 		var tasks []*mesos.TaskInfo
 		id := this.getFreeId()
 		for id > -1 && this.Config.CpuPerTask <= remainingCpus && this.Config.MemPerTask <= remainingMems {
-			taskId := &mesos.TaskID {
+			taskId := &mesos.TaskID{
 				Value: proto.String(fmt.Sprintf("go-kafka-%d", id)),
 			}
 
@@ -347,8 +347,10 @@ func (this *LoadBalancingConsumerTracker) createExecutor(id int) *mesos.Executor
 	path := strings.Split(this.Config.ExecutorArchiveName, "/")
 	command := fmt.Sprintf("./%s --zookeeper %s --group %s --log.level %s", this.Config.ExecutorBinaryName, strings.Join(this.Config.Zookeeper, ","), this.Config.GroupId, this.Config.LogLevel)
 	switch this.Config.Filter.(type) {
-	case *WhiteList: command = fmt.Sprintf("%s --whitelist %s", command, this.Config.Filter.Regex())
-	case *BlackList: command = fmt.Sprintf("%s --blacklist %s", command, this.Config.Filter.Regex())
+	case *WhiteList:
+		command = fmt.Sprintf("%s --whitelist %s", command, this.Config.Filter.Regex())
+	case *BlackList:
+		command = fmt.Sprintf("%s --blacklist %s", command, this.Config.Filter.Regex())
 	}
 	return &mesos.ExecutorInfo{
 		ExecutorId: util.NewExecutorID(fmt.Sprintf("kafka-%d", id)),
@@ -356,8 +358,8 @@ func (this *LoadBalancingConsumerTracker) createExecutor(id int) *mesos.Executor
 		Source:     proto.String("go-kafka"),
 		Command: &mesos.CommandInfo{
 			Value: proto.String(command),
-			Uris:  []*mesos.CommandInfo_URI{&mesos.CommandInfo_URI{
-				Value: proto.String(fmt.Sprintf("http://%s:%d/%s", this.Config.ArtifactServerHost, this.Config.ArtifactServerPort, path[len(path)-1])),
+			Uris: []*mesos.CommandInfo_URI{&mesos.CommandInfo_URI{
+				Value:   proto.String(fmt.Sprintf("http://%s:%d/%s", this.Config.ArtifactServerHost, this.Config.ArtifactServerPort, path[len(path)-1])),
 				Extract: proto.Bool(true),
 			}},
 		},
@@ -367,8 +369,8 @@ func (this *LoadBalancingConsumerTracker) createExecutor(id int) *mesos.Executor
 func getScalarResources(offer *mesos.Offer, resourceName string) float64 {
 	resources := 0.0
 	filteredResources := util.FilterResources(offer.Resources, func(res *mesos.Resource) bool {
-			return res.GetName() == resourceName
-		})
+		return res.GetName() == resourceName
+	})
 	for _, res := range filteredResources {
 		resources += res.GetScalar().GetValue()
 	}

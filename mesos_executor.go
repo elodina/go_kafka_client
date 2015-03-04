@@ -16,9 +16,9 @@ limitations under the License. */
 package go_kafka_client
 
 import (
+	"fmt"
 	"github.com/mesos/mesos-go/executor"
 	mesos "github.com/mesos/mesos-go/mesosproto"
-	"fmt"
 )
 
 // ExecutorConfig defines configuration options for GoKafkaClientExecutor
@@ -47,14 +47,14 @@ func NewExecutorConfig() *ExecutorConfig {
 // The Mesos Executor implementation for Go Kafka Client.
 type GoKafkaClientExecutor struct {
 	// Configuration options for the executor.
-	Config *ExecutorConfig
+	Config    *ExecutorConfig
 	consumers map[string]*Consumer
 }
 
 // Creates a new GoKafkaClientExecutor with a given config.
 func NewGoKafkaClientExecutor(config *ExecutorConfig) *GoKafkaClientExecutor {
 	return &GoKafkaClientExecutor{
-		Config: config,
+		Config:    config,
 		consumers: make(map[string]*Consumer),
 	}
 }
@@ -111,7 +111,7 @@ func (this *GoKafkaClientExecutor) LaunchTask(driver executor.ExecutorDriver, ta
 		if this.Config.Filter != nil {
 			consumer.StartWildcard(this.Config.Filter, 1)
 		} else {
-			consumer.StartStaticPartitions(map[string][]int32 {this.Config.Topic : []int32{this.Config.Partition}})
+			consumer.StartStaticPartitions(map[string][]int32{this.Config.Topic: []int32{this.Config.Partition}})
 		}
 
 		// finish task
