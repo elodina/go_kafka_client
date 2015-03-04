@@ -29,9 +29,9 @@ import (
 )
 
 var (
-	consumersPath    = "consumers"
-	brokerIdsPath    = "brokers/ids"
-	brokerTopicsPath = "brokers/topics"
+	consumersPath    = "/consumers"
+	brokerIdsPath    = "/brokers/ids"
+	brokerTopicsPath = "/brokers/topics"
 	emptyEvent       = zk.Event{}
 )
 
@@ -246,7 +246,7 @@ func (this *ZookeeperCoordinator) GetAllTopics() (topics []string, err error) {
 }
 
 func (this *ZookeeperCoordinator) rootedPath(path string) string {
-	return this.config.Root + "/" + path
+	return this.config.Root + path
 }
 
 func (this *ZookeeperCoordinator) tryGetAllTopics() (topics []string, err error) {
@@ -846,7 +846,7 @@ func (this *ZookeeperCoordinator) getTopicsWatcher() (watcher <-chan zk.Event, e
 
 func (this *ZookeeperCoordinator) getBrokerInfo(brokerId int32) (*BrokerInfo, error) {
 	Debugf(this, "Getting info for broker %d", brokerId)
-	pathToBroker := fmt.Sprintf("%s/%s/%d", this.config.Root, brokerIdsPath, brokerId)
+	pathToBroker := fmt.Sprintf("%s/%d", this.rootedPath(brokerIdsPath), brokerId)
 	data, _, zkError := this.zkConn.Get(pathToBroker)
 	if zkError != nil {
 		return nil, zkError
@@ -880,7 +880,7 @@ func (this *ZookeeperCoordinator) getPartitionAssignmentsForTopics(topics []stri
 }
 
 func (this *ZookeeperCoordinator) getTopicInfo(topic string) (*TopicInfo, error) {
-	data, _, err := this.zkConn.Get(fmt.Sprintf("%s/%s/%s", this.config.Root, brokerTopicsPath, topic))
+	data, _, err := this.zkConn.Get(fmt.Sprintf("%s/%s", this.rootedPath(brokerTopicsPath), topic))
 	if err != nil {
 		return nil, err
 	}
@@ -1009,13 +1009,14 @@ type zkGroupDirs struct {
 }
 
 func newZKGroupDirs(root string, group string) *zkGroupDirs {
-	consumerGroupDir := fmt.Sprintf("%s/%s/%s", root, consumersPath, group)
+	consumerPathRooted := fmt.Sprintf("%s%s", root, consumersPath)
+	consumerGroupDir := fmt.Sprintf("%s/%s", consumerPathRooted, group)
 	consumerRegistryDir := fmt.Sprintf("%s/ids", consumerGroupDir)
 	consumerApiDir := fmt.Sprintf("%s/api", consumerGroupDir)
 	consumerRebalanceDir := fmt.Sprintf("%s/api/rebalance", consumerGroupDir)
 	return &zkGroupDirs{
 		Group:                group,
-		ConsumerDir:          consumersPath,
+		ConsumerDir:          consumerPathRooted,
 		ConsumerGroupDir:     consumerGroupDir,
 		ConsumerRegistryDir:  consumerRegistryDir,
 		ConsumerApiDir:       consumerApiDir,
