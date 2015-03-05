@@ -22,12 +22,12 @@ import (
 )
 
 type MesosTCPEndpoint struct {
-	addr    string
+	addr    *net.TCPAddr
 	handler func(*MesosRequest) MesosResponse
 	close   chan bool
 }
 
-func NewMesosTCPEndpoint(addr string, handler func(*MesosRequest) MesosResponse) *MesosTCPEndpoint {
+func NewMesosTCPEndpoint(addr *net.TCPAddr, handler func(*MesosRequest) MesosResponse) *MesosTCPEndpoint {
 	endpoint := &MesosTCPEndpoint{
 		addr:    addr,
 		handler: handler,
@@ -49,12 +49,8 @@ func (this *MesosTCPEndpoint) Close() {
 
 func (this *MesosTCPEndpoint) startTCPServer() {
 	Trace(this, "Starting TCP server")
-	tcpAddr, err := net.ResolveTCPAddr("tcp", this.addr)
-	if err != nil {
-		panic(err)
-	}
 
-	listener, err := net.ListenTCP("tcp", tcpAddr)
+	listener, err := net.ListenTCP("tcp", this.addr)
 	if err != nil {
 		panic(err)
 	}

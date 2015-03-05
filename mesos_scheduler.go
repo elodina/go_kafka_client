@@ -19,6 +19,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	"github.com/mesos/mesos-go/scheduler"
+    "net"
 )
 
 // SchedulerConfig defines configuration options for GoKafkaClientScheduler
@@ -79,14 +80,25 @@ type GoKafkaClientScheduler struct {
 
 	// Tracker keeps track of alive executors, handles lost/finished/killed etc. tasks and decides whether to run new tasks on offered resources.
 	Tracker ConsumerTracker
+
+    cliEndpoint *MesosTCPEndpoint
 }
 
 // Creates a new GoKafkaClientScheduler with a given config and tracker.
-func NewGoKafkaClientScheduler(config *SchedulerConfig, tracker ConsumerTracker) *GoKafkaClientScheduler {
-	return &GoKafkaClientScheduler{
+func NewGoKafkaClientScheduler(config *SchedulerConfig, tracker ConsumerTracker, cliEndpointAddr string) (*GoKafkaClientScheduler, error) {
+	scheduler := &GoKafkaClientScheduler{
 		Config:  config,
 		Tracker: tracker,
 	}
+
+    tcpEndpointAddr, err := net.ResolveTCPAddr("tcp", cliEndpointAddr)
+    if err != nil {
+        return nil, err
+    }
+
+    scheduler.cliEndpoint = NewMesosTCPEndpoint(tcpEndpointAddr, scheduler.cliRequestHandler)
+
+    return scheduler, nil
 }
 
 // Returns a string represntation of GoKafkaClientScheduler.
@@ -178,6 +190,8 @@ func (this *GoKafkaClientScheduler) Shutdown(driver scheduler.SchedulerDriver) {
 			Errorf(this, "Failed to kill task %s", taskId.GetValue())
 		}
 	}
+
+    this.cliEndpoint.Close()
 }
 
 func (this *GoKafkaClientScheduler) tryKillTask(driver scheduler.SchedulerDriver, taskId *mesos.TaskID) error {
@@ -190,4 +204,9 @@ func (this *GoKafkaClientScheduler) tryKillTask(driver scheduler.SchedulerDriver
 		}
 	}
 	return err
+}
+
+func (this *GoKafkaClientScheduler) cliRequestHandler(request *MesosRequest) MesosResponse {
+    Infof(this, "Got a request: %s", request)
+    return NewGenericResponse(nil)
 }

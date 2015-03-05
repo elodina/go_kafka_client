@@ -30,6 +30,8 @@ import (
 	"strings"
 )
 
+var cliEndpoint = flag.String("cli.endpoint", "0.0.0.0:12321", "Address to run the CLI server at.")
+
 var artifactServerHost = flag.String("artifact.host", "master", "Binding host for artifact server.")
 var artifactServerPort = flag.Int("artifact.port", 6666, "Binding port for artifact server.")
 var master = flag.String("master", "127.0.0.1:5050", "Mesos Master address <ip:port>.")
@@ -146,7 +148,11 @@ func main() {
 	} else {
 		tracker = kafka.NewLoadBalancingConsumerTracker(schedulerConfig, *numConsumers)
 	}
-	consumerScheduler := kafka.NewGoKafkaClientScheduler(schedulerConfig, tracker)
+	consumerScheduler, err := kafka.NewGoKafkaClientScheduler(schedulerConfig, tracker, *cliEndpoint)
+    if err != nil {
+        fmt.Println(err)
+        os.Exit(1)
+    }
 
 	driver, err := scheduler.NewMesosSchedulerDriver(consumerScheduler, frameworkInfo, *master, nil)
 	go func() {
