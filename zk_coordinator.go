@@ -976,6 +976,15 @@ func NewZookeeperConfig() *ZookeeperConfig {
 	return config
 }
 
+// ZookeeperConfigFromFile is a helper function that loads zookeeper configuration information from file.
+// The file accepts the following fields:
+//  zookeeper.connect
+//  zookeeper.kafka.Root
+//  zookeeper.connection.timeout
+//  zookeeper.max.request.retries
+//  zookeeper.request.backoff
+// The configuration file entries should be constructed in key=value syntax. A # symbol at the beginning
+// of a line indicates a comment. Blank lines are ignored.
 func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 	z, err := LoadConfiguration(filename)
 	if err != nil {
@@ -986,13 +995,13 @@ func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 	setStringSliceConfig(&config.ZookeeperConnect, z["zookeeper.connect"], ",")
 	setStringConfig(&config.Root, z["zookeeper.kafka.Root"])
 
-	if err = setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]); err != nil {
+	if err := setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]); err != nil {
 		return nil, err
 	}
-	if err = setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]); err != nil {
+	if err := setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]); err != nil {
 		return nil, err
 	}
-	if err = setDurationConfig(&config.RequestBackoff, z["zookeeper.request.backoff"]); err != nil {
+	if err := setDurationConfig(&config.RequestBackoff, z["zookeeper.request.backoff"]); err != nil {
 		return nil, err
 	}
 
