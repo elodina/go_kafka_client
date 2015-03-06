@@ -984,7 +984,7 @@ func NewZookeeperConfig() *ZookeeperConfig {
 //  zookeeper.max.request.retries
 //  zookeeper.request.backoff
 // The configuration file entries should be constructed in key=value syntax. A # symbol at the beginning
-// of a line indicates a comment. Blank lines are ignored.
+// of a line indicates a comment. Blank lines are ignored. The file should end with a newline character.
 func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 	z, err := LoadConfiguration(filename)
 	if err != nil {

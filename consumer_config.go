@@ -337,7 +337,7 @@ func (c *ConsumerConfig) Validate() error {
 //  fetch.message.max.bytes
 //  num.consumer.fetchers
 //  rebalance.max.retries
-//  queued.max.message.chunks=
+//  queued.max.message.chunks
 //  fetch.min.bytes
 //  fetch.wait.max.ms
 //  rebalance.backoff
@@ -364,7 +364,7 @@ func (c *ConsumerConfig) Validate() error {
 //  fetch.request.backoff
 //  blue.green.deployment.enabled
 // The configuration file entries should be constructed in key=value syntax. A # symbol at the beginning
-// of a line indicates a comment. Blank lines are ignored.
+// of a line indicates a comment. Blank lines are ignored. The file should end with a newline character.
 func ConsumerConfigFromFile(filename string) (*ConsumerConfig, error) {
 	c, err := LoadConfiguration(filename)
 	if err != nil {
