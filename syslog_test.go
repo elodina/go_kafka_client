@@ -42,7 +42,9 @@ func TestSyslogProducer(t *testing.T) {
 	EnsureHasLeader(localZk, topic)
 
 	config := NewSyslogProducerConfig()
-	config.ProducerConfig = DefaultProducerConfig()
+	producerConfig := DefaultProducerConfig()
+	producerConfig.Timeout = 1000 * time.Millisecond
+	config.ProducerConfig = producerConfig
 	config.BrokerList = localBroker
 	config.ChannelSize = 5
 	config.NumProducers = 1
