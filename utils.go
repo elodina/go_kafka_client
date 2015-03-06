@@ -19,8 +19,6 @@ import (
 	"container/ring"
 	crand "crypto/rand"
 	"fmt"
-	"github.com/Shopify/sarama"
-	"github.com/jimlawless/cfg"
 	"hash/fnv"
 	"math/rand"
 	"reflect"
@@ -28,6 +26,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Shopify/sarama"
+	"github.com/jimlawless/cfg"
 )
 
 // Loads a property file located at Path. Returns a map[string]string or error.
@@ -225,11 +226,14 @@ func uuid() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-func newSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
-	brokerConfig := sarama.NewBrokerConfig()
-	brokerConfig.DialTimeout = config.SocketTimeout
-	brokerConfig.ReadTimeout = config.SocketTimeout
-	brokerConfig.WriteTimeout = config.SocketTimeout
+func newSaramaBrokerConfig(config *ConsumerConfig, clientId string) *sarama.Config {
+	brokerConfig := sarama.NewConfig()
+	brokerConfig.Net.DialTimeout = config.SocketTimeout
+	brokerConfig.Net.ReadTimeout = config.SocketTimeout
+	brokerConfig.Net.WriteTimeout = config.SocketTimeout
+	if clientId != "" {
+		brokerConfig.ClientID = clientId
+	}
 	return brokerConfig
 }
 
@@ -286,10 +290,10 @@ func (b *barrier) reset(size int32) {
 
 type hashArray []*TopicAndPartition
 
-func (s hashArray) Len() int           { return len(s) }
-func (s hashArray) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s hashArray) Len() int      { return len(s) }
+func (s hashArray) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s hashArray) Less(i, j int) bool {
-    return hash(s[i].String()) < hash(s[j].String())
+	return hash(s[i].String()) < hash(s[j].String())
 }
 
 func setStringConfig(where *string, what string) {

@@ -19,9 +19,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/Shopify/sarama"
 	"hash/fnv"
 	"strings"
+
+	"github.com/Shopify/sarama"
 )
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
@@ -172,36 +173,30 @@ func (this *MirrorMaker) startProducers() {
 			panic(err)
 		}
 
-		client, err := sarama.NewClient(conf.Clientid, conf.BrokerList, sarama.NewClientConfig())
-		if err != nil {
-			panic(err)
-		}
-
-		config := sarama.NewProducerConfig()
+		config := sarama.NewConfig()
 		config.ChannelBufferSize = conf.SendBufferSize
 		switch strings.ToLower(conf.CompressionCodec) {
 		case "none":
-			config.Compression = sarama.CompressionNone
+			config.Producer.Compression = sarama.CompressionNone
 		case "gzip":
-			config.Compression = sarama.CompressionGZIP
+			config.Producer.Compression = sarama.CompressionGZIP
 		case "snappy":
-			config.Compression = sarama.CompressionSnappy
+			config.Producer.Compression = sarama.CompressionSnappy
 		}
-		config.FlushByteCount = conf.FlushByteCount
-		config.FlushFrequency = conf.FlushTimeout
-		config.FlushMsgCount = conf.BatchSize
-		config.MaxMessageBytes = conf.MaxMessageBytes
-		config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
+		config.Producer.Flush.Bytes = conf.FlushByteCount
+		config.Producer.Flush.Frequency = conf.FlushTimeout
+		config.Producer.Flush.MaxMessages = conf.BatchSize
+		config.Producer.MaxMessageBytes = conf.MaxMessageBytes
 		if this.config.PreservePartitions {
-			config.Partitioner = NewIntPartitioner
+			config.Producer.Partitioner = NewIntPartitioner
 		} else {
-			config.Partitioner = sarama.NewRandomPartitioner
+			config.Producer.Partitioner = sarama.NewRandomPartitioner
 		}
-		config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
-		config.RetryBackoff = conf.RetryBackoff
-		config.Timeout = conf.Timeout
+		config.Producer.RequiredAcks = sarama.RequiredAcks(conf.Acks)
+		config.Producer.Retry.Backoff = conf.RetryBackoff
+		config.Producer.Timeout = conf.Timeout
 
-		producer, err := sarama.NewProducer(client, config)
+		producer, err := sarama.NewProducer(conf.BrokerList, config)
 		if err != nil {
 			panic(err)
 		}

@@ -17,24 +17,25 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/Shopify/sarama"
-	metrics "github.com/rcrowley/go-metrics"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/Shopify/sarama"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 type consumerFetcherManager struct {
-	config                *ConsumerConfig
-	numStreams            int
-	closeFinished         chan bool
-	updateLock     		  sync.RWMutex
-	partitionMap          map[TopicAndPartition]*partitionTopicInfo
-	fetcherRoutineMap     map[brokerAndFetcherId]*consumerFetcherRoutine
-	noLeaderPartitions    []TopicAndPartition
-	shuttingDown          bool
-	updateInProgress	  bool
-	updatedCond           *sync.Cond
+	config                         *ConsumerConfig
+	numStreams                     int
+	closeFinished                  chan bool
+	updateLock                     sync.RWMutex
+	partitionMap                   map[TopicAndPartition]*partitionTopicInfo
+	fetcherRoutineMap              map[brokerAndFetcherId]*consumerFetcherRoutine
+	noLeaderPartitions             []TopicAndPartition
+	shuttingDown                   bool
+	updateInProgress               bool
+	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
 
 	numFetchRoutinesCounter metrics.Counter
@@ -48,11 +49,11 @@ func (m *consumerFetcherManager) String() string {
 
 func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
-		config:             config,
-		closeFinished:      make(chan bool),
-		partitionMap:       make(map[TopicAndPartition]*partitionTopicInfo),
-		fetcherRoutineMap:  make(map[brokerAndFetcherId]*consumerFetcherRoutine),
-		noLeaderPartitions: make([]TopicAndPartition, 0),
+		config:                         config,
+		closeFinished:                  make(chan bool),
+		partitionMap:                   make(map[TopicAndPartition]*partitionTopicInfo),
+		fetcherRoutineMap:              make(map[brokerAndFetcherId]*consumerFetcherRoutine),
+		noLeaderPartitions:             make([]TopicAndPartition, 0),
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
 	}
 	manager.updatedCond = sync.NewCond(manager.updateLock.RLocker())
@@ -185,7 +186,7 @@ func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*
 		for j := 0; j <= m.config.FetchTopicMetadataRetries; j++ {
 			brokerAddr := fmt.Sprintf("%s:%d", shuffledBrokers[i].Host, shuffledBrokers[i].Port)
 			broker := sarama.NewBroker(brokerAddr)
-			err := broker.Open(newSaramaBrokerConfig(m.config))
+			err := broker.Open(newSaramaBrokerConfig(m.config, clientId))
 			if err != nil {
 				Warnf(m, "Could not fetch topic metadata from broker %s\n", brokerAddr)
 				time.Sleep(m.config.FetchTopicMetadataBackoff)
@@ -194,7 +195,7 @@ func (m *consumerFetcherManager) fetchTopicMetadata(topics []string, brokers []*
 			defer broker.Close()
 
 			request := sarama.MetadataRequest{Topics: topics}
-			response, err := broker.GetMetadata(clientId, &request)
+			response, err := broker.GetMetadata(&request)
 			if err != nil {
 				Warnf(m, "Could not fetch topic metadata from broker %s\n", brokerAddr)
 				time.Sleep(m.config.FetchTopicMetadataBackoff)
@@ -332,16 +333,16 @@ func (m *consumerFetcherManager) close() <-chan bool {
 }
 
 type consumerFetcherRoutine struct {
-	manager           *consumerFetcherManager
-	name              string
-	brokerAddr        string //just not to calculate each time
-	brokerConn        *sarama.Broker
-	allPartitionMap   map[TopicAndPartition]*partitionTopicInfo
-	partitionMap      map[TopicAndPartition]int64
-	lock  sync.Mutex
-	closeFinished     chan bool
-	fetchStopper      chan bool
-	askNext           chan TopicAndPartition
+	manager         *consumerFetcherManager
+	name            string
+	brokerAddr      string //just not to calculate each time
+	brokerConn      *sarama.Broker
+	allPartitionMap map[TopicAndPartition]*partitionTopicInfo
+	partitionMap    map[TopicAndPartition]int64
+	lock            sync.Mutex
+	closeFinished   chan bool
+	fetchStopper    chan bool
+	askNext         chan TopicAndPartition
 }
 
 func (f *consumerFetcherRoutine) String() string {
@@ -437,15 +438,17 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 
 	for topicAndPartition, askNext := range newPartitions {
 		Debugf(f, "Sending ask next to %s for %s", f, topicAndPartition)
-		Loop:
+	Loop:
 		for {
 			select {
-			case askNext <- topicAndPartition: break Loop
-			case <-time.After(1 * time.Second): {
-				if f.manager.shuttingDown {
-					return
+			case askNext <- topicAndPartition:
+				break Loop
+			case <-time.After(1 * time.Second):
+				{
+					if f.manager.shuttingDown {
+						return
+					}
 				}
-			}
 			}
 		}
 		Debugf(f, "Sent ask next to %s for %s", f, topicAndPartition)
@@ -459,13 +462,13 @@ func (f *consumerFetcherRoutine) processFetchRequest(request *sarama.FetchReques
 
 	if f.brokerConn == nil {
 		f.brokerConn = sarama.NewBroker(f.brokerAddr)
-		err := f.brokerConn.Open(newSaramaBrokerConfig(f.manager.config))
+		err := f.brokerConn.Open(newSaramaBrokerConfig(f.manager.config, f.manager.config.Clientid))
 		if err != nil {
 			f.handleFetchError(request, err, partitionsWithError)
 		}
 	}
 
-	response, err := f.brokerConn.Fetch(f.manager.config.Clientid, request)
+	response, err := f.brokerConn.Fetch(request)
 	if err != nil {
 		f.handleFetchError(request, err, partitionsWithError)
 	}
@@ -532,7 +535,7 @@ func filterPartitionData(partitionData *sarama.FetchResponseBlock, requestedOffs
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, partitionData *sarama.FetchResponseBlock) {
 	Trace(f, "Trying to acquire lock for partition processing")
-	inReadLock(&f.manager.updateLock, func(){
+	inReadLock(&f.manager.updateLock, func() {
 		for f.manager.updateInProgress {
 			f.manager.updatedCond.Wait()
 		}
@@ -578,7 +581,9 @@ func (f *consumerFetcherRoutine) handlePartitionsWithErrors(partitions []TopicAn
 }
 
 func (f *consumerFetcherRoutine) earliestOrLatestOffset(topicAndPartition *TopicAndPartition, offsetTime sarama.OffsetTime) int64 {
-	client, err := sarama.NewClient(f.manager.config.Clientid, []string{f.brokerAddr}, nil)
+	config := sarama.NewConfig()
+	config.ClientID = f.manager.config.Clientid
+	client, err := sarama.NewClient([]string{f.brokerAddr}, config)
 	if err != nil {
 		panic(err)
 	}
