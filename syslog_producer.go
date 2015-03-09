@@ -17,10 +17,11 @@ package go_kafka_client
 
 import (
 	"bufio"
-	"github.com/Shopify/sarama"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/Shopify/sarama"
 )
 
 type SyslogMessage struct {
@@ -172,33 +173,30 @@ func (this *SyslogProducer) startProducers() {
 	for i := 0; i < this.config.NumProducers; i++ {
 		conf := this.config.ProducerConfig
 		brokerList := strings.Split(this.config.BrokerList, ",")
-		client, err := sarama.NewClient(conf.Clientid, brokerList, sarama.NewClientConfig())
-		if err != nil {
-			panic(err)
-		}
 
-		config := sarama.NewProducerConfig()
+		config := sarama.NewConfig()
+		config.ClientID = conf.Clientid
 		config.ChannelBufferSize = conf.SendBufferSize
 		switch strings.ToLower(conf.CompressionCodec) {
 		case "none":
-			config.Compression = sarama.CompressionNone
+			config.Producer.Compression = sarama.CompressionNone
 		case "gzip":
-			config.Compression = sarama.CompressionGZIP
+			config.Producer.Compression = sarama.CompressionGZIP
 		case "snappy":
-			config.Compression = sarama.CompressionSnappy
+			config.Producer.Compression = sarama.CompressionSnappy
 		}
-		config.FlushByteCount = conf.FlushByteCount
-		config.FlushFrequency = conf.FlushTimeout
-		config.FlushMsgCount = conf.BatchSize
-		config.MaxMessageBytes = conf.MaxMessageBytes
-		config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
-		config.Partitioner = sarama.NewRandomPartitioner
-		config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
-		config.RetryBackoff = conf.RetryBackoff
-		config.Timeout = conf.Timeout
+		config.Producer.Flush.Bytes = conf.FlushByteCount
+		config.Producer.Flush.Frequency = conf.FlushTimeout
+		config.Producer.Flush.Messages = conf.BatchSize
+		config.Producer.MaxMessageBytes = conf.MaxMessageBytes
+		config.Producer.Flush.MaxMessages = conf.MaxMessagesPerRequest
+		config.Producer.Partitioner = sarama.NewRandomPartitioner
+		config.Producer.RequiredAcks = sarama.RequiredAcks(conf.Acks)
+		config.Producer.Retry.Backoff = conf.RetryBackoff
+		config.Producer.Timeout = conf.Timeout
 
 		Tracef(this, "Starting new producer with config: %#v", config)
-		producer, err := sarama.NewProducer(client, config)
+		producer, err := sarama.NewProducer(brokerList, config)
 		if err != nil {
 			panic(err)
 		}

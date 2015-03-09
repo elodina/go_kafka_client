@@ -17,12 +17,13 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/Shopify/sarama"
 	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Shopify/sarama"
 )
 
 func TestMirrorMakerWorks(t *testing.T) {
@@ -266,6 +267,7 @@ func createProducerConfig(t *testing.T, id int) string {
 	fileName := fmt.Sprintf("producer-%d.properties", id)
 
 	contents := fmt.Sprintf(`metadata.broker.list=%s
+timeout=1000ms
 `, localBroker)
 
 	configPath := fmt.Sprintf("%s/%s", tmpPath, fileName)

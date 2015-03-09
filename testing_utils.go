@@ -17,15 +17,17 @@ package go_kafka_client
 
 import (
 	"fmt"
+
 	"github.com/samuel/go-zookeeper/zk"
 	//	"github.com/stealthly/go-kafka/producer"
-	"github.com/Shopify/sarama"
 	"os"
 	"os/exec"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/Shopify/sarama"
 )
 
 type logWriter struct {
@@ -102,7 +104,7 @@ func receiveNFromMultipleChannels(t *testing.T, n int, timeout time.Duration, fr
 		if !ok {
 			// The chosen channel has been closed, so zero out the channel to disable the case
 			cases[chosen].Chan = reflect.ValueOf(nil)
-			remaining -= 1
+			remaining--
 			continue
 		}
 
@@ -146,13 +148,9 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 }
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
-	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
-	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	config := sarama.NewConfig()
+	config.ClientID = "test-client"
+	producer, err := sarama.NewProducer([]string{brokerAddr}, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,15 +166,10 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 }
 
 func produce(t *testing.T, messages []string, topic string, brokerAddr string, compression sarama.CompressionCodec) {
-	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
-	producerConfig := sarama.NewProducerConfig()
-	producerConfig.Compression = compression
-	producer, err := sarama.NewProducer(client, producerConfig)
+	config := sarama.NewConfig()
+	config.ClientID = "test-client"
+	config.Producer.Compression = compression
+	producer, err := sarama.NewProducer([]string{brokerAddr}, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +197,7 @@ func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 	}
 }
 
-//Convenience utility to create a topic topicName with numPartitions partitions in Zookeeper located at zk (format should be host:port).
+// CreateMultiplePartitionsTopic is a convenience utility to create a topic topicName with numPartitions partitions in Zookeeper located at zk (format should be host:port).
 //Please note that this requires Apache Kafka 0.8.1 binary distribution available through KAFKA_PATH environment variable
 func CreateMultiplePartitionsTopic(zk string, topicName string, numPartitions int) {
 	if runtime.GOOS == "windows" {
@@ -222,7 +215,7 @@ func CreateMultiplePartitionsTopic(zk string, topicName string, numPartitions in
 	}
 }
 
-//blocks until the leader for every partition of a given topic appears
+// EnsureHasLeader blocks until the leader for every partition of a given topic appears
 //this is used by tests only to avoid "In the middle of a leadership election, there is currently no leader for this partition and hence it is unavailable for writes"
 func EnsureHasLeader(zkConnect string, topic string) {
 	zkConfig := NewZookeeperConfig()
