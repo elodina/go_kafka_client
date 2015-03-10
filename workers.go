@@ -126,6 +126,8 @@ func (wm *WorkerManager) Stop() chan bool {
 			Debug(wm, "Stopping committer")
 			wm.commitStop <- true
 			Debug(wm, "Successful committer stop")
+            wm.failCounter.Close()
+            Debug(wm, "Stopped failure counter")
 			finished <- true
 			Debug(wm, "Leaving manager stop")
 		})
@@ -361,12 +363,14 @@ type FailureCounter struct {
 	failed          bool
 	countLock       sync.Mutex
 	failedThreshold int32
+    stop chan bool
 }
 
 // Creates a new FailureCounter with threshold FailedThreshold and time window WorkerThresholdTimeWindow.
 func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Duration) *FailureCounter {
 	counter := &FailureCounter{
 		failedThreshold: FailedThreshold,
+        stop: make(chan bool),
 	}
 	go func() {
 		for {
@@ -382,6 +386,7 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 						})
 					}
 				}
+            case <-counter.stop: return
 			}
 		}
 	}()
@@ -393,6 +398,11 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 func (f *FailureCounter) Failed() bool {
 	inLock(&f.countLock, func() { f.count++ })
 	return f.count >= f.failedThreshold || f.failed
+}
+
+// Stops this failure counter
+func (f *FailureCounter) Close() {
+    f.stop <- true
 }
 
 // Represents a single task for a worker.
