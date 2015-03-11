@@ -43,7 +43,7 @@ type WorkerManager struct {
 	processingStop      chan bool
 	commitStop          chan bool
 
-    metrics *consumerMetrics
+	metrics *consumerMetrics
 }
 
 // Creates a new WorkerManager with given id using a given ConsumerConfig and responsible for managing given TopicAndPartition.
@@ -59,21 +59,21 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	}
 
 	return &WorkerManager{
-		id:                   id,
-		config:               config,
-		availableWorkers:     availableWorkers,
-		workers:              workers,
-		inputChannel:         make(chan []*Message),
-		currentBatch:         make(map[TaskId]*Task),
-		batchOrder:           make([]TaskId, 0),
-		topicPartition:       topicPartition,
-		largestOffset:        InvalidOffset,
-		failCounter:          NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
-		batchProcessed:       make(chan bool),
-		managerStop:          make(chan bool),
-		processingStop:       make(chan bool),
-		commitStop:           make(chan bool),
-        metrics: metrics,
+		id:               id,
+		config:           config,
+		availableWorkers: availableWorkers,
+		workers:          workers,
+		inputChannel:     make(chan []*Message),
+		currentBatch:     make(map[TaskId]*Task),
+		batchOrder:       make([]TaskId, 0),
+		topicPartition:   topicPartition,
+		largestOffset:    InvalidOffset,
+		failCounter:      NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
+		batchProcessed:   make(chan bool),
+		managerStop:      make(chan bool),
+		processingStop:   make(chan bool),
+		commitStop:       make(chan bool),
+		metrics:          metrics,
 	}
 }
 
@@ -126,8 +126,8 @@ func (wm *WorkerManager) Stop() chan bool {
 			Debug(wm, "Stopping committer")
 			wm.commitStop <- true
 			Debug(wm, "Successful committer stop")
-            wm.failCounter.Close()
-            Debug(wm, "Stopped failure counter")
+			wm.failCounter.Close()
+			Debug(wm, "Stopped failure counter")
 			finished <- true
 			Debug(wm, "Leaving manager stop")
 		})
@@ -363,14 +363,14 @@ type FailureCounter struct {
 	failed          bool
 	countLock       sync.Mutex
 	failedThreshold int32
-    stop chan bool
+	stop            chan bool
 }
 
 // Creates a new FailureCounter with threshold FailedThreshold and time window WorkerThresholdTimeWindow.
 func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Duration) *FailureCounter {
 	counter := &FailureCounter{
 		failedThreshold: FailedThreshold,
-        stop: make(chan bool),
+		stop:            make(chan bool),
 	}
 	go func() {
 		for {
@@ -386,7 +386,8 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 						})
 					}
 				}
-            case <-counter.stop: return
+			case <-counter.stop:
+				return
 			}
 		}
 	}()
@@ -402,7 +403,7 @@ func (f *FailureCounter) Failed() bool {
 
 // Stops this failure counter
 func (f *FailureCounter) Close() {
-    f.stop <- true
+	f.stop <- true
 }
 
 // Represents a single task for a worker.

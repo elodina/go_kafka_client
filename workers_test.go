@@ -115,7 +115,7 @@ func TestWorkerManager(t *testing.T) {
 	config.Coordinator = mockZk
 	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
 
-    metrics := newConsumerMetrics(wmid)
+	metrics := newConsumerMetrics(wmid)
 	manager := NewWorkerManager(wmid, config, topicPartition, metrics)
 
 	go manager.Start()

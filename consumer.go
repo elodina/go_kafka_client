@@ -59,7 +59,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 
-    metrics *consumerMetrics
+	metrics *consumerMetrics
 
 	lastSuccessfulRebalanceHash string
 }
@@ -89,8 +89,8 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.LowLevelClient.Initialize(); err != nil {
 		panic(err)
 	}
-    c.metrics = newConsumerMetrics(c.String())
-    c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+	c.metrics = newConsumerMetrics(c.String())
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
 
 	return c
 }
@@ -314,14 +314,14 @@ func (c *Consumer) Close() <-chan bool {
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
 		Info(c, "Successfully deregistered consumer")
 
-        Info(c, "Closing low-level client")
-        c.config.LowLevelClient.Close()
+		Info(c, "Closing low-level client")
+		c.config.LowLevelClient.Close()
 		Info(c, "Disconnecting from consumer coordinator")
 		c.config.Coordinator.Disconnect()
 		Info(c, "Disconnected from consumer coordinator")
 
-        Info(c, "Unregistering all metrics")
-        c.metrics.Close()
+		Info(c, "Unregistering all metrics")
+		c.metrics.Close()
 
 		c.closeFinished <- true
 	}()
@@ -436,9 +436,9 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.isShuttingdown = false
 	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
-    c.config.LowLevelClient.Initialize()
+	c.config.LowLevelClient.Initialize()
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
-    c.metrics = newConsumerMetrics(c.String())
+	c.metrics = newConsumerMetrics(c.String())
 
 	go c.startStreams()
 

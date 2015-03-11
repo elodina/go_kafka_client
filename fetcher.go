@@ -34,8 +34,8 @@ type consumerFetcherManager struct {
 	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
 
-    metrics *consumerMetrics
-	client LowLevelClient
+	metrics *consumerMetrics
+	client  LowLevelClient
 }
 
 func (m *consumerFetcherManager) String() string {
@@ -49,8 +49,8 @@ func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPart
 		partitionMap:                   make(map[TopicAndPartition]*partitionTopicInfo),
 		fetcherRoutineMap:              make(map[int]*consumerFetcherRoutine),
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
-		client: config.LowLevelClient,
-        metrics: metrics,
+		client:  config.LowLevelClient,
+		metrics: metrics,
 	}
 	manager.updatedCond = sync.NewCond(manager.updateLock.RLocker())
 

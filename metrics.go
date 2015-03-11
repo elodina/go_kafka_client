@@ -16,120 +16,120 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-    metrics "github.com/rcrowley/go-metrics"
-    "fmt"
+	"fmt"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 type consumerMetrics struct {
-    registry metrics.Registry
+	registry metrics.Registry
 
-    numFetchRoutinesCounter metrics.Counter
-    fetchersIdleTimer metrics.Timer
-    fetchDurationTimer metrics.Timer
+	numFetchRoutinesCounter metrics.Counter
+	fetchersIdleTimer       metrics.Timer
+	fetchDurationTimer      metrics.Timer
 
-    numWorkerManagersGauge            metrics.Gauge
-    activeWorkersCounter              metrics.Counter
-    pendingWMsTasksCounter            metrics.Counter
-    wmsBatchDurationTimer             metrics.Timer
-    wmsIdleTimer                      metrics.Timer
+	numWorkerManagersGauge metrics.Gauge
+	activeWorkersCounter   metrics.Counter
+	pendingWMsTasksCounter metrics.Counter
+	wmsBatchDurationTimer  metrics.Timer
+	wmsIdleTimer           metrics.Timer
 }
 
 func newConsumerMetrics(consumerName string) *consumerMetrics {
-    kafkaMetrics := &consumerMetrics{
-        registry: metrics.NewRegistry(),
-    }
+	kafkaMetrics := &consumerMetrics{
+		registry: metrics.NewRegistry(),
+	}
 
-    kafkaMetrics.fetchersIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchersIdleTime-%s", consumerName), kafkaMetrics.registry)
-    kafkaMetrics.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchDuration-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.fetchersIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchersIdleTime-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchDuration-%s", consumerName), kafkaMetrics.registry)
 
-    kafkaMetrics.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", consumerName), kafkaMetrics.registry)
-    kafkaMetrics.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", consumerName), kafkaMetrics.registry)
-    kafkaMetrics.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", consumerName), kafkaMetrics.registry)
-    kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", consumerName), kafkaMetrics.registry)
-    kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", consumerName), kafkaMetrics.registry)
 
-    return kafkaMetrics
+	return kafkaMetrics
 }
 
 func (this *consumerMetrics) FetchersIdleTimer() metrics.Timer {
-    return this.fetchersIdleTimer
+	return this.fetchersIdleTimer
 }
 
 func (this *consumerMetrics) FetchDurationTimer() metrics.Timer {
-    return this.fetchDurationTimer
+	return this.fetchDurationTimer
 }
 
 func (this *consumerMetrics) NumWorkerManagersGauge() metrics.Gauge {
-    return this.numWorkerManagersGauge
+	return this.numWorkerManagersGauge
 }
 
 func (this *consumerMetrics) WMsIdleTimer() metrics.Timer {
-    return this.wmsIdleTimer
+	return this.wmsIdleTimer
 }
 
 func (this *consumerMetrics) WMsBatchDurationTimer() metrics.Timer {
-    return this.wmsBatchDurationTimer
+	return this.wmsBatchDurationTimer
 }
 
 func (this *consumerMetrics) PendingWMsTasksCounter() metrics.Counter {
-    return this.pendingWMsTasksCounter
+	return this.pendingWMsTasksCounter
 }
 
 func (this *consumerMetrics) ActiveWorkersCounter() metrics.Counter {
-    return this.activeWorkersCounter
+	return this.activeWorkersCounter
 }
 
 func (this *consumerMetrics) Stats() map[string]map[string]float64 {
-    metricsMap := make(map[string]map[string]float64)
-    this.registry.Each(func(name string, metric interface{}) {
-        metricsMap[name] = make(map[string]float64)
-        switch entry := metric.(type) {
-            case metrics.Counter:
-            {
-                metricsMap[name]["count"] = float64(entry.Count())
-            }
-            case metrics.Gauge:
-            {
-                metricsMap[name]["value"] = float64(entry.Value())
-            }
-            case metrics.Histogram:
-            {
-                metricsMap[name]["count"] = float64(entry.Count())
-                metricsMap[name]["max"] = float64(entry.Max())
-                metricsMap[name]["min"] = float64(entry.Min())
-                metricsMap[name]["mean"] = entry.Mean()
-                metricsMap[name]["stdDev"] = entry.StdDev()
-                metricsMap[name]["sum"] = float64(entry.Sum())
-                metricsMap[name]["variance"] = entry.Variance()
-            }
-            case metrics.Meter:
-            {
-                metricsMap[name]["count"] = float64(entry.Count())
-                metricsMap[name]["rate1"] = entry.Rate1()
-                metricsMap[name]["rate5"] = entry.Rate5()
-                metricsMap[name]["rate15"] = entry.Rate15()
-                metricsMap[name]["rateMean"] = entry.RateMean()
-            }
-            case metrics.Timer:
-            {
-                metricsMap[name]["count"] = float64(entry.Count())
-                metricsMap[name]["max"] = float64(entry.Max())
-                metricsMap[name]["min"] = float64(entry.Min())
-                metricsMap[name]["mean"] = entry.Mean()
-                metricsMap[name]["rate1"] = entry.Rate1()
-                metricsMap[name]["rate5"] = entry.Rate5()
-                metricsMap[name]["rate15"] = entry.Rate15()
-                metricsMap[name]["rateMean"] = entry.RateMean()
-                metricsMap[name]["stdDev"] = entry.StdDev()
-                metricsMap[name]["sum"] = float64(entry.Sum())
-                metricsMap[name]["variance"] = entry.Variance()
-            }
-        }
-    })
+	metricsMap := make(map[string]map[string]float64)
+	this.registry.Each(func(name string, metric interface{}) {
+		metricsMap[name] = make(map[string]float64)
+		switch entry := metric.(type) {
+		case metrics.Counter:
+			{
+				metricsMap[name]["count"] = float64(entry.Count())
+			}
+		case metrics.Gauge:
+			{
+				metricsMap[name]["value"] = float64(entry.Value())
+			}
+		case metrics.Histogram:
+			{
+				metricsMap[name]["count"] = float64(entry.Count())
+				metricsMap[name]["max"] = float64(entry.Max())
+				metricsMap[name]["min"] = float64(entry.Min())
+				metricsMap[name]["mean"] = entry.Mean()
+				metricsMap[name]["stdDev"] = entry.StdDev()
+				metricsMap[name]["sum"] = float64(entry.Sum())
+				metricsMap[name]["variance"] = entry.Variance()
+			}
+		case metrics.Meter:
+			{
+				metricsMap[name]["count"] = float64(entry.Count())
+				metricsMap[name]["rate1"] = entry.Rate1()
+				metricsMap[name]["rate5"] = entry.Rate5()
+				metricsMap[name]["rate15"] = entry.Rate15()
+				metricsMap[name]["rateMean"] = entry.RateMean()
+			}
+		case metrics.Timer:
+			{
+				metricsMap[name]["count"] = float64(entry.Count())
+				metricsMap[name]["max"] = float64(entry.Max())
+				metricsMap[name]["min"] = float64(entry.Min())
+				metricsMap[name]["mean"] = entry.Mean()
+				metricsMap[name]["rate1"] = entry.Rate1()
+				metricsMap[name]["rate5"] = entry.Rate5()
+				metricsMap[name]["rate15"] = entry.Rate15()
+				metricsMap[name]["rateMean"] = entry.RateMean()
+				metricsMap[name]["stdDev"] = entry.StdDev()
+				metricsMap[name]["sum"] = float64(entry.Sum())
+				metricsMap[name]["variance"] = entry.Variance()
+			}
+		}
+	})
 
-    return metricsMap
+	return metricsMap
 }
 
 func (this *consumerMetrics) Close() {
-    this.registry.UnregisterAll()
+	this.registry.UnregisterAll()
 }
