@@ -19,12 +19,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/samuel/go-zookeeper/zk"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 var (
@@ -94,7 +95,7 @@ func (this *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid st
 
 func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid string, TopicCount TopicsToNumStreams) (err error) {
 	Debugf(this, "Trying to register consumer %s at group %s in Zookeeper", Consumerid, Groupid)
-	registryDir := newZKGroupDirs(Groupid).ConsumerRegistryDir
+	registryDir := newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir
 	pathToConsumer := fmt.Sprintf("%s/%s", registryDir, Consumerid)
 	data, mappingError := json.Marshal(&ConsumerInfo{
 		Version:      int16(1),
@@ -129,7 +130,7 @@ func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid
 
 /* Deregisters consumer with Consumerid id that is a part of consumer group Groupid form this ConsumerCoordinator. Returns an error if deregistration failed, nil otherwise. */
 func (this *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid string) (err error) {
-	path := fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid)
+	path := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir, Consumerid)
 	Debugf(this, "Trying to deregister consumer at path: %s", path)
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		err = this.deleteNode(path)
@@ -158,7 +159,7 @@ func (this *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid str
 
 func (this *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid string) (*ConsumerInfo, error) {
 	data, _, err := this.zkConn.Get(fmt.Sprintf("%s/%s",
-		newZKGroupDirs(Groupid).ConsumerRegistryDir, Consumerid))
+		newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir, Consumerid))
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +228,7 @@ func (this *ZookeeperCoordinator) GetConsumersInGroup(Groupid string) (consumers
 
 func (this *ZookeeperCoordinator) tryGetConsumersInGroup(Groupid string) (consumers []string, err error) {
 	Debugf(this, "Getting consumers in group %s", Groupid)
-	consumers, _, err = this.zkConn.Children(newZKGroupDirs(Groupid).ConsumerRegistryDir)
+	consumers, _, err = this.zkConn.Children(newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir)
 	return
 }
 
@@ -244,8 +245,12 @@ func (this *ZookeeperCoordinator) GetAllTopics() (topics []string, err error) {
 	return
 }
 
+func (this *ZookeeperCoordinator) rootedPath(path string) string {
+	return this.config.Root + path
+}
+
 func (this *ZookeeperCoordinator) tryGetAllTopics() (topics []string, err error) {
-	topics, _, _, err = this.zkConn.ChildrenW(brokerTopicsPath)
+	topics, _, _, err = this.zkConn.ChildrenW(this.rootedPath(brokerTopicsPath))
 	return
 }
 
@@ -298,7 +303,7 @@ func (this *ZookeeperCoordinator) GetAllBrokers() (brokers []*BrokerInfo, err er
 
 func (this *ZookeeperCoordinator) tryGetAllBrokers() ([]*BrokerInfo, error) {
 	Debug(this, "Getting all brokers in cluster")
-	brokerIds, _, err := this.zkConn.Children(brokerIdsPath)
+	brokerIds, _, err := this.zkConn.Children(this.rootedPath(brokerIdsPath))
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +339,7 @@ func (this *ZookeeperCoordinator) GetOffsetForTopicPartition(Groupid string, Top
 }
 
 func (this *ZookeeperCoordinator) tryGetOffsetForTopicPartition(Groupid string, TopicPartition *TopicAndPartition) (int64, error) {
-	dirs := newZKGroupTopicDirs(Groupid, TopicPartition.Topic)
+	dirs := newZKGroupTopicDirs(this.config.Root, Groupid, TopicPartition.Topic)
 	offset, _, err := this.zkConn.Get(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition))
 	if err != nil {
 		if err == zk.ErrNoNode {
@@ -400,32 +405,34 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 					Trace(this, e)
 					if e != emptyEvent {
 						if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
-							if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+							if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
+								newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 								changes <- BlueGreenRequest
 							} else {
 								changes <- Regular
 							}
 						}
 
-						if strings.HasPrefix(e.Path, newZKGroupDirs(Groupid).ConsumerRegistryDir) {
+						if strings.HasPrefix(e.Path, newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir) {
 							Info(this, "Trying to renew watcher for consumer registry")
 							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
 							if err != nil {
 								panic(err)
 							}
-						} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+						} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
+							newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 							Info(this, "Trying to renew watcher for consumer API dir")
 							blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
 							if err != nil {
 								panic(err)
 							}
-						} else if strings.HasPrefix(e.Path, brokerTopicsPath) {
+						} else if strings.HasPrefix(e.Path, this.rootedPath(brokerTopicsPath)) {
 							Info(this, "Trying to renew watcher for consumer topic dir")
 							topicsWatcher, err = this.getTopicsWatcher()
 							if err != nil {
 								panic(err)
 							}
-						} else if strings.HasPrefix(e.Path, brokerIdsPath) {
+						} else if strings.HasPrefix(e.Path, this.rootedPath(brokerIdsPath)) {
 							Info(this, "Trying to renew watcher for brokers in cluster")
 							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
 							if err != nil {
@@ -466,7 +473,7 @@ func (this *ZookeeperCoordinator) GetBlueGreenRequest(Group string) (topics map[
 }
 
 func (this *ZookeeperCoordinator) tryGetBlueGreenRequest(Group string) (map[string]*BlueGreenDeployment, error) {
-	apiPath := fmt.Sprintf("%s/%s", newZKGroupDirs(Group).ConsumerApiDir, BlueGreenDeploymentAPI)
+	apiPath := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Group).ConsumerApiDir, BlueGreenDeploymentAPI)
 	children, _, err := this.zkConn.Children(apiPath)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("Unable to get new deployed topics: %s", err.Error()))
@@ -523,7 +530,7 @@ func (this *ZookeeperCoordinator) tryRequestBlueGreenDeployment(Group string, bl
 	if err != nil {
 		return err
 	}
-	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%s/%d", newZKGroupDirs(Group).ConsumerApiDir, BlueGreenDeploymentAPI, time.Now().Unix()), data)
+	return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%s/%d", newZKGroupDirs(this.config.Root, Group).ConsumerApiDir, BlueGreenDeploymentAPI, time.Now().Unix()), data)
 }
 
 func (this *ZookeeperCoordinator) RemoveOldApiRequests(group string) (err error) {
@@ -539,7 +546,7 @@ func (this *ZookeeperCoordinator) RemoveOldApiRequests(group string) (err error)
 func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api ConsumerGroupApi) error {
 	requests := make([]string, 0)
 	var err error
-	apiPath := fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerApiDir, api)
+	apiPath := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api)
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		requests, _, err = this.zkConn.Children(apiPath)
 		if err != nil {
@@ -595,7 +602,7 @@ barrierLoop:
 }
 
 func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group string, stateHash string, api string, finished chan bool) (<-chan CoordinatorEvent, error) {
-	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(group).ConsumerApiDir, api, stateHash)
+	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		Infof(this, "Commencing assertion series at %s", path)
@@ -647,7 +654,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 
 func (this *ZookeeperCoordinator) isStateBarrierPassed(group string, stateHash string, api string, expected int) (bool, error) {
 	Debugf(this, "Trying to assert rebalance state for group %s and hash %s with %d", group, stateHash, expected)
-	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(group).ConsumerApiDir, api, stateHash)
+	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
 	var children []string
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
@@ -680,7 +687,7 @@ func (this *ZookeeperCoordinator) removeStateBarrier(group string, stateHash str
 }
 
 func (this *ZookeeperCoordinator) tryRemoveStateBarrier(group string, stateHash string, api string) error {
-	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(group).ConsumerApiDir, api, stateHash)
+	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
 	Debugf(this, "Trying to fail rebalance at path: %s", path)
 
 	return this.deleteNode(path)
@@ -726,7 +733,7 @@ func (this *ZookeeperCoordinator) ClaimPartitionOwnership(Groupid string, Topic 
 }
 
 func (this *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic string, partition int32, consumerThreadId ConsumerThreadId) (bool, error) {
-	dirs := newZKGroupTopicDirs(group, topic)
+	dirs := newZKGroupTopicDirs(this.config.Root, group, topic)
 	this.createOrUpdatePathParentMayNotExistFailFast(dirs.ConsumerOwnerDir, make([]byte, 0))
 
 	pathToOwn := fmt.Sprintf("%s/%d", dirs.ConsumerOwnerDir, partition)
@@ -770,7 +777,7 @@ func (this *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topi
 }
 
 func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(group string, topic string, partition int32) error {
-	path := fmt.Sprintf("%s/%d", newZKGroupTopicDirs(group, topic).ConsumerOwnerDir, partition)
+	path := fmt.Sprintf("%s/%d", newZKGroupTopicDirs(this.config.Root, group, topic).ConsumerOwnerDir, partition)
 	err := this.deleteNode(path)
 	if err != nil && err != zk.ErrNoNode {
 		return err
@@ -782,7 +789,7 @@ func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(group string, top
 // Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Groupid.
 // Returns error if failed to commit offset.
 func (this *ZookeeperCoordinator) CommitOffset(Groupid string, TopicPartition *TopicAndPartition, Offset int64) error {
-	dirs := newZKGroupTopicDirs(Groupid, TopicPartition.Topic)
+	dirs := newZKGroupTopicDirs(this.config.Root, Groupid, TopicPartition.Topic)
 	err := this.updateRecord(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
 	if err == zk.ErrNoNode {
 		return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
@@ -792,7 +799,7 @@ func (this *ZookeeperCoordinator) CommitOffset(Groupid string, TopicPartition *T
 }
 
 func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {
-	dirs := newZKGroupDirs(group)
+	dirs := newZKGroupDirs(this.config.Root, group)
 	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerDir, make([]byte, 0))
 	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerGroupDir, make([]byte, 0))
 	this.createOrUpdatePathParentMayNotExistFailSafe(dirs.ConsumerRegistryDir, make([]byte, 0))
@@ -804,7 +811,7 @@ func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {
 
 func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Event, error) {
 	Debug(this, "Subscribing for events from broker registry")
-	_, _, watcher, err := this.zkConn.ChildrenW(brokerIdsPath)
+	_, _, watcher, err := this.zkConn.ChildrenW(this.rootedPath(brokerIdsPath))
 	if err != nil {
 		return nil, err
 	}
@@ -814,7 +821,7 @@ func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Eve
 
 func (this *ZookeeperCoordinator) getConsumersInGroupWatcher(group string) (<-chan zk.Event, error) {
 	Debugf(this, "Getting consumer watcher for group %s", group)
-	_, _, watcher, err := this.zkConn.ChildrenW(newZKGroupDirs(group).ConsumerRegistryDir)
+	_, _, watcher, err := this.zkConn.ChildrenW(newZKGroupDirs(this.config.Root, group).ConsumerRegistryDir)
 	if err != nil {
 		return nil, err
 	}
@@ -824,7 +831,7 @@ func (this *ZookeeperCoordinator) getConsumersInGroupWatcher(group string) (<-ch
 
 func (this *ZookeeperCoordinator) getBlueGreenWatcher(group string) (<-chan zk.Event, error) {
 	Debugf(this, "Getting watcher for consumer group '%s' API", group)
-	_, _, watcher, err := this.zkConn.ChildrenW(fmt.Sprintf("%s/%s", newZKGroupDirs(group).ConsumerApiDir, BlueGreenDeploymentAPI))
+	_, _, watcher, err := this.zkConn.ChildrenW(fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, BlueGreenDeploymentAPI))
 	if err != nil {
 		return nil, err
 	}
@@ -833,13 +840,13 @@ func (this *ZookeeperCoordinator) getBlueGreenWatcher(group string) (<-chan zk.E
 }
 
 func (this *ZookeeperCoordinator) getTopicsWatcher() (watcher <-chan zk.Event, err error) {
-	_, _, watcher, err = this.zkConn.ChildrenW(brokerTopicsPath)
+	_, _, watcher, err = this.zkConn.ChildrenW(this.rootedPath(brokerTopicsPath))
 	return
 }
 
 func (this *ZookeeperCoordinator) getBrokerInfo(brokerId int32) (*BrokerInfo, error) {
 	Debugf(this, "Getting info for broker %d", brokerId)
-	pathToBroker := fmt.Sprintf("%s/%d", brokerIdsPath, brokerId)
+	pathToBroker := fmt.Sprintf("%s/%d", this.rootedPath(brokerIdsPath), brokerId)
 	data, _, zkError := this.zkConn.Get(pathToBroker)
 	if zkError != nil {
 		return nil, zkError
@@ -873,7 +880,7 @@ func (this *ZookeeperCoordinator) getPartitionAssignmentsForTopics(topics []stri
 }
 
 func (this *ZookeeperCoordinator) getTopicInfo(topic string) (*TopicInfo, error) {
-	data, _, err := this.zkConn.Get(fmt.Sprintf("%s/%s", brokerTopicsPath, topic))
+	data, _, err := this.zkConn.Get(fmt.Sprintf("%s/%s", this.rootedPath(brokerTopicsPath), topic))
 	if err != nil {
 		return nil, err
 	}
@@ -952,6 +959,9 @@ type ZookeeperConfig struct {
 
 	/* Backoff to retry any request */
 	RequestBackoff time.Duration
+
+	/* kafka Root */
+	Root string
 }
 
 /* Created a new ZookeeperConfig with sane defaults. Default ZookeeperConnect points to localhost. */
@@ -961,10 +971,20 @@ func NewZookeeperConfig() *ZookeeperConfig {
 	config.ZookeeperTimeout = 1 * time.Second
 	config.MaxRequestRetries = 3
 	config.RequestBackoff = 150 * time.Millisecond
+	config.Root = ""
 
 	return config
 }
 
+// ZookeeperConfigFromFile is a helper function that loads zookeeper configuration information from file.
+// The file accepts the following fields:
+//  zookeeper.connect
+//  zookeeper.kafka.Root
+//  zookeeper.connection.timeout
+//  zookeeper.max.request.retries
+//  zookeeper.request.backoff
+// The configuration file entries should be constructed in key=value syntax. A # symbol at the beginning
+// of a line indicates a comment. Blank lines are ignored. The file should end with a newline character.
 func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 	z, err := LoadConfiguration(filename)
 	if err != nil {
@@ -973,13 +993,15 @@ func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 
 	config := NewZookeeperConfig()
 	setStringSliceConfig(&config.ZookeeperConnect, z["zookeeper.connect"], ",")
-	if setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]) != nil {
+	setStringConfig(&config.Root, z["zookeeper.kafka.Root"])
+
+	if err := setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]) != nil {
+	if err := setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.RequestBackoff, z["zookeeper.request.backoff"]) != nil {
+	if err := setDurationConfig(&config.RequestBackoff, z["zookeeper.request.backoff"]); err != nil {
 		return nil, err
 	}
 
@@ -995,14 +1017,15 @@ type zkGroupDirs struct {
 	ConsumerRebalanceDir string
 }
 
-func newZKGroupDirs(group string) *zkGroupDirs {
-	consumerGroupDir := fmt.Sprintf("%s/%s", consumersPath, group)
+func newZKGroupDirs(root string, group string) *zkGroupDirs {
+	consumerPathRooted := fmt.Sprintf("%s%s", root, consumersPath)
+	consumerGroupDir := fmt.Sprintf("%s/%s", consumerPathRooted, group)
 	consumerRegistryDir := fmt.Sprintf("%s/ids", consumerGroupDir)
 	consumerApiDir := fmt.Sprintf("%s/api", consumerGroupDir)
 	consumerRebalanceDir := fmt.Sprintf("%s/api/rebalance", consumerGroupDir)
 	return &zkGroupDirs{
 		Group:                group,
-		ConsumerDir:          consumersPath,
+		ConsumerDir:          consumerPathRooted,
 		ConsumerGroupDir:     consumerGroupDir,
 		ConsumerRegistryDir:  consumerRegistryDir,
 		ConsumerApiDir:       consumerApiDir,
@@ -1017,8 +1040,8 @@ type zkGroupTopicDirs struct {
 	ConsumerOwnerDir  string
 }
 
-func newZKGroupTopicDirs(group string, topic string) *zkGroupTopicDirs {
-	zkGroupsDirs := newZKGroupDirs(group)
+func newZKGroupTopicDirs(root string, group string, topic string) *zkGroupTopicDirs {
+	zkGroupsDirs := newZKGroupDirs(root, group)
 	return &zkGroupTopicDirs{
 		ZkGroupDirs:       zkGroupsDirs,
 		Topic:             topic,

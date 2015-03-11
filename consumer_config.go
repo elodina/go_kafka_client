@@ -245,7 +245,7 @@ FetchBatchTimeout %v
 		c.Strategy, c.FetchBatchSize, c.FetchBatchTimeout)
 }
 
-//Validates this ConsumerConfig. Returns a corresponding error if the ConsumerConfig is invalid and nil otherwise.
+// Validate this ConsumerConfig. Returns a corresponding error if the ConsumerConfig is invalid and nil otherwise.
 func (c *ConsumerConfig) Validate() error {
 	if c.Groupid == "" {
 		return errors.New("Groupid cannot be empty")
@@ -272,11 +272,11 @@ func (c *ConsumerConfig) Validate() error {
 	}
 
 	if c.OffsetsStorage != ZookeeperOffsetStorage && c.OffsetsStorage != KafkaOffsetStorage {
-		return errors.New(fmt.Sprintf("OffsetsStorage must be either \"%s\" or \"%s\"", ZookeeperOffsetStorage, KafkaOffsetStorage))
+		return fmt.Errorf("OffsetsStorage must be either \"%s\" or \"%s\"", ZookeeperOffsetStorage, KafkaOffsetStorage)
 	}
 
 	if c.AutoOffsetReset != SmallestOffset && c.AutoOffsetReset != LargestOffset {
-		return errors.New(fmt.Sprintf("AutoOffsetReset must be either \"%s\" or \"%s\"", SmallestOffset, LargestOffset))
+		return fmt.Errorf("AutoOffsetReset must be either \"%s\" or \"%s\"", SmallestOffset, LargestOffset)
 	}
 
 	if c.Clientid == "" {
@@ -284,7 +284,7 @@ func (c *ConsumerConfig) Validate() error {
 	}
 
 	if c.PartitionAssignmentStrategy != RangeStrategy && c.PartitionAssignmentStrategy != RoundRobinStrategy {
-		return errors.New(fmt.Sprintf("PartitionAssignmentStrategy must be either \"%s\" or \"%s\"", RangeStrategy, RoundRobinStrategy))
+		return fmt.Errorf("PartitionAssignmentStrategy must be either \"%s\" or \"%s\"", RangeStrategy, RoundRobinStrategy)
 	}
 
 	if c.NumWorkers <= 0 {
@@ -338,6 +338,41 @@ func (c *ConsumerConfig) Validate() error {
 	return nil
 }
 
+// ConsumerConfigFromFile is a helper function that loads a consumer's configuration from file.
+// The file accepts the following fields:
+//  group.id
+//  consumer.id
+//  fetch.message.max.bytes
+//  num.consumer.fetchers
+//  rebalance.max.retries
+//  queued.max.message.chunks
+//  fetch.min.bytes
+//  fetch.wait.max.ms
+//  rebalance.backoff
+//  refresh.leader.backoff
+//  offset.commit.max.retries
+//  offset.commit.interval
+//  offsets.storage
+//  auto.offset.reset
+//  exclude.internal.topics
+//  partition.assignment.strategy
+//  num.workers
+//  max.worker.retries
+//  worker.retry.threshold
+//  worker.threshold.time.window
+//  worker.task.timeout
+//  worker.backoff
+//  worker.managers.stop.timeout
+//  fetch.batch.size
+//  fetch.batch.timeout
+//  requeue.ask.next.backoff
+//  fetch.max.retries
+//  fetch.topic.metadata.retries
+//  fetch.topic.metadata.backoff
+//  fetch.request.backoff
+//  blue.green.deployment.enabled
+// The configuration file entries should be constructed in key=value syntax. A # symbol at the beginning
+// of a line indicates a comment. Blank lines are ignored. The file should end with a newline character.
 func ConsumerConfigFromFile(filename string) (*ConsumerConfig, error) {
 	c, err := LoadConfiguration(filename)
 	if err != nil {
@@ -347,83 +382,83 @@ func ConsumerConfigFromFile(filename string) (*ConsumerConfig, error) {
 	config := DefaultConsumerConfig()
 	setStringConfig(&config.Groupid, c["group.id"])
 	setStringConfig(&config.Consumerid, c["consumer.id"])
-	if setDurationConfig(&config.SocketTimeout, c["socket.timeout"]) != nil {
+	if err := setDurationConfig(&config.SocketTimeout, c["socket.timeout"]); err != nil {
 		return nil, err
 	}
-	if setInt32Config(&config.FetchMessageMaxBytes, c["fetch.message.max.bytes"]) != nil {
+	if err := setInt32Config(&config.FetchMessageMaxBytes, c["fetch.message.max.bytes"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.NumConsumerFetchers, c["num.consumer.fetchers"]) != nil {
+	if err := setIntConfig(&config.NumConsumerFetchers, c["num.consumer.fetchers"]); err != nil {
 		return nil, err
 	}
-	if setInt32Config(&config.QueuedMaxMessages, c["queued.max.message.chunks"]) != nil {
+	if err := setInt32Config(&config.QueuedMaxMessages, c["queued.max.message.chunks"]); err != nil {
 		return nil, err
 	}
-	if setInt32Config(&config.RebalanceMaxRetries, c["rebalance.max.retries"]) != nil {
+	if err := setInt32Config(&config.RebalanceMaxRetries, c["rebalance.max.retries"]); err != nil {
 		return nil, err
 	}
-	if setInt32Config(&config.FetchMinBytes, c["fetch.min.bytes"]) != nil {
+	if err := setInt32Config(&config.FetchMinBytes, c["fetch.min.bytes"]); err != nil {
 		return nil, err
 	}
-	if setInt32Config(&config.FetchWaitMaxMs, c["fetch.wait.max.ms"]) != nil {
+	if err := setInt32Config(&config.FetchWaitMaxMs, c["fetch.wait.max.ms"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.RebalanceBackoff, c["rebalance.backoff"]) != nil {
+	if err := setDurationConfig(&config.RebalanceBackoff, c["rebalance.backoff"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.RefreshLeaderBackoff, c["refresh.leader.backoff"]) != nil {
+	if err := setDurationConfig(&config.RefreshLeaderBackoff, c["refresh.leader.backoff"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.OffsetsCommitMaxRetries, c["offset.commit.max.retries"]) != nil {
+	if err := setIntConfig(&config.OffsetsCommitMaxRetries, c["offset.commit.max.retries"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.OffsetCommitInterval, c["offset.commit.interval"]) != nil {
+	if err := setDurationConfig(&config.OffsetCommitInterval, c["offset.commit.interval"]); err != nil {
 		return nil, err
 	}
 	setStringConfig(&config.OffsetsStorage, c["offsets.storage"])
 	setStringConfig(&config.AutoOffsetReset, c["auto.offset.reset"])
 	setBoolConfig(&config.ExcludeInternalTopics, c["exclude.internal.topics"])
 	setStringConfig(&config.PartitionAssignmentStrategy, c["partition.assignment.strategy"])
-	if setIntConfig(&config.NumWorkers, c["num.workers"]) != nil {
+	if err := setIntConfig(&config.NumWorkers, c["num.workers"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.MaxWorkerRetries, c["max.worker.retries"]) != nil {
+	if err := setIntConfig(&config.MaxWorkerRetries, c["max.worker.retries"]); err != nil {
 		return nil, err
 	}
-	if setInt32Config(&config.WorkerRetryThreshold, c["worker.retry.threshold"]) != nil {
+	if err := setInt32Config(&config.WorkerRetryThreshold, c["worker.retry.threshold"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.WorkerThresholdTimeWindow, c["worker.threshold.time.window"]) != nil {
+	if err := setDurationConfig(&config.WorkerThresholdTimeWindow, c["worker.threshold.time.window"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.WorkerTaskTimeout, c["worker.task.timeout"]) != nil {
+	if err := setDurationConfig(&config.WorkerTaskTimeout, c["worker.task.timeout"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.WorkerBackoff, c["worker.backoff"]) != nil {
+	if err := setDurationConfig(&config.WorkerBackoff, c["worker.backoff"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.WorkerManagersStopTimeout, c["worker.managers.stop.timeout"]) != nil {
+	if err := setDurationConfig(&config.WorkerManagersStopTimeout, c["worker.managers.stop.timeout"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.FetchBatchSize, c["fetch.batch.size"]) != nil {
+	if err := setIntConfig(&config.FetchBatchSize, c["fetch.batch.size"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.FetchBatchTimeout, c["fetch.batch.timeout"]) != nil {
+	if err := setDurationConfig(&config.FetchBatchTimeout, c["fetch.batch.timeout"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.RequeueAskNextBackoff, c["requeue.ask.next.backoff"]) != nil {
+	if err := setDurationConfig(&config.RequeueAskNextBackoff, c["requeue.ask.next.backoff"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.FetchMaxRetries, c["fetch.max.retries"]) != nil {
+	if err := setIntConfig(&config.FetchMaxRetries, c["fetch.max.retries"]); err != nil {
 		return nil, err
 	}
-	if setIntConfig(&config.FetchTopicMetadataRetries, c["fetch.topic.metadata.retries"]) != nil {
+	if err := setIntConfig(&config.FetchTopicMetadataRetries, c["fetch.topic.metadata.retries"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.FetchTopicMetadataBackoff, c["fetch.topic.metadata.backoff"]) != nil {
+	if err := setDurationConfig(&config.FetchTopicMetadataBackoff, c["fetch.topic.metadata.backoff"]); err != nil {
 		return nil, err
 	}
-	if setDurationConfig(&config.FetchRequestBackoff, c["fetch.request.backoff"]) != nil {
+	if err := setDurationConfig(&config.FetchRequestBackoff, c["fetch.request.backoff"]); err != nil {
 		return nil, err
 	}
 	setBoolConfig(&config.BlueGreenDeploymentEnabled, c["blue.green.deployment.enabled"])

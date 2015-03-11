@@ -18,9 +18,10 @@ package go_kafka_client
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/samuel/go-zookeeper/zk"
 	"testing"
 	"time"
+
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 var (
@@ -125,7 +126,8 @@ func testGetConsumersInGroup(t *testing.T) {
 func testDeregisterConsumer(t *testing.T) {
 	consumerId := fmt.Sprintf(consumerIdPattern, 0)
 	coordinator.DeregisterConsumer(consumerId, consumerGroup)
-	exists, _, err := zkConnection.Exists(fmt.Sprintf("%s/%s", newZKGroupDirs(consumerGroup).ConsumerRegistryDir, consumerId))
+	exists, _, err := zkConnection.Exists(fmt.Sprintf("%s/%s",
+		newZKGroupDirs(coordinator.config.Root, consumerGroup).ConsumerRegistryDir, consumerId))
 	if err != nil {
 		t.Error(err)
 	}

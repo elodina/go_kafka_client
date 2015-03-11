@@ -46,6 +46,22 @@ func DefaultProducerConfig() *ProducerConfig {
 	}
 }
 
+// ProducerConfigFromFile is a helper function that loads a producer's configuration information from file.
+// The file accepts the following fields:
+//  client.id
+//  metadata.broker.list
+//  send.buffer.size
+//  compression.codec
+//  flush.byte.count
+//  flush.timeout
+//  batch.size
+//  max.message.bytes
+//  max.messages.per.request
+//  acks
+//  retry.backoff
+//  timeout
+// The configuration file entries should be constructed in key=value syntax. A # symbol at the beginning
+// of a line indicates a comment. Blank lines are ignored. The file should end with a newline character.
 func ProducerConfigFromFile(filename string) (*ProducerConfig, error) {
 	p, err := LoadConfiguration(filename)
 	if err != nil {
