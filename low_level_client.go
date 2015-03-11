@@ -86,6 +86,7 @@ func (this *SaramaClient) Initialize() error {
 func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]*Message, error) {
 	leader, err := this.client.Leader(topic, partition)
 	if err != nil {
+		this.client.RefreshTopicMetadata(topic)
 		return nil, err
 	}
 
@@ -97,6 +98,7 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 
 	response, err := leader.Fetch(this.config.Clientid, fetchRequest)
 	if err != nil {
+		this.client.RefreshTopicMetadata(topic)
 		return nil, err
 	}
 
@@ -117,6 +119,7 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 					}
 				default:
 					{
+						this.client.RefreshTopicMetadata(topic)
 						return nil, data.Err
 					}
 				}
