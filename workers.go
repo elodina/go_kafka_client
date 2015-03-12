@@ -68,6 +68,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		batchOrder:       make([]TaskId, 0),
 		topicPartition:   topicPartition,
 		largestOffset:    InvalidOffset,
+		lastCommittedOffset: InvalidOffset,
 		failCounter:      NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
 		batchProcessed:   make(chan bool),
 		managerStop:      make(chan bool),
