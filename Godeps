@@ -7,3 +7,4 @@ github.com/mcuadros/go-syslog 67a2b037f9694d5f12fff5c66233c92f5c277abb
 github.com/aybabtme/tailf d14324237929cb81857080f417ada24417ca49d1
 github.com/golang/protobuf/proto
 github.com/stealthly/siesta
+github.com/stealthly/go-avro
