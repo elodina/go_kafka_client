@@ -21,11 +21,9 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/Shopify/sarama"
-	metrics "github.com/rcrowley/go-metrics"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 )
 
 const (
@@ -48,7 +46,7 @@ const (
 type Consumer struct {
 	config                         *ConsumerConfig
 	fetcher                        *consumerFetcherManager
-	shouldUnsubscribe			   bool
+	shouldUnsubscribe              bool
 	unsubscribe                    chan bool
 	closeFinished                  chan bool
 	rebalanceLock                  sync.Mutex
@@ -61,12 +59,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 
-	numWorkerManagersGauge            metrics.Gauge
-	batchesSentToWorkerManagerCounter metrics.Counter
-	activeWorkersCounter              metrics.Counter
-	pendingWMsTasksCounter            metrics.Counter
-	wmsBatchDurationTimer             metrics.Timer
-	wmsIdleTimer                      metrics.Timer
+	metrics *consumerMetrics
 
 	lastSuccessfulRebalanceHash string
 }
@@ -93,14 +86,11 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.Coordinator.Connect(); err != nil {
 		panic(err)
 	}
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition)
-
-	c.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", c.String()), metrics.DefaultRegistry)
-	c.batchesSentToWorkerManagerCounter = metrics.NewRegisteredCounter(fmt.Sprintf("BatchesSentToWM-%s", c.String()), metrics.DefaultRegistry)
-	c.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", c.String()), metrics.DefaultRegistry)
-	c.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", c.String()), metrics.DefaultRegistry)
-	c.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", c.String()), metrics.DefaultRegistry)
-	c.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", c.String()), metrics.DefaultRegistry)
+	if err := c.config.LowLevelClient.Initialize(); err != nil {
+		panic(err)
+	}
+	c.metrics = newConsumerMetrics(c.String())
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
 
 	return c
 }
@@ -154,12 +144,12 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 	}
 
-	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	offsets, err := c.fetchOffsets(topicPartitions)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to fetch offsets during rebalance: %s", err))
 	}
 	for _, topicPartition := range topicPartitions {
-		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+		offset := offsets[*topicPartition]
 		threadId := partitionOwnershipDecision[*topicPartition]
 		c.addPartitionTopicInfo(c.topicRegistry, topicPartition, offset, threadId)
 	}
@@ -289,16 +279,14 @@ func (c *Consumer) initializeWorkerManagers() {
 				topicPartition := TopicAndPartition{topic, partition}
 				workerManager, exists := c.workerManagers[topicPartition]
 				if !exists {
-					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.wmsIdleTimer,
-						c.wmsBatchDurationTimer, c.activeWorkersCounter, c.pendingWMsTasksCounter)
+					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.metrics)
 					c.workerManagers[topicPartition] = workerManager
 					go workerManager.Start()
 				}
 			}
 		}
 	})
-	c.numWorkerManagersGauge.Update(int64(len(c.workerManagers)))
-
+	c.metrics.NumWorkerManagersGauge().Update(int64(len(c.workerManagers)))
 }
 
 // Tells the Consumer to close all existing connections and stop.
@@ -326,9 +314,14 @@ func (c *Consumer) Close() <-chan bool {
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
 		Info(c, "Successfully deregistered consumer")
 
+		Info(c, "Closing low-level client")
+		c.config.LowLevelClient.Close()
 		Info(c, "Disconnecting from consumer coordinator")
 		c.config.Coordinator.Disconnect()
 		Info(c, "Disconnected from consumer coordinator")
+
+		Info(c, "Unregistering all metrics")
+		c.metrics.Close()
 
 		c.closeFinished <- true
 	}()
@@ -353,7 +346,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 			barrierSize := len(context.Consumers)
 			stateHash = context.hash()
 			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash,
-																	 barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
+				barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
 		}
 
 		<-c.Close()
@@ -390,30 +383,31 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		switch blueGreenRequest.Pattern {
 		case blackListPattern:
 			topicCount = &WildcardTopicsToNumStreams{
-			Coordinator:           c.config.Coordinator,
-			ConsumerId:            c.config.Consumerid,
-			TopicFilter:           NewBlackList(blueGreenRequest.Topics),
-			NumStreams:            c.config.NumConsumerFetchers,
-			ExcludeInternalTopics: c.config.ExcludeInternalTopics,
-		}
+				Coordinator:           c.config.Coordinator,
+				ConsumerId:            c.config.Consumerid,
+				TopicFilter:           NewBlackList(blueGreenRequest.Topics),
+				NumStreams:            c.config.NumConsumerFetchers,
+				ExcludeInternalTopics: c.config.ExcludeInternalTopics,
+			}
 		case whiteListPattern:
 			topicCount = &WildcardTopicsToNumStreams{
-			Coordinator:           c.config.Coordinator,
-			ConsumerId:            c.config.Consumerid,
-			TopicFilter:           NewWhiteList(blueGreenRequest.Topics),
-			NumStreams:            c.config.NumConsumerFetchers,
-			ExcludeInternalTopics: c.config.ExcludeInternalTopics,
-		}
-		case staticPattern: {
-			topicMap := make(map[string]int)
-			for _, topic := range strings.Split(blueGreenRequest.Topics, ",") {
-				topicMap[topic] = c.config.NumConsumerFetchers
-			}
-			topicCount = &StaticTopicsToNumStreams{
+				Coordinator:           c.config.Coordinator,
 				ConsumerId:            c.config.Consumerid,
-				TopicsToNumStreamsMap: topicMap,
+				TopicFilter:           NewWhiteList(blueGreenRequest.Topics),
+				NumStreams:            c.config.NumConsumerFetchers,
+				ExcludeInternalTopics: c.config.ExcludeInternalTopics,
 			}
-		}
+		case staticPattern:
+			{
+				topicMap := make(map[string]int)
+				for _, topic := range strings.Split(blueGreenRequest.Topics, ",") {
+					topicMap[topic] = c.config.NumConsumerFetchers
+				}
+				topicCount = &StaticTopicsToNumStreams{
+					ConsumerId:            c.config.Consumerid,
+					TopicsToNumStreamsMap: topicMap,
+				}
+			}
 		}
 
 		//Getting the partitions for specified topics
@@ -429,8 +423,8 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 
 		//Creating assignment context with new parameters
 		newContext := newStaticAssignmentContext(blueGreenRequest.Group, c.config.Consumerid, context.Consumers,
-												 context.AllTopics, context.Brokers, topicCount, topicPartitionMap)
-												 c.config.Groupid = blueGreenRequest.Group
+			context.AllTopics, context.Brokers, topicCount, topicPartitionMap)
+		c.config.Groupid = blueGreenRequest.Group
 
 		//Resume consuming
 		c.resumeAfterClose(newContext)
@@ -442,7 +436,9 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.isShuttingdown = false
 	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition)
+	c.config.LowLevelClient.Initialize()
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+	c.metrics = newConsumerMetrics(c.String())
 
 	go c.startStreams()
 
@@ -452,13 +448,13 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	for topicPartition, _ := range partitionOwnershipDecision {
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 	}
-	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	offsets, err := c.fetchOffsets(topicPartitions)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to fetch offsets during rebalance: %s", err))
 	}
 	currentTopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
 	for _, topicPartition := range topicPartitions {
-		offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+		offset := offsets[*topicPartition]
 		threadId := partitionOwnershipDecision[*topicPartition]
 		c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
 	}
@@ -585,7 +581,7 @@ func (c *Consumer) rebalance() {
 					barrierSize := len(context.Consumers)
 					stateHash = context.hash()
 
-					if (c.lastSuccessfulRebalanceHash == stateHash) {
+					if c.lastSuccessfulRebalanceHash == stateHash {
 						Info(c, "No need in rebalance this time")
 						return
 					}
@@ -621,7 +617,7 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		topicPartitions = append(topicPartitions, &TopicAndPartition{topicPartition.Topic, topicPartition.Partition})
 	}
 
-	offsetsFetchResponse, err := c.fetchOffsets(topicPartitions)
+	offsets, err := c.fetchOffsets(topicPartitions)
 	if err != nil {
 		Errorf(c, "Failed to fetch offsets during rebalance: %s", err)
 		return false
@@ -634,7 +630,7 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		return true
 	} else {
 		for _, topicPartition := range topicPartitions {
-			offset := offsetsFetchResponse.Blocks[topicPartition.Topic][topicPartition.Partition].Offset
+			offset := offsets[*topicPartition]
 			threadId := partitionOwnershipDecision[*topicPartition]
 			c.addPartitionTopicInfo(currenttopicRegistry, topicPartition, offset, threadId)
 		}
@@ -678,34 +674,22 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 	c.connectChannels <- true
 }
 
-func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (*sarama.OffsetFetchResponse, error) {
-	if len(topicPartitions) == 0 {
-		return &sarama.OffsetFetchResponse{}, nil
-	} else {
-		blocks := make(map[string]map[int32]*sarama.OffsetFetchResponseBlock)
-		if c.config.OffsetsStorage == "zookeeper" {
-			for _, topicPartition := range topicPartitions {
-				offset, err := c.config.Coordinator.GetOffsetForTopicPartition(c.config.Groupid, topicPartition)
-				_, exists := blocks[topicPartition.Topic]
-				if !exists {
-					blocks[topicPartition.Topic] = make(map[int32]*sarama.OffsetFetchResponseBlock)
-				}
-				if err != nil {
-					return nil, err
-				} else {
-					blocks[topicPartition.Topic][int32(topicPartition.Partition)] = &sarama.OffsetFetchResponseBlock{
-						Offset:   offset,
-						Metadata: "",
-						Err:      sarama.ErrNoError,
-					}
-				}
+func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[TopicAndPartition]int64, error) {
+	offsets := make(map[TopicAndPartition]int64)
+	if c.config.OffsetsStorage == "zookeeper" {
+		for _, topicPartition := range topicPartitions {
+			offset, err := c.config.Coordinator.GetOffsetForTopicPartition(c.config.Groupid, topicPartition)
+			if err != nil {
+				return nil, err
+			} else {
+				offsets[*topicPartition] = offset
 			}
-		} else {
-			panic(fmt.Sprintf("Offset storage '%s' is not supported", c.config.OffsetsStorage))
 		}
-
-		return &sarama.OffsetFetchResponse{Blocks: blocks}, nil
+	} else {
+		panic(fmt.Sprintf("Offset storage '%s' is not supported", c.config.OffsetsStorage))
 	}
+
+	return offsets, nil
 }
 
 func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
@@ -776,52 +760,7 @@ func (c *Consumer) releasePartitionOwnership(localtopicRegistry map[string]map[i
 
 // Returns a state snapshot for this consumer. State snapshot contains a set of metrics splitted by topics and partitions.
 func (c *Consumer) StateSnapshot() *StateSnapshot {
-	metricsMap := make(map[string]map[string]float64)
-	metrics.DefaultRegistry.Each(func(name string, metric interface{}) {
-		metricsMap[name] = make(map[string]float64)
-		switch entry := metric.(type) {
-		case metrics.Counter:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-			}
-		case metrics.Gauge:
-			{
-				metricsMap[name]["value"] = float64(entry.Value())
-			}
-		case metrics.Histogram:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-				metricsMap[name]["max"] = float64(entry.Max())
-				metricsMap[name]["min"] = float64(entry.Min())
-				metricsMap[name]["mean"] = entry.Mean()
-				metricsMap[name]["stdDev"] = entry.StdDev()
-				metricsMap[name]["sum"] = float64(entry.Sum())
-				metricsMap[name]["variance"] = entry.Variance()
-			}
-		case metrics.Meter:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-				metricsMap[name]["rate1"] = entry.Rate1()
-				metricsMap[name]["rate5"] = entry.Rate5()
-				metricsMap[name]["rate15"] = entry.Rate15()
-				metricsMap[name]["rateMean"] = entry.RateMean()
-			}
-		case metrics.Timer:
-			{
-				metricsMap[name]["count"] = float64(entry.Count())
-				metricsMap[name]["max"] = float64(entry.Max())
-				metricsMap[name]["min"] = float64(entry.Min())
-				metricsMap[name]["mean"] = entry.Mean()
-				metricsMap[name]["rate1"] = entry.Rate1()
-				metricsMap[name]["rate5"] = entry.Rate5()
-				metricsMap[name]["rate15"] = entry.Rate15()
-				metricsMap[name]["rateMean"] = entry.RateMean()
-				metricsMap[name]["stdDev"] = entry.StdDev()
-				metricsMap[name]["sum"] = float64(entry.Sum())
-				metricsMap[name]["variance"] = entry.Variance()
-			}
-		}
-	})
+	metricsMap := c.metrics.Stats()
 
 	offsetsMap := make(map[string]map[int32]int64)
 	for topicAndPartition, workerManager := range c.workerManagers {

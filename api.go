@@ -15,13 +15,13 @@ limitations under the License. */
 
 package go_kafka_client
 
-
-var availableAPIs = []ConsumerGroupApi{ BlueGreenDeploymentAPI, Rebalance }
+var availableAPIs = []ConsumerGroupApi{BlueGreenDeploymentAPI, Rebalance}
 
 type ConsumerGroupApi string
+
 const (
 	BlueGreenDeploymentAPI ConsumerGroupApi = "blue_green"
-	Rebalance ConsumerGroupApi = "rebalance"
+	Rebalance              ConsumerGroupApi = "rebalance"
 )
 
 // DeployedTopics contain information needed to do a successful blue-green deployment.

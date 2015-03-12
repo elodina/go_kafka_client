@@ -17,7 +17,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/Shopify/sarama"
 	"time"
 )
 
@@ -132,30 +131,6 @@ func (p *partitionTopicInfo) String() string {
 		p.Topic, p.Partition, p.FetchedOffset, p.Buffer)
 }
 
-type brokerAndInitialOffset struct {
-	Broker     BrokerInfo
-	InitOffset int64
-}
-
-func (b *brokerAndInitialOffset) String() string {
-	return fmt.Sprintf("{Broker: %s, InitialOffset: %d}", b.Broker, b.InitOffset)
-}
-
-type brokerAndFetcherId struct {
-	Broker    BrokerInfo
-	FetcherId int
-}
-
-func (b *brokerAndFetcherId) String() string {
-	return fmt.Sprintf("{Broker: %s, FetcherId: %d}", b.Broker, b.FetcherId)
-}
-
-//Fetched data from Kafka broker for a particular topic and partition
-type TopicPartitionData struct {
-	TopicPartition TopicAndPartition
-	Data           *sarama.FetchResponseBlock
-}
-
 type intArray []int32
 
 func (s intArray) Len() int           { return len(s) }
@@ -236,6 +211,7 @@ type ConsumerCoordinator interface {
 
 // CoordinatorEvent is sent by consumer coordinator representing some state change.
 type CoordinatorEvent string
+
 const (
 	// A regular coordinator event that should normally trigger consumer rebalance.
 	Regular CoordinatorEvent = "Regular"

@@ -16,8 +16,6 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"fmt"
-	metrics "github.com/rcrowley/go-metrics"
 	"testing"
 	"time"
 )
@@ -117,13 +115,8 @@ func TestWorkerManager(t *testing.T) {
 	config.Coordinator = mockZk
 	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
 
-	wmsIdleTimer := metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", wmid), metrics.DefaultRegistry)
-	wmsBatchDurationTimer := metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", wmid), metrics.DefaultRegistry)
-	activeWorkersCounter := metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", wmid), metrics.DefaultRegistry)
-	pendingWMsTasksCounter := metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", wmid), metrics.DefaultRegistry)
-
-	manager := NewWorkerManager(wmid, config, topicPartition, wmsIdleTimer,
-		wmsBatchDurationTimer, activeWorkersCounter, pendingWMsTasksCounter)
+	metrics := newConsumerMetrics(wmid)
+	manager := NewWorkerManager(wmid, config, topicPartition, metrics)
 
 	go manager.Start()
 

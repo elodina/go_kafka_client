@@ -17,7 +17,6 @@ package go_kafka_client
 
 import (
 	"fmt"
-	metrics "github.com/rcrowley/go-metrics"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -44,16 +43,11 @@ type WorkerManager struct {
 	processingStop      chan bool
 	commitStop          chan bool
 
-	activeWorkersCounter metrics.Counter
-	pendingTasksCounter  metrics.Counter
-	batchDurationTimer   metrics.Timer
-	idleTimer            metrics.Timer
+	metrics *consumerMetrics
 }
 
 // Creates a new WorkerManager with given id using a given ConsumerConfig and responsible for managing given TopicAndPartition.
-func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition,
-	wmsIdleTimer metrics.Timer, batchDurationTimer metrics.Timer, activeWorkersCounter metrics.Counter,
-	pendingWMsTasksCounter metrics.Counter) *WorkerManager {
+func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, metrics *consumerMetrics) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -65,24 +59,21 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	}
 
 	return &WorkerManager{
-		id:                   id,
-		config:               config,
-		availableWorkers:     availableWorkers,
-		workers:              workers,
-		inputChannel:         make(chan []*Message),
-		currentBatch:         make(map[TaskId]*Task),
-		batchOrder:           make([]TaskId, 0),
-		topicPartition:       topicPartition,
-		largestOffset:        InvalidOffset,
-		failCounter:          NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
-		batchProcessed:       make(chan bool),
-		managerStop:          make(chan bool),
-		processingStop:       make(chan bool),
-		commitStop:           make(chan bool),
-		activeWorkersCounter: activeWorkersCounter,
-		pendingTasksCounter:  pendingWMsTasksCounter,
-		batchDurationTimer:   batchDurationTimer,
-		idleTimer:            wmsIdleTimer,
+		id:               id,
+		config:           config,
+		availableWorkers: availableWorkers,
+		workers:          workers,
+		inputChannel:     make(chan []*Message),
+		currentBatch:     make(map[TaskId]*Task),
+		batchOrder:       make([]TaskId, 0),
+		topicPartition:   topicPartition,
+		largestOffset:    InvalidOffset,
+		failCounter:      NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
+		batchProcessed:   make(chan bool),
+		managerStop:      make(chan bool),
+		processingStop:   make(chan bool),
+		commitStop:       make(chan bool),
+		metrics:          metrics,
 	}
 }
 
@@ -106,9 +97,9 @@ func (wm *WorkerManager) Start() {
 			select {
 			case batch := <-wm.inputChannel:
 				{
-					wm.idleTimer.Update(time.Since(startIdle))
+					wm.metrics.WMsIdleTimer().Update(time.Since(startIdle))
 					Trace(wm, "WorkerManager got batch")
-					wm.batchDurationTimer.Time(func() {
+					wm.metrics.WMsBatchDurationTimer().Time(func() {
 						wm.startBatch(batch)
 					})
 					Trace(wm, "WorkerManager got batch processed")
@@ -135,6 +126,8 @@ func (wm *WorkerManager) Stop() chan bool {
 			Debug(wm, "Stopping committer")
 			wm.commitStop <- true
 			Debug(wm, "Successful committer stop")
+			wm.failCounter.Close()
+			Debug(wm, "Stopped failure counter")
 			finished <- true
 			Debug(wm, "Leaving manager stop")
 		})
@@ -153,12 +146,12 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			wm.batchOrder = append(wm.batchOrder, id)
 			wm.currentBatch[id] = &Task{Msg: message}
 		}
-		wm.pendingTasksCounter.Inc(int64(len(wm.currentBatch)))
+		wm.metrics.PendingWMsTasksCounter().Inc(int64(len(wm.currentBatch)))
 		for _, id := range wm.batchOrder {
 			task := wm.currentBatch[id]
 			worker := <-wm.availableWorkers
-			wm.activeWorkersCounter.Inc(1)
-			wm.pendingTasksCounter.Dec(1)
+			wm.metrics.ActiveWorkersCounter().Inc(1)
+			wm.metrics.PendingWMsTasksCounter().Dec(1)
 			worker.Start(task, wm.config.Strategy)
 		}
 
@@ -305,7 +298,7 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	Tracef(wm, "Task is done: %d", result.Id().Offset)
 	wm.UpdateLargestOffset(result.Id().Offset)
 	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
-	wm.activeWorkersCounter.Dec(1)
+	wm.metrics.ActiveWorkersCounter().Dec(1)
 	delete(wm.currentBatch, result.Id())
 }
 
@@ -370,12 +363,14 @@ type FailureCounter struct {
 	failed          bool
 	countLock       sync.Mutex
 	failedThreshold int32
+	stop            chan bool
 }
 
 // Creates a new FailureCounter with threshold FailedThreshold and time window WorkerThresholdTimeWindow.
 func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Duration) *FailureCounter {
 	counter := &FailureCounter{
 		failedThreshold: FailedThreshold,
+		stop:            make(chan bool),
 	}
 	go func() {
 		for {
@@ -391,6 +386,8 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 						})
 					}
 				}
+			case <-counter.stop:
+				return
 			}
 		}
 	}()
@@ -402,6 +399,11 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 func (f *FailureCounter) Failed() bool {
 	inLock(&f.countLock, func() { f.count++ })
 	return f.count >= f.failedThreshold || f.failed
+}
+
+// Stops this failure counter
+func (f *FailureCounter) Close() {
+	f.stop <- true
 }
 
 // Represents a single task for a worker.

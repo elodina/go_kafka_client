@@ -149,6 +149,9 @@ type ConsumerConfig struct {
 
 	/* Service coordinator barrier timeout */
 	BarrierTimeout time.Duration
+
+	/* Low Level Kafka Client implementation. */
+	LowLevelClient LowLevelClient
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.
@@ -194,6 +197,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.BlueGreenDeploymentEnabled = true
 	config.DeploymentTimeout = 0 * time.Second
 	config.BarrierTimeout = 30 * time.Second
+	config.LowLevelClient = NewSaramaClient(config)
 
 	return config
 }
@@ -325,6 +329,10 @@ func (c *ConsumerConfig) Validate() error {
 
 	if c.BlueGreenDeploymentEnabled && c.PartitionAssignmentStrategy != RangeStrategy {
 		return errors.New("In order to use Blue-Green deployment Range partition assignment strategy should be used")
+	}
+
+	if c.LowLevelClient == nil {
+		return errors.New("Low level client is not set")
 	}
 
 	return nil
