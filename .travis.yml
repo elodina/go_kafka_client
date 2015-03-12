@@ -20,7 +20,7 @@ go:
 - 1.4
 
 before_install:
-- export KAFKA_VERSION=0.8.2-beta
+- export KAFKA_VERSION=0.8.2.1
 - export SCALA_VERSION=2.10
 - export KAFKA_RELEASE=kafka_$SCALA_VERSION-$KAFKA_VERSION
 - export KAFKA_URL=https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
@@ -30,7 +30,7 @@ before_install:
 - export PORT=9092
 - export ZK_VERSION=3.4.6
 - export ZK_RELEASE=zookeeper-$ZK_VERSION
-- export ZK_URL=http://apache.ip-connect.vn.ua/zookeeper/zookeeper-$ZK_VERSION/$ZK_RELEASE.tar.gz
+- export ZK_URL=https://archive.apache.org/dist/zookeeper/zookeeper-$ZK_VERSION/$ZK_RELEASE.tar.gz
 - export ZK_HOME=/tmp/$ZK_RELEASE
 - wget -q $KAFKA_URL -O /tmp/$KAFKA_RELEASE.tgz
 - tar xfz /tmp/$KAFKA_RELEASE.tgz -C /tmp
