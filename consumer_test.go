@@ -430,6 +430,54 @@ func TestConsumeAfterRebalance(t *testing.T) {
 	closeWithin(t, delayTimeout, consumer1)
 }
 
+// Test that the first offset for a consumer group is correctly
+// saved even after receiving just one message.
+func TestConsumeFirstOffset(t *testing.T) {
+	topic := fmt.Sprintf("test-consume-first-offset-%d", time.Now().Unix())
+	group := fmt.Sprintf("test-group-%d", time.Now().Unix())
+
+	CreateMultiplePartitionsTopic(localZk, topic, 1)
+	EnsureHasLeader(localZk, topic)
+	produce(t, []string{ "m1" }, topic, localBroker, sarama.CompressionNone)
+
+	config := testConsumerConfig()
+	config.NumWorkers = 1
+	config.Groupid = group
+	successChan := make(chan bool)
+	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		value := string(msg.Value)
+		assert(t, value, "m1")
+		successChan <- true
+		return NewSuccessfulResult(id)
+	}
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{ topic: 1 })
+
+	select {
+	case <-successChan:
+	case <-time.After(consumeTimeout):
+		t.Errorf("Failed to consume %d messages within %s", numMessages, consumeTimeout)
+	}
+	closeWithin(t, 10*time.Second, consumer)
+
+	produce(t, []string{ "m2" }, topic, localBroker, sarama.CompressionNone)
+	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		value := string(msg.Value)
+		assert(t, value, "m2")
+		successChan <- true
+		return NewSuccessfulResult(id)
+	}
+	consumer = NewConsumer(config)
+	go consumer.StartStatic(map[string]int{ topic: 1 })
+
+	select {
+	case <-successChan:
+	case <-time.After(consumeTimeout):
+		t.Errorf("Failed to consume %d messages within %s", numMessages, consumeTimeout)
+	}
+	closeWithin(t, 10*time.Second, consumer)	
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset
