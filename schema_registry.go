@@ -22,7 +22,7 @@ import (
 type SchemaRegistryClient interface {
 	Register(subject string, schema avro.Schema) int32
 	GetByID(id int32) avro.Schema
-	GetLatestSchemaMetadata(subject string) SchemaMetadata
+	GetLatestSchemaMetadata(subject string) *SchemaMetadata
 	GetVersion(subject string, schema avro.Schema)
 }
 
