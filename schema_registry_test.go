@@ -15,17 +15,22 @@ limitations under the License. */
 
 package go_kafka_client
 
-import "testing"
+import (
+    "testing"
+    "github.com/stealthly/go-avro"
+)
 
 func TestSchemaRegistry(t *testing.T) {
 	t.Skip()
 	client := NewCachedSchemaRegistryClient("http://10.1.12.6:8081")
 	rawSchema := "{\"namespace\": \"ly.stealth.kafka.metrics\",\"type\": \"record\",\"name\": \"Timings\",\"fields\": [{\"name\": \"id\", \"type\": \"long\"},{\"name\": \"timings\",  \"type\": {\"type\":\"array\", \"items\": \"long\"} }]}"
-	id, err := client.Register("test1", rawSchema)
+    schema, err := avro.ParseSchema(rawSchema)
+    assert(t, err, nil)
+	id, err := client.Register("test1", schema)
 	assert(t, err, nil)
 	assertNot(t, id, 0)
 
-	schema, err := client.GetByID(id)
+	schema, err = client.GetByID(id)
 	assert(t, err, nil)
 	assertNot(t, schema, nil)
 
@@ -33,7 +38,7 @@ func TestSchemaRegistry(t *testing.T) {
 	assert(t, err, nil)
 	assertNot(t, metadata, nil)
 
-	version, err := client.GetVersion("test1", rawSchema)
+	version, err := client.GetVersion("test1", schema)
 	assert(t, err, nil)
 	assertNot(t, version, 0)
 }
