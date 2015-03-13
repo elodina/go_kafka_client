@@ -62,3 +62,4 @@ before_install:
 after_script:
 - $KAFKA_PATH/bin/kafka-server-stop.sh
 - $ZK_HOME/bin/zkServer.sh stop
+- $REGISTRY_HOME/bin/schema-registry-stop
