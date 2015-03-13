@@ -46,3 +46,5 @@ echo 'Stopping Kafka'
 $KAFKA_PATH/bin/kafka-server-stop.sh
 echo 'Stopping Zookeeper'
 $ZK_HOME/bin/zkServer.sh stop
+echo 'Stopping Schema Registry'
+$REGISTRY_HOME/bin/schema-registry-stop
