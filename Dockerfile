@@ -36,7 +36,7 @@ ENV ZK_HOME /opt/$ZK_RELEASE
 #Avro schema registry settings
 ENV REGISTRY_VERSION 1.0
 ENV SCALA_VERSION 2.10.4
-ENV REGISTRY_URL http://packages.confluent.io/archive/$REGISTRY_VERSION/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tar.gz -O /tmp/registry.tgz
+ENV REGISTRY_URL http://packages.confluent.io/archive/$REGISTRY_VERSION/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tar.gz
 ENV REGISTRY_HOME /opt/confluent-$REGISTRY_VERSION
 
 #Go settings
