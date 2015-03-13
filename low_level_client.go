@@ -172,21 +172,45 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 	for _, message := range partitionData.MsgSet.Messages {
 		if message.Msg.Set != nil {
 			for _, wrapped := range message.Msg.Set.Messages {
+				decodedKey, err := this.config.KeyDecoder.Decode(wrapped.Msg.Key)
+				if err != nil {
+					//TODO: what if we fail to decode the key: fail-fast or fail-safe strategy?
+					Error(this, err.Error())
+				}
+				decodedValue, err := this.config.ValueDecoder.Decode(wrapped.Msg.Value)
+				if err != nil {
+					//TODO: what if we fail to decode the value: fail-fast or fail-safe strategy?
+					Error(this, err.Error())
+				}
 				messages = append(messages, &Message{
-					Key:       wrapped.Msg.Key,
-					Value:     wrapped.Msg.Value,
-					Topic:     topic,
-					Partition: partition,
-					Offset:    wrapped.Offset,
+					Key:          wrapped.Msg.Key,
+					Value:        wrapped.Msg.Value,
+					DecodedKey:   decodedKey,
+					DecodedValue: decodedValue,
+					Topic:        topic,
+					Partition:    partition,
+					Offset:       wrapped.Offset,
 				})
 			}
 		} else {
+			decodedKey, err := this.config.KeyDecoder.Decode(message.Msg.Key)
+			if err != nil {
+				//TODO: what if we fail to decode the key: fail-fast or fail-safe strategy?
+				Error(this, err.Error())
+			}
+			decodedValue, err := this.config.ValueDecoder.Decode(message.Msg.Value)
+			if err != nil {
+				//TODO: what if we fail to decode the value: fail-fast or fail-safe strategy?
+				Error(this, err.Error())
+			}
 			messages = append(messages, &Message{
-				Key:       message.Msg.Key,
-				Value:     message.Msg.Value,
-				Topic:     topic,
-				Partition: partition,
-				Offset:    message.Offset,
+				Key:          message.Msg.Key,
+				Value:        message.Msg.Value,
+				DecodedKey:   decodedKey,
+				DecodedValue: decodedValue,
+				Topic:        topic,
+				Partition:    partition,
+				Offset:       message.Offset,
 			})
 		}
 	}
@@ -249,12 +273,24 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 	messages := make([]*Message, len(siestaMessages))
 	for i := 0; i < len(siestaMessages); i++ {
 		siestaMessage := siestaMessages[i]
+		decodedKey, err := this.config.KeyDecoder.Decode(siestaMessage.Key)
+		if err != nil {
+			//TODO: what if we fail to decode the key: fail-fast or fail-safe strategy?
+			Error(this, err.Error())
+		}
+		decodedValue, err := this.config.ValueDecoder.Decode(siestaMessage.Value)
+		if err != nil {
+			//TODO: what if we fail to decode the value: fail-fast or fail-safe strategy?
+			Error(this, err.Error())
+		}
 		messages[i] = &Message{
-			Key:       siestaMessage.Key,
-			Value:     siestaMessage.Value,
-			Topic:     siestaMessage.Topic,
-			Partition: siestaMessage.Partition,
-			Offset:    siestaMessage.Offset,
+			Key:          siestaMessage.Key,
+			Value:        siestaMessage.Value,
+			DecodedKey:   decodedKey,
+			DecodedValue: decodedValue,
+			Topic:        siestaMessage.Topic,
+			Partition:    siestaMessage.Partition,
+			Offset:       siestaMessage.Offset,
 		}
 	}
 
