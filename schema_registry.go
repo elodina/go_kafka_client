@@ -37,10 +37,10 @@ const (
 )
 
 type SchemaRegistryClient interface {
-	Register(subject string, schema string) (int32, error)
+	Register(subject string, schema avro.Schema) (int32, error)
 	GetByID(id int32) (avro.Schema, error)
 	GetLatestSchemaMetadata(subject string) (*SchemaMetadata, error)
-	GetVersion(subject string, schema string) (int32, error)
+	GetVersion(subject string, schema avro.Schema) (int32, error)
 }
 
 type SchemaMetadata struct {
@@ -111,10 +111,10 @@ func NewCachedSchemaRegistryClient(registryURL string) *CachedSchemaRegistryClie
 	}
 }
 
-func (this *CachedSchemaRegistryClient) Register(subject string, schema string) (int32, error) {
+func (this *CachedSchemaRegistryClient) Register(subject string, schema avro.Schema) (int32, error) {
 	request, err := this.newDefaultRequest("POST",
 		fmt.Sprintf(REGISTER_NEW_SCHEMA, subject),
-		strings.NewReader(fmt.Sprintf("{\"schema\": %s}", strconv.Quote(schema))))
+		strings.NewReader(fmt.Sprintf("{\"schema\": %s}", strconv.Quote(schema.String()))))
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return 0, err
@@ -175,10 +175,10 @@ func (this *CachedSchemaRegistryClient) GetLatestSchemaMetadata(subject string) 
 	}
 }
 
-func (this *CachedSchemaRegistryClient) GetVersion(subject string, schema string) (int32, error) {
+func (this *CachedSchemaRegistryClient) GetVersion(subject string, schema avro.Schema) (int32, error) {
 	request, err := this.newDefaultRequest("POST",
 		fmt.Sprintf(CHECK_IS_REGISTERED, subject),
-		strings.NewReader(fmt.Sprintf("{\"schema\": %s}", strconv.Quote(schema))))
+		strings.NewReader(fmt.Sprintf("{\"schema\": %s}", strconv.Quote(schema.String()))))
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return 0, err
