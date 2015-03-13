@@ -97,21 +97,33 @@ type GetSubjectVersionResponse struct {
 
 type CachedSchemaRegistryClient struct {
 	registryURL  string
-	schemaCache  map[string]map[avro.Schema]int
-	idCache      map[int]avro.Schema
-	versionCache map[string]map[avro.Schema]int
+	schemaCache  map[string]map[avro.Schema]int32
+	idCache      map[int32]avro.Schema
+	versionCache map[string]map[avro.Schema]int32
 }
 
 func NewCachedSchemaRegistryClient(registryURL string) *CachedSchemaRegistryClient {
 	return &CachedSchemaRegistryClient{
 		registryURL:  registryURL,
-		schemaCache:  make(map[string]map[avro.Schema]int),
-		idCache:      make(map[int]avro.Schema),
-		versionCache: make(map[string]map[avro.Schema]int),
+		schemaCache:  make(map[string]map[avro.Schema]int32),
+		idCache:      make(map[int32]avro.Schema),
+		versionCache: make(map[string]map[avro.Schema]int32),
 	}
 }
 
 func (this *CachedSchemaRegistryClient) Register(subject string, schema avro.Schema) (int32, error) {
+	var schemaIdMap map[avro.Schema]int32
+	var exists bool
+	if schemaIdMap, exists = this.schemaCache[subject]; !exists {
+		schemaIdMap = make(map[avro.Schema]int32)
+		this.schemaCache[subject] = schemaIdMap
+	}
+
+	var id int32
+	if id, exists = schemaIdMap[schema]; exists {
+		return id, nil
+	}
+
 	request, err := this.newDefaultRequest("POST",
 		fmt.Sprintf(REGISTER_NEW_SCHEMA, subject),
 		strings.NewReader(fmt.Sprintf("{\"schema\": %s}", strconv.Quote(schema.String()))))
@@ -125,6 +137,10 @@ func (this *CachedSchemaRegistryClient) Register(subject string, schema avro.Sch
 		if this.handleSuccess(response, decodedResponse) != nil {
 			return 0, err
 		}
+
+		schemaIdMap[schema] = decodedResponse.Id
+		this.idCache[decodedResponse.Id] = schema
+
 		return decodedResponse.Id, err
 	} else {
 		return 0, this.handleError(response)
@@ -132,6 +148,12 @@ func (this *CachedSchemaRegistryClient) Register(subject string, schema avro.Sch
 }
 
 func (this *CachedSchemaRegistryClient) GetByID(id int32) (avro.Schema, error) {
+	var schema avro.Schema
+	var exists bool
+	if schema, exists = this.idCache[id]; exists {
+		return schema, nil
+	}
+
 	request, err := this.newDefaultRequest("GET", fmt.Sprintf(GET_SCHEMA_BY_ID, id), nil)
 	if err != nil {
 		return nil, err
@@ -147,6 +169,8 @@ func (this *CachedSchemaRegistryClient) GetByID(id int32) (avro.Schema, error) {
 			return nil, err
 		}
 		schema, err := avro.ParseSchema(decodedResponse.Schema)
+		this.idCache[id] = schema
+
 		return schema, err
 	} else {
 		return nil, this.handleError(response)
@@ -176,6 +200,18 @@ func (this *CachedSchemaRegistryClient) GetLatestSchemaMetadata(subject string) 
 }
 
 func (this *CachedSchemaRegistryClient) GetVersion(subject string, schema avro.Schema) (int32, error) {
+	var schemaVersionMap map[avro.Schema]int32
+	var exists bool
+	if schemaVersionMap, exists = this.versionCache[subject]; !exists {
+		schemaVersionMap = make(map[avro.Schema]int32)
+		this.versionCache[subject] = schemaVersionMap
+	}
+
+	var version int32
+	if version, exists = schemaVersionMap[schema]; exists {
+		return version, nil
+	}
+
 	request, err := this.newDefaultRequest("POST",
 		fmt.Sprintf(CHECK_IS_REGISTERED, subject),
 		strings.NewReader(fmt.Sprintf("{\"schema\": %s}", strconv.Quote(schema.String()))))
