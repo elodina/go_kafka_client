@@ -28,6 +28,7 @@ sed -r -i "s/^(log4j.rootLogger)=(.*)( stdout)/\1=WARN\3/g" $KAFKA_PATH/config/l
 
 echo 'Starting Kafka'
 $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
+$REGISTRY_HOME/bin/schema-registry-start $REGISTRY_HOME/etc/schema-registry/schema-registry.properties &
 
 mkdir -p $GOPATH/src/github.com/stealthly/go_kafka_client
 cp -r /go_kafka_client $GOPATH/src/github.com/stealthly

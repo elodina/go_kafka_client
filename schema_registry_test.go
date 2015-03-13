@@ -17,12 +17,11 @@ package go_kafka_client
 
 import (
     "testing"
-    "github.com/stealthly/go-avro"
+    avro "github.com/stealthly/go-avro"
 )
 
 func TestSchemaRegistry(t *testing.T) {
-	t.Skip()
-	client := NewCachedSchemaRegistryClient("http://10.1.12.6:8081")
+	client := NewCachedSchemaRegistryClient("http://localhost:8081")
 	rawSchema := "{\"namespace\": \"ly.stealth.kafka.metrics\",\"type\": \"record\",\"name\": \"Timings\",\"fields\": [{\"name\": \"id\", \"type\": \"long\"},{\"name\": \"timings\",  \"type\": {\"type\":\"array\", \"items\": \"long\"} }]}"
     schema, err := avro.ParseSchema(rawSchema)
     assert(t, err, nil)

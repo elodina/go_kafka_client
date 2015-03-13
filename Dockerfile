@@ -33,6 +33,12 @@ ENV ZK_RELEASE zookeeper-$ZK_VERSION
 ENV ZK_URL http://apache.ip-connect.vn.ua/zookeeper/zookeeper-$ZK_VERSION/$ZK_RELEASE.tar.gz
 ENV ZK_HOME /opt/$ZK_RELEASE
 
+#Avro schema registry settings
+ENV REGISTRY_VERSION 1.0
+ENV SCALA_VERSION 2.10.4
+ENV REGISTRY_URL http://packages.confluent.io/archive/$REGISTRY_VERSION/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tar.gz -O /tmp/registry.tgz
+ENV REGISTRY_HOME /opt/confluent-$REGISTRY_VERSION
+
 #Go settings
 ENV GOLANG_VERSION 1.3.3
 ENV GOLANG_RELEASE go$GOLANG_VERSION
@@ -52,6 +58,9 @@ RUN tar xfz /tmp/$KAFKA_RELEASE.tgz -C /opt
 RUN wget -q $ZK_URL -O /tmp/$ZK_RELEASE.tar.gz
 RUN tar -xzf /tmp/$ZK_RELEASE.tar.gz -C /opt
 RUN cp $ZK_HOME/conf/zoo_sample.cfg $ZK_HOME/conf/zoo.cfg
+#Get Avro schema registry
+RUN wget -q $REGISTRY_URL -O /tmp/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tgz
+RUN tar xfz /tmp/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tgz -C /opt
 #Get Go
 RUN wget -q $GOLANG_URL -O /tmp/$GOLANG_RELEASE.tar.gz
 RUN tar -xzf /tmp/$GOLANG_RELEASE.tar.gz -C /usr/bin
@@ -61,6 +70,7 @@ RUN git clone https://github.com/pote/gpm.git && cd gpm && git checkout v1.3.1 &
 
 EXPOSE 9092
 EXPOSE 2181
+EXPOSE 8081
 
 #Adding startup script
 ADD run-tests.sh /usr/bin/run-tests.sh
