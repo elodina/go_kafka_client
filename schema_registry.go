@@ -225,6 +225,8 @@ func (this *CachedSchemaRegistryClient) GetVersion(subject string, schema avro.S
 		if this.handleSuccess(response, decodedResponse) != nil {
 			return 0, err
 		}
+		schemaVersionMap[schema] = decodedResponse.Version
+
 		return decodedResponse.Version, err
 	} else {
 		return 0, this.handleError(response)
