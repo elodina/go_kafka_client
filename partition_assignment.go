@@ -166,6 +166,7 @@ func (context *assignmentContext) hash() string {
 	}
 
 	io.WriteString(hash, strings.Join(context.Consumers, ""))
+	sort.Strings(context.AllTopics)
 	for _, topic := range context.AllTopics {
 		io.WriteString(hash, topic)
 		if _, exists := context.PartitionsForTopic[topic]; !exists {
