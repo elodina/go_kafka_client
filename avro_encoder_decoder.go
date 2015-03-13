@@ -64,9 +64,11 @@ func (this *KafkaAvroEncoder) Encode(obj interface{}) ([]byte, error) {
 
 			buffer := &bytes.Buffer{}
 			buffer.Write(magic_bytes)
+			idSlice := make([]byte, 4)
+			binary.BigEndian.PutUint32(idSlice, uint32(id))
+			buffer.Write(idSlice)
 
 			enc := avro.NewBinaryEncoder(buffer)
-			enc.WriteInt(id)
 			writer := avro.NewGenericDatumWriter()
 			writer.SetSchema(schema)
 			writer.Write(obj, enc)
