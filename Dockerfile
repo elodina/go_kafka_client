@@ -18,7 +18,7 @@ FROM stealthly/docker-java
 MAINTAINER stealthly
 
 #Kafka settings
-ENV KAFKA_VERSION 0.8.2.0
+ENV KAFKA_VERSION 0.8.2.1
 ENV SCALA_VERSION 2.10
 ENV KAFKA_RELEASE kafka_$SCALA_VERSION-$KAFKA_VERSION
 ENV KAFKA_URL https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
@@ -30,7 +30,7 @@ ENV PORT 9092
 #Zookeeper settings
 ENV ZK_VERSION 3.4.6
 ENV ZK_RELEASE zookeeper-$ZK_VERSION
-ENV ZK_URL http://apache.ip-connect.vn.ua/zookeeper/zookeeper-$ZK_VERSION/$ZK_RELEASE.tar.gz
+ENV ZK_URL https://archive.apache.org/dist/zookeeper/zookeeper-$ZK_VERSION/$ZK_RELEASE.tar.gz
 ENV ZK_HOME /opt/$ZK_RELEASE
 
 #Avro schema registry settings
