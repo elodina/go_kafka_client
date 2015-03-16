@@ -32,6 +32,10 @@ type Message struct {
 	Key []byte
 	// Message value.
 	Value []byte
+	// Decoded message key
+	DecodedKey interface{}
+	// Decoded message value
+	DecodedValue interface{}
 	// Topic this message came from.
 	Topic string
 

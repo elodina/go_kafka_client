@@ -152,6 +152,12 @@ type ConsumerConfig struct {
 
 	/* Low Level Kafka Client implementation. */
 	LowLevelClient LowLevelClient
+
+	/* Message keys decoder */
+	KeyDecoder Decoder
+
+	/* Message values decoder */
+	ValueDecoder Decoder
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.
@@ -198,6 +204,9 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.DeploymentTimeout = 0 * time.Second
 	config.BarrierTimeout = 30 * time.Second
 	config.LowLevelClient = NewSaramaClient(config)
+
+	config.KeyDecoder = &ByteDecoder{}
+	config.ValueDecoder = config.KeyDecoder
 
 	return config
 }
@@ -333,6 +342,14 @@ func (c *ConsumerConfig) Validate() error {
 
 	if c.LowLevelClient == nil {
 		return errors.New("Low level client is not set")
+	}
+
+	if c.KeyDecoder == nil {
+		return errors.New("Key decoder is not set")
+	}
+
+	if c.ValueDecoder == nil {
+		return errors.New("Value decoder is not set")
 	}
 
 	return nil

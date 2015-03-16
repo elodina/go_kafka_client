@@ -32,11 +32,17 @@ before_install:
 - export ZK_RELEASE=zookeeper-$ZK_VERSION
 - export ZK_URL=https://archive.apache.org/dist/zookeeper/zookeeper-$ZK_VERSION/$ZK_RELEASE.tar.gz
 - export ZK_HOME=/tmp/$ZK_RELEASE
+- export REGISTRY_VERSION=1.0
+- export SCALA_VERSION=2.10.4
+- export REGISTRY_URL=http://packages.confluent.io/archive/$REGISTRY_VERSION/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tar.gz
+- export REGISTRY_HOME=/tmp/confluent-$REGISTRY_VERSION
 - wget -q $KAFKA_URL -O /tmp/$KAFKA_RELEASE.tgz
 - tar xfz /tmp/$KAFKA_RELEASE.tgz -C /tmp
 - wget -q $ZK_URL -O /tmp/$ZK_RELEASE.tar.gz
 - tar -xzf /tmp/$ZK_RELEASE.tar.gz -C /tmp
 - cp $ZK_HOME/conf/zoo_sample.cfg $ZK_HOME/conf/zoo.cfg
+- wget -q $REGISTRY_URL -O /tmp/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tgz
+- tar xfz /tmp/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tgz -C /tmp
 - git clone https://github.com/pote/gpm.git 
 - cd gpm
 - git checkout v1.3.1 
@@ -50,8 +56,10 @@ before_install:
 - sed -r -i "s/^(port)=(.*)/\\1=$PORT/g" $KAFKA_PATH/config/server.properties
 - sed -r -i "s/^(log4j.rootLogger)=(.*)( stdout)/\\1=WARN\\3/g" $KAFKA_PATH/config/log4j.properties
 - $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
+- $REGISTRY_HOME/bin/schema-registry-start $REGISTRY_HOME/etc/schema-registry/schema-registry.properties &
 - gpm install
 
 after_script:
 - $KAFKA_PATH/bin/kafka-server-stop.sh
 - $ZK_HOME/bin/zkServer.sh stop
+- $REGISTRY_HOME/bin/schema-registry-stop
