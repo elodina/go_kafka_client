@@ -82,10 +82,10 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	config.ProducerConfig = *producerConfig
 	config.TopicPrefix = *prefix
 	if *schemaRegistryUrl != "" {
-		config.KeyEncoder = NewKafkaAvroEncoder(*schemaRegistryUrl)
-		config.ValueEncoder = NewKafkaAvroEncoder(*schemaRegistryUrl)
-		config.KeyDecoder = NewKafkaAvroDecoder(*schemaRegistryUrl)
-		config.ValueDecoder = NewKafkaAvroDecoder(*schemaRegistryUrl)
+		config.KeyEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
+		config.ValueEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
+		config.KeyDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
+		config.ValueDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
 	}
 
 	return config
