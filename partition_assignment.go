@@ -161,10 +161,12 @@ type assignmentContext struct {
 
 func (context *assignmentContext) hash() string {
 	hash := md5.New()
+	sort.Sort(byId(context.Brokers))
 	for _, broker := range context.Brokers {
 		io.WriteString(hash, strconv.Itoa(int(broker.Id)))
 	}
 
+	sort.Strings(context.Consumers)
 	io.WriteString(hash, strings.Join(context.Consumers, ""))
 	sort.Strings(context.AllTopics)
 	for _, topic := range context.AllTopics {
