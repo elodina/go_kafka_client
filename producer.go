@@ -160,7 +160,7 @@ func NewFixedPartitioner() Partitioner {
 
 func (this *FixedPartitioner) Partition (key []byte, numPartitions int32) (int32, error) {
 	if key == nil {
-		panic("IntPartitioner does not work without keys.")
+		panic("FixedPartitioner does not work without keys.")
 	}
 	partition, err := binary.ReadUvarint(bytes.NewBuffer(key))
 	if err != nil {
