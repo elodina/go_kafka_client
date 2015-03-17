@@ -233,6 +233,6 @@ type StateSnapshot struct {
 }
 
 type FailedMessage struct {
-	message *Message
+	message *ProducerMessage
 	err     error
 }

@@ -18,142 +18,248 @@
 package go_kafka_client
 
 import (
-	"github.com/Shopify/sarama"
-	"strings"
+	hashing "hash"
+	"hash/fnv"
+	"math/rand"
+	"time"
+	"errors"
+	"encoding/binary"
+	"bytes"
 )
 
 type Producer interface {
 	Errors() <-chan *FailedMessage
-	Successes() <-chan *Message
-	Input() chan<- *Message
+	Successes() <-chan *ProducerMessage
+	Input() chan<- *ProducerMessage
 	Close() error
 	AsyncClose()
 }
 
-type SaramaProducer struct {
-	saramaProducer *sarama.Producer
+type ProducerConstructor func(config *ProducerConfig) Producer
+
+type ProducerMessage struct {
+	Topic        string
+	Key          interface{}
+	Value        interface{}
+	KeyEncoder   Encoder
+	ValueEncoder Encoder
+
+	offset    int64
+	partition int32
 }
 
-func NewSaramaProducer(conf *ProducerConfig) *SaramaProducer {
-	if err := conf.Validate(); err != nil {
-		panic(err)
-	}
+type Partitioner interface {
+	Partition(key []byte, numPartitions int32) (int32, error)
+	RequiresConsistency() bool
+}
 
-	client, err := sarama.NewClient(conf.Clientid, conf.BrokerList, sarama.NewClientConfig())
+type PartitionerConstructor func() Partitioner
+
+type ProducerConfig struct {
+	Clientid              string
+	BrokerList            []string
+	SendBufferSize        int
+	CompressionCodec      string
+	FlushByteCount        int
+	FlushTimeout          time.Duration
+	BatchSize             int
+	MaxMessageBytes       int
+	MaxMessagesPerRequest int
+	Acks                  int
+	RetryBackoff          time.Duration
+	Timeout               time.Duration
+	Partitioner			  PartitionerConstructor
+
+	//Retries            int //TODO ??
+}
+
+func DefaultProducerConfig() *ProducerConfig {
+	return &ProducerConfig{
+		Clientid:        "mirrormaker",
+		MaxMessageBytes: 1000000,
+		Acks:            1,
+		RetryBackoff:    250 * time.Millisecond,
+	}
+}
+
+// ProducerConfigFromFile is a helper function that loads a producer's configuration information from file.
+// The file accepts the following fields:
+//  client.id
+//  metadata.broker.list
+//  send.buffer.size
+//  compression.codec
+//  flush.byte.count
+//  flush.timeout
+//  batch.size
+//  max.message.bytes
+//  max.messages.per.request
+//  acks
+//  retry.backoff
+//  timeout
+// The configuration file entries should be constructed in key=value syntax. A # symbol at the beginning
+// of a line indicates a comment. Blank lines are ignored. The file should end with a newline character.
+func ProducerConfigFromFile(filename string) (*ProducerConfig, error) {
+	p, err := LoadConfiguration(filename)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	config := sarama.NewProducerConfig()
-	config.ChannelBufferSize = conf.SendBufferSize
-	switch strings.ToLower(conf.CompressionCodec) {
-	case "none":
-		config.Compression = sarama.CompressionNone
-	case "gzip":
-		config.Compression = sarama.CompressionGZIP
-	case "snappy":
-		config.Compression = sarama.CompressionSnappy
+	config := DefaultProducerConfig()
+	setStringConfig(&config.Clientid, p["client.id"])
+	setStringSliceConfig(&config.BrokerList, p["metadata.broker.list"], ",")
+	if err := setIntConfig(&config.SendBufferSize, p["send.buffer.size"]); err != nil {
+		return nil, err
 	}
-	config.FlushByteCount = conf.FlushByteCount
-	config.FlushFrequency = conf.FlushTimeout
-	config.FlushMsgCount = conf.BatchSize
-	config.MaxMessageBytes = conf.MaxMessageBytes
-	config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
-	config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
-	config.RetryBackoff = conf.RetryBackoff
-	config.Timeout = conf.Timeout
+	setStringConfig(&config.CompressionCodec, p["compression.codec"])
+	if err := setIntConfig(&config.FlushByteCount, p["flush.byte.count"]); err != nil {
+		return nil, err
+	}
+	if err := setDurationConfig(&config.FlushTimeout, p["flush.timeout"]); err != nil {
+		return nil, err
+	}
+	if err := setIntConfig(&config.BatchSize, p["batch.size"]); err != nil {
+		return nil, err
+	}
+	if err := setIntConfig(&config.MaxMessageBytes, p["max.message.bytes"]); err != nil {
+		return nil, err
+	}
+	if err := setIntConfig(&config.MaxMessagesPerRequest, p["max.messages.per.request"]); err != nil {
+		return nil, err
+	}
+	if err := setIntConfig(&config.Acks, p["acks"]); err != nil {
+		return nil, err
+	}
+	if err := setDurationConfig(&config.RetryBackoff, p["retry.backoff"]); err != nil {
+		return nil, err
+	}
+	if err := setDurationConfig(&config.Timeout, p["timeout"]); err != nil {
+		return nil, err
+	}
 
-	producer, err := sarama.NewProducer(client, config)
+	return config, nil
+}
+
+func (this *ProducerConfig) Validate() error {
+	if len(this.BrokerList) == 0 {
+		return errors.New("Broker list cannot be empty")
+	}
+
+	if this.Partitioner == nil {
+		return errors.New("Producer partitioner cannot be empty")
+	}
+
+	return nil
+}
+
+// Partitioner sends messages to partitions that correspond message keys
+type FixedPartitioner struct {}
+
+func NewFixedPartitioner() Partitioner {
+	return &FixedPartitioner{}
+}
+
+func (this *FixedPartitioner) Partition (key []byte, numPartitions int32) (int32, error) {
+	if key == nil {
+		panic("IntPartitioner does not work without keys.")
+	}
+	partition, err := binary.ReadUvarint(bytes.NewBuffer(key))
 	if err != nil {
-		panic(err)
+		return -1, err
 	}
-	return &SaramaProducer{
-		saramaProducer: producer,
+
+	return int32(partition) % numPartitions, nil
+}
+
+func (this *FixedPartitioner) RequiresConsistency() bool {
+	return true
+}
+
+// RandomPartitioner implements the Partitioner interface by choosing a random partition each time.
+type RandomPartitioner struct {
+	generator *rand.Rand
+}
+
+func NewRandomPartitioner() Partitioner {
+	return &RandomPartitioner{
+		generator: rand.New(rand.NewSource(time.Now().UTC().UnixNano())),
 	}
 }
 
-func (this *SaramaProducer) Errors() <-chan *FailedMessage {
-	errorChannel := make(chan *FailedMessage)
-	go func () {
-		for saramaError := range this.saramaProducer.Errors() {
-			key, err := saramaError.Msg.Key.Encode()
-			if err != nil {
-				panic(err)
-			}
-			value, err := saramaError.Msg.Value.Encode()
-			if err != nil {
-				panic(err)
-			}
-			msg := &Message{
-				Key: key,
-				Value: value,
-				DecodedKey: key,
-				DecodedValue: value,
-				Topic: saramaError.Msg.Topic,
-				Partition: saramaError.Msg.Partition(),
-				Offset: saramaError.Msg.Offset(),
-			}
-			errorChannel <- &FailedMessage{msg, saramaError.Err}
-		}
-	}()
-
-	return errorChannel
+func (this *RandomPartitioner) Partition (key []byte, numPartitions int32) (int32, error) {
+	return int32(this.generator.Intn(int(numPartitions))), nil
 }
 
-func (this *SaramaProducer) Successes() <-chan *Message {
-	successChannel := make(chan *Message)
-	go func () {
-		for saramaMessage := range this.saramaProducer.Successes() {
-			key, err := saramaMessage.Key.Encode()
-			if err != nil {
-				panic(err)
-			}
-			value, err := saramaMessage.Value.Encode()
-			if err != nil {
-				panic(err)
-			}
-			msg := &Message{
-				Key: key,
-				Value: value,
-				DecodedKey: key,
-				DecodedValue: value,
-				Topic: saramaMessage.Topic,
-				Partition: saramaMessage.Partition(),
-				Offset: saramaMessage.Offset(),
-			}
-			successChannel <- msg
-		}
-	}()
-
-	return successChannel
+func (this *RandomPartitioner) RequiresConsistency() bool {
+	return false
 }
 
-func (this *SaramaProducer) Input() chan<- *Message {
-	messageChannel := make(chan *Message)
-	go func () {
-		for message := range messageChannel {
-			var key sarama.Encoder
-			if message.Key != nil {
-				key = sarama.ByteEncoder(message.Key)
-			} else {
-				key = Int32Encoder(message.Partition)
-			}
-			saramaMessage := &sarama.ProducerMessage {
-				Topic: message.Topic,
-				Key: key,
-				Value: sarama.ByteEncoder(message.Value),
-			}
-			this.saramaProducer.Input() <- saramaMessage
-		}
-	}()
-
-	return messageChannel
+// RoundRobinPartitioner implements the Partitioner interface by walking through the available partitions one at a time.
+type RoundRobinPartitioner struct {
+	partition int32
 }
 
-func (this *SaramaProducer) Close() error {
-	return this.saramaProducer.Close()
+func NewRoundRobinPartitioner() Partitioner {
+	return &RoundRobinPartitioner{}
 }
 
-func (this *SaramaProducer) AsyncClose() {
-	this.saramaProducer.AsyncClose()
+func (this *RoundRobinPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
+	if this.partition >= numPartitions {
+		this.partition = 0
+	}
+	ret := this.partition
+	this.partition++
+	return ret, nil
+}
+
+func (this *RoundRobinPartitioner) RequiresConsistency() bool {
+	return false
+}
+
+// HashPartitioner implements the Partitioner interface. If the key is nil, or fails to encode, then a random partition
+// is chosen. Otherwise the FNV-1a hash of the encoded bytes is used modulus the number of partitions. This ensures that messages
+// with the same key always end up on the same partition.
+type HashPartitioner struct {
+	random Partitioner
+	hasher hashing.Hash32
+}
+
+func NewHashPartitioner() Partitioner {
+	p := new(HashPartitioner)
+	p.random = NewRandomPartitioner()
+	p.hasher = fnv.New32a()
+	return p
+}
+
+func (this *HashPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
+	if key == nil {
+		return this.random.Partition(key, numPartitions)
+	}
+
+	this.hasher.Reset()
+	_, err := this.hasher.Write(key)
+	if err != nil {
+		return -1, err
+	}
+	hash := int32(this.hasher.Sum32())
+	if hash < 0 {
+		hash = -hash
+	}
+	return hash % numPartitions, nil
+}
+
+func (this *HashPartitioner) RequiresConsistency() bool {
+	return true
+}
+
+// ConstantPartitioner implements the Partitioner interface by just returning a constant value.
+type ConstantPartitioner struct {
+	Constant int32
+}
+
+func (p *ConstantPartitioner) Partition(key Encoder, numPartitions int32) (int32, error) {
+	return p.Constant, nil
+}
+
+func (p *ConstantPartitioner) RequiresConsistency() bool {
+	return true
 }
