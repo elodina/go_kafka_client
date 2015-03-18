@@ -17,6 +17,7 @@ package go_kafka_client
 
 import (
 	"fmt"
+	avro "github.com/stealthly/go-avro"
 	"hash/fnv"
 )
 
@@ -66,6 +67,10 @@ type MirrorMakerConfig struct {
 
 	// Function that generates producer instances
 	ProducerConstructor ProducerConstructor
+
+	// Defines whether add timings to message or not.
+	// Note: used only for avro encoded messages
+	Timings bool
 }
 
 // Creates an empty MirrorMakerConfig.
@@ -148,6 +153,13 @@ func (this *MirrorMaker) startConsumers() {
 		if this.config.PreserveOrder {
 			numProducers := this.config.NumProducers
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+				if this.config.Timings {
+					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
+						addTiming(record)
+					} else {
+						return NewProcessingFailedResult(id)
+					}
+				}
 				this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 
 				return NewSuccessfulResult(id)
@@ -197,6 +209,9 @@ func (this *MirrorMaker) startProducers() {
 		conf.ValueEncoder = this.config.ValueEncoder
 		producer := this.config.ProducerConstructor(conf)
 		this.producers = append(this.producers, producer)
+		if this.config.Timings {
+			go this.timingsRoutine(producer)
+		}
 		if this.config.PreserveOrder {
 			go this.produceRoutine(producer, i)
 		} else {
@@ -209,9 +224,22 @@ func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
 	partitionEncoder := &Int32Encoder{}
 	for msg := range this.messageChannels[channelIndex] {
 		if this.config.PreservePartitions {
-			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.Value, KeyEncoder: partitionEncoder}
+			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.DecodedValue, KeyEncoder: partitionEncoder}
 		} else {
-			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.Value}
+			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.DecodedValue}
+		}
+	}
+}
+
+func (this *MirrorMaker) timingsRoutine(producer Producer) {
+	partitionEncoder := &Int32Encoder{}
+	for msg := range producer.Successes() {
+		if record, ok := msg.Value.(*avro.GenericRecord); ok {
+			addTiming(record)
+			producer.Input() <- &ProducerMessage{Topic: "timings_" + this.config.TopicPrefix + msg.Topic, Key: msg.Key,
+				Value: msg.Value, KeyEncoder: partitionEncoder}
+		} else {
+			Errorf(this, "Failed to decode %s", msg.Value)
 		}
 	}
 }
