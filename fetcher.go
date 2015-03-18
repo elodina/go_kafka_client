@@ -241,10 +241,6 @@ func (f *consumerFetcherRoutine) start() {
 						Debugf(f, "Partition map: %v", f.partitionMap)
 						if existingOffset, exists := f.partitionMap[nextTopicPartition]; exists {
 							offset = existingOffset
-							if isOffsetInvalid(offset) {
-								Warnf(f, "Received invalid offset for %s", nextTopicPartition)
-								return
-							}
 						}
 
 						if f.allPartitionMap[nextTopicPartition] == nil {
@@ -355,8 +351,13 @@ func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *Topic
 		Errorf(f, "Cannot get available offset for %s. Reason: %s", topicAndPartition, err)
 		return
 	}
-	f.allPartitionMap[*topicAndPartition].FetchedOffset = newOffset
-	f.partitionMap[*topicAndPartition] = newOffset
+
+    // Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
+    // This just guarantees we dont get a nil pointer dereference here
+    if topicInfo, exists := f.allPartitionMap[*topicAndPartition]; exists {
+        topicInfo.FetchedOffset = newOffset
+        f.partitionMap[*topicAndPartition] = newOffset
+    }
 }
 
 func (f *consumerFetcherRoutine) removeAllPartitions() {

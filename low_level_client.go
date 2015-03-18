@@ -264,37 +264,36 @@ func (this *SiestaClient) Initialize() error {
 // Returns slice of Messages and an error if a fetch error occurred.
 func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]*Message, error) {
 	Tracef(this, "Fetching %s %d from %d", topic, partition, offset)
-	siestaMessages, err := this.connector.Consume(topic, partition, offset)
+	response, err := this.connector.Fetch(topic, partition, offset)
 	if err != nil {
 		return nil, err
 	}
 
-	//TODO probably it would be good to avoid converting fetchresponse -> siesta.Message -> go_kafka_client.Message but rather fetchresponse -> go_kafka_client.Message
-	messages := make([]*Message, len(siestaMessages))
-	for i := 0; i < len(siestaMessages); i++ {
-		siestaMessage := siestaMessages[i]
-		decodedKey, err := this.config.KeyDecoder.Decode(siestaMessage.Key)
+	messages := make([]*Message, 0)
+
+	collector := func(topic string, partition int32, offset int64, key []byte, value []byte) {
+		decodedKey, err := this.config.KeyDecoder.Decode(key)
 		if err != nil {
 			//TODO: what if we fail to decode the key: fail-fast or fail-safe strategy?
 			Error(this, err.Error())
 		}
-		decodedValue, err := this.config.ValueDecoder.Decode(siestaMessage.Value)
+		decodedValue, err := this.config.ValueDecoder.Decode(value)
 		if err != nil {
 			//TODO: what if we fail to decode the value: fail-fast or fail-safe strategy?
 			Error(this, err.Error())
 		}
-		messages[i] = &Message{
-			Key:          siestaMessage.Key,
-			Value:        siestaMessage.Value,
+		messages = append(messages, &Message{
+			Key:          key,
+			Value:        value,
 			DecodedKey:   decodedKey,
 			DecodedValue: decodedValue,
-			Topic:        siestaMessage.Topic,
-			Partition:    siestaMessage.Partition,
-			Offset:       siestaMessage.Offset,
-		}
+			Topic:        topic,
+			Partition:    partition,
+			Offset:       offset,
+		})
 	}
 
-	return messages, nil
+	return messages, response.CollectMessages(collector)
 }
 
 // Checks whether the given error indicates an OffsetOutOfRange error.

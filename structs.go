@@ -63,6 +63,12 @@ func (b *BrokerInfo) String() string {
 		b.Version, b.Id, b.Host, b.Port)
 }
 
+type byId []*BrokerInfo
+
+func (a byId) Len() int           { return len(a) }
+func (a byId) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byId) Less(i, j int) bool { return a[i].Id < a[j].Id }
+
 //General information about Kafka consumer. Used to keep it in consumer coordinator.
 type ConsumerInfo struct {
 	Version      int16
