@@ -107,7 +107,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 		for k, v := range newPartitionMap {
 			m.partitionMap[k] = v
 		}
-		go m.addFetcherForPartitions(partitionAndOffsets)
+		m.addFetcherForPartitions(partitionAndOffsets)
 
 		m.updateInProgress = false
 		Debugf(m, "Applied new partition map %v", m.partitionMap)

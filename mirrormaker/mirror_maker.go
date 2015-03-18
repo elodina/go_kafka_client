@@ -46,6 +46,7 @@ var preserveOrder = flag.Bool("preserve.order", false, "E.g. message sequence 1,
 var prefix = flag.String("prefix", "", "Destination topic prefix.")
 var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffered between the consumer and producer.")
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
+var schemaRegistryUrl = flag.String("schema.registry.url", "", "Avro schema registry URL for message encoding/decoding")
 
 func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	flag.Var(&consumerConfig, "consumer.config", "Path to consumer configuration file.")
@@ -80,6 +81,12 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	config.PreserveOrder = *preserveOrder
 	config.ProducerConfig = *producerConfig
 	config.TopicPrefix = *prefix
+	if *schemaRegistryUrl != "" {
+		config.KeyEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
+		config.ValueEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
+		config.KeyDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
+		config.ValueDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
+	}
 
 	return config
 }
