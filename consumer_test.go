@@ -478,6 +478,36 @@ func TestConsumeFirstOffset(t *testing.T) {
 	closeWithin(t, 10*time.Second, consumer)	
 }
 
+// Test consumer will properly start consuming a topic when it is created after starting the consumer but before it fails to fetch topic info
+func TestCreateTopicAfterStartConsuming(t *testing.T) {
+    partitions := 2
+    topic := fmt.Sprintf("testConsumeAfterRebalance-%d", time.Now().Unix())
+
+    consumeMessages := 10
+    delayTimeout := 10 * time.Second
+    consumeTimeout := 60 * time.Second
+    consumeStatus := make(chan int)
+
+    config := testConsumerConfig()
+    config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+    consumer := NewConsumer(config)
+    go consumer.StartStatic(map[string]int{topic: 2})
+
+    time.Sleep(10 * time.Second)
+
+    CreateMultiplePartitionsTopic(localZk, topic, partitions)
+    EnsureHasLeader(localZk, topic)
+
+    Infof(topic, "Produce %d message", consumeMessages)
+    produceN(t, consumeMessages, topic, localBroker)
+
+    if actual := <-consumeStatus; actual != consumeMessages {
+        t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+    }
+
+    closeWithin(t, delayTimeout, consumer)
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset
