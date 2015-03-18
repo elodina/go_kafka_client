@@ -101,7 +101,6 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 	config.QueuedMaxMessages = int32(queuedMaxMessages)
 	config.RefreshLeaderBackoff = refreshLeaderBackoff
 	config.Coordinator = kafkaClient.NewZookeeperCoordinator(zkConfig)
-	config.OffsetsStorage = rawConfig["offsets_storage"]
 	config.AutoOffsetReset = rawConfig["auto_offset_reset"]
 	config.OffsetsCommitMaxRetries = offsetsCommitMaxRetries
 	config.DeploymentTimeout = deploymentTimeout
