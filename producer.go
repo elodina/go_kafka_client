@@ -18,13 +18,13 @@
 package go_kafka_client
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	hashing "hash"
 	"hash/fnv"
 	"math/rand"
 	"time"
-	"errors"
-	"encoding/binary"
-	"bytes"
 )
 
 type Producer interface {
@@ -68,7 +68,9 @@ type ProducerConfig struct {
 	Acks                  int
 	RetryBackoff          time.Duration
 	Timeout               time.Duration
-	Partitioner			  PartitionerConstructor
+	Partitioner           PartitionerConstructor
+	KeyEncoder            Encoder
+	ValueEncoder          Encoder
 
 	//Retries            int //TODO ??
 }
@@ -79,6 +81,9 @@ func DefaultProducerConfig() *ProducerConfig {
 		MaxMessageBytes: 1000000,
 		Acks:            1,
 		RetryBackoff:    250 * time.Millisecond,
+		KeyEncoder:      &ByteEncoder{},
+		ValueEncoder:    &ByteEncoder{},
+		Partitioner:     NewRandomPartitioner,
 	}
 }
 
@@ -152,13 +157,13 @@ func (this *ProducerConfig) Validate() error {
 }
 
 // Partitioner sends messages to partitions that correspond message keys
-type FixedPartitioner struct {}
+type FixedPartitioner struct{}
 
 func NewFixedPartitioner() Partitioner {
 	return &FixedPartitioner{}
 }
 
-func (this *FixedPartitioner) Partition (key []byte, numPartitions int32) (int32, error) {
+func (this *FixedPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
 	if key == nil {
 		panic("FixedPartitioner does not work without keys.")
 	}
@@ -185,7 +190,7 @@ func NewRandomPartitioner() Partitioner {
 	}
 }
 
-func (this *RandomPartitioner) Partition (key []byte, numPartitions int32) (int32, error) {
+func (this *RandomPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
 	return int32(this.generator.Intn(int(numPartitions))), nil
 }
 

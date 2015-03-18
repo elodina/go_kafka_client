@@ -71,10 +71,10 @@ type MirrorMakerConfig struct {
 // Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
 	return &MirrorMakerConfig{
-		KeyEncoder:   &ByteEncoder{},
-		ValueEncoder: &ByteEncoder{},
-		KeyDecoder:   &ByteDecoder{},
-		ValueDecoder: &ByteDecoder{},
+		KeyEncoder:          &ByteEncoder{},
+		ValueEncoder:        &ByteEncoder{},
+		KeyDecoder:          &ByteDecoder{},
+		ValueDecoder:        &ByteDecoder{},
 		ProducerConstructor: NewSaramaProducer,
 	}
 }
@@ -193,6 +193,8 @@ func (this *MirrorMaker) startProducers() {
 		} else {
 			conf.Partitioner = NewRandomPartitioner
 		}
+		conf.KeyEncoder = this.config.KeyEncoder
+		conf.ValueEncoder = this.config.ValueEncoder
 		producer := this.config.ProducerConstructor(conf)
 		this.producers = append(this.producers, producer)
 		if this.config.PreserveOrder {
@@ -204,11 +206,12 @@ func (this *MirrorMaker) startProducers() {
 }
 
 func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
+	partitionEncoder := &Int32Encoder{}
 	for msg := range this.messageChannels[channelIndex] {
 		if this.config.PreservePartitions {
-			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.Value, KeyEncoder: &Int32Encoder{}, ValueEncoder: this.config.ValueEncoder}
+			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.Value, KeyEncoder: partitionEncoder}
 		} else {
-			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.Value, KeyEncoder: this.config.KeyEncoder, ValueEncoder: this.config.ValueEncoder}
+			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.Value}
 		}
 	}
 }

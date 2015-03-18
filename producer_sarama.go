@@ -24,6 +24,7 @@ import (
 
 type SaramaProducer struct {
 	saramaProducer *sarama.Producer
+	config         *ProducerConfig
 }
 
 func NewSaramaProducer(conf *ProducerConfig) Producer {
@@ -64,6 +65,7 @@ func NewSaramaProducer(conf *ProducerConfig) Producer {
 	}
 	return &SaramaProducer{
 		saramaProducer: producer,
+		config:         conf,
 	}
 }
 
@@ -123,13 +125,13 @@ func (this *SaramaProducer) Input() chan<- *ProducerMessage {
 	messageChannel := make(chan *ProducerMessage)
 	go func() {
 		for message := range messageChannel {
-			encodedKey, err := message.KeyEncoder.Encode(message.Key)
+			encodedKey, err := this.getKeyEncoder(message).Encode(message.Key)
 			if err != nil {
 				panic(err)
 			}
 			key := sarama.ByteEncoder(encodedKey)
 
-			encodedValue, err := message.ValueEncoder.Encode(message.Value)
+			encodedValue, err := this.getValueEncoder(message).Encode(message.Value)
 			if err != nil {
 				panic(err)
 			}
@@ -154,12 +156,28 @@ func (this *SaramaProducer) AsyncClose() {
 	this.saramaProducer.AsyncClose()
 }
 
+func (this *SaramaProducer) getKeyEncoder(message *ProducerMessage) Encoder {
+	if message.KeyEncoder == nil {
+		return this.config.KeyEncoder
+	} else {
+		return message.KeyEncoder
+	}
+}
+
+func (this *SaramaProducer) getValueEncoder(message *ProducerMessage) Encoder {
+	if message.ValueEncoder == nil {
+		return this.config.ValueEncoder
+	} else {
+		return message.ValueEncoder
+	}
+}
+
 type SaramaPartitionerFactory struct {
 	partitioner PartitionerConstructor
 }
 
 func (this *SaramaPartitionerFactory) PartitionerConstructor() sarama.Partitioner {
-	return &SaramaPartitioner {
+	return &SaramaPartitioner{
 		partitioner: this.partitioner(),
 	}
 }
@@ -180,4 +198,3 @@ func (this *SaramaPartitioner) Partition(key sarama.Encoder, numPartitions int32
 func (this *SaramaPartitioner) RequiresConsistency() bool {
 	return this.partitioner.RequiresConsistency()
 }
-
