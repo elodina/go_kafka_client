@@ -35,7 +35,8 @@ var (
 	emptyEvent       = zk.Event{}
 )
 
-/* ZookeeperCoordinator implements ConsumerCoordinator interface and is used to coordinate multiple consumers that work within the same consumer group. */
+// ZookeeperCoordinator implements ConsumerCoordinator and OffsetStorage interfaces and is used to coordinate multiple consumers that work within the same consumer group
+// as well as storing and retrieving their offsets.
 type ZookeeperCoordinator struct {
 	config      *ZookeeperConfig
 	zkConn      *zk.Conn
@@ -324,23 +325,23 @@ func (this *ZookeeperCoordinator) tryGetAllBrokers() ([]*BrokerInfo, error) {
 	return brokers, nil
 }
 
-// Gets the offset for a given TopicPartition and consumer group Groupid.
+// Gets the offset for a given topic, partition and consumer group.
 // Returns offset on sucess, error otherwise.
-func (this *ZookeeperCoordinator) GetOffsetForTopicPartition(Groupid string, TopicPartition *TopicAndPartition) (offset int64, err error) {
+func (this *ZookeeperCoordinator) GetOffset(Groupid string, topic string, partition int32) (offset int64, err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		offset, err = this.tryGetOffsetForTopicPartition(Groupid, TopicPartition)
+		offset, err = this.tryGetOffsetForTopicPartition(Groupid, topic, partition)
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetOffsetForTopicPartition for group %s and topic-partitions %s failed after %d-th retry", Groupid, TopicPartition, i)
+		Tracef(this, "GetOffset for group %s, topic %s and partition %d failed after %d-th retry", Groupid, topic, partition, i)
 		time.Sleep(this.config.RequestBackoff)
 	}
 	return
 }
 
-func (this *ZookeeperCoordinator) tryGetOffsetForTopicPartition(Groupid string, TopicPartition *TopicAndPartition) (int64, error) {
-	dirs := newZKGroupTopicDirs(this.config.Root, Groupid, TopicPartition.Topic)
-	offset, _, err := this.zkConn.Get(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition))
+func (this *ZookeeperCoordinator) tryGetOffsetForTopicPartition(Groupid string, topic string, partition int32) (int64, error) {
+	dirs := newZKGroupTopicDirs(this.config.Root, Groupid, topic)
+	offset, _, err := this.zkConn.Get(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, partition))
 	if err != nil {
 		if err == zk.ErrNoNode {
 			return InvalidOffset, nil
@@ -788,11 +789,11 @@ func (this *ZookeeperCoordinator) tryReleasePartitionOwnership(group string, top
 
 // Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Groupid.
 // Returns error if failed to commit offset.
-func (this *ZookeeperCoordinator) CommitOffset(Groupid string, TopicPartition *TopicAndPartition, Offset int64) error {
-	dirs := newZKGroupTopicDirs(this.config.Root, Groupid, TopicPartition.Topic)
-	err := this.updateRecord(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+func (this *ZookeeperCoordinator) CommitOffset(Groupid string, Topic string, Partition int32, Offset int64) error {
+	dirs := newZKGroupTopicDirs(this.config.Root, Groupid, Topic)
+	err := this.updateRecord(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, Partition), []byte(strconv.FormatInt(Offset, 10)))
 	if err == zk.ErrNoNode {
-		return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, TopicPartition.Partition), []byte(strconv.FormatInt(Offset, 10)))
+		return this.createOrUpdatePathParentMayNotExistFailFast(fmt.Sprintf("%s/%d", dirs.ConsumerOffsetDir, Partition), []byte(strconv.FormatInt(Offset, 10)))
 	}
 
 	return err
@@ -1083,7 +1084,7 @@ func (mzk *mockZookeeperCoordinator) GetPartitionsForTopics(topics []string) (ma
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) GetAllBrokers() ([]*BrokerInfo, error) { panic("Not implemented") }
-func (mzk *mockZookeeperCoordinator) GetOffsetForTopicPartition(group string, topicPartition *TopicAndPartition) (int64, error) {
+func (mzk *mockZookeeperCoordinator) GetOffset(group string, topic string, partition int32) (int64, error) {
 	panic("Not implemented")
 }
 func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan CoordinatorEvent, error) {
@@ -1102,8 +1103,8 @@ func (mzk *mockZookeeperCoordinator) ClaimPartitionOwnership(group string, topic
 func (mzk *mockZookeeperCoordinator) ReleasePartitionOwnership(group string, topic string, partition int32) error {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) CommitOffset(group string, topicPartition *TopicAndPartition, offset int64) error {
-	mzk.commitHistory[*topicPartition] = offset
+func (mzk *mockZookeeperCoordinator) CommitOffset(group string, topic string, partition int32, offset int64) error {
+	mzk.commitHistory[TopicAndPartition{topic, partition}] = offset
 	return nil
 }
 func (this *mockZookeeperCoordinator) RemoveOldApiRequests(group string) error {

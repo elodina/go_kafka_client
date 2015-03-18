@@ -34,11 +34,6 @@ const (
 	SmallestOffset = "smallest"
 	// Reset the offset to the largest offset if it is out of range
 	LargestOffset = "largest"
-
-	// Zookeeper offset storage configuration string
-	ZookeeperOffsetStorage = "zookeeper"
-	// Kafka offset storage configuration string
-	KafkaOffsetStorage = "kafka"
 )
 
 // Consumer is a high-level Kafka consumer designed to work within a consumer group.
@@ -676,18 +671,14 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 
 func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[TopicAndPartition]int64, error) {
 	offsets := make(map[TopicAndPartition]int64)
-	if c.config.OffsetsStorage == "zookeeper" {
-		for _, topicPartition := range topicPartitions {
-			offset, err := c.config.Coordinator.GetOffsetForTopicPartition(c.config.Groupid, topicPartition)
-			if err != nil {
-				return nil, err
-			} else {
-				offsets[*topicPartition] = offset
-			}
-		}
-	} else {
-		panic(fmt.Sprintf("Offset storage '%s' is not supported", c.config.OffsetsStorage))
-	}
+    for _, topicPartition := range topicPartitions {
+        offset, err := c.config.OffsetStorage.GetOffset(c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
+        if err != nil {
+            return nil, err
+        } else {
+            offsets[*topicPartition] = offset
+        }
+    }
 
 	return offsets, nil
 }
