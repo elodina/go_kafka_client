@@ -70,7 +70,7 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 		fmt.Println("Queue size should be equal or greater than 0")
 		os.Exit(1)
 	}
-	if *timings && schemaRegistryUrl == "" {
+	if *timings && *schemaRegistryUrl == "" {
 		fmt.Println("--schema.registry.url parameter is required when --timings is used")
 	}
 
