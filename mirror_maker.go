@@ -16,12 +16,8 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
-	"github.com/Shopify/sarama"
 	"hash/fnv"
-	"strings"
 )
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
@@ -55,11 +51,32 @@ type MirrorMakerConfig struct {
 
 	// Number of messages that are buffered between the consumer and producer.
 	ChannelSize int
+
+	// Message keys encoder for producer
+	KeyEncoder Encoder
+
+	// Message values encoder for producer
+	ValueEncoder Encoder
+
+	// Message keys decoder for consumer
+	KeyDecoder Decoder
+
+	// Message values decoder for consumer
+	ValueDecoder Decoder
+
+	// Function that generates producer instances
+	ProducerConstructor ProducerConstructor
 }
 
 // Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
-	return &MirrorMakerConfig{}
+	return &MirrorMakerConfig{
+		KeyEncoder:          &ByteEncoder{},
+		ValueEncoder:        &ByteEncoder{},
+		KeyDecoder:          &ByteDecoder{},
+		ValueDecoder:        &ByteDecoder{},
+		ProducerConstructor: NewSaramaProducer,
+	}
 }
 
 // MirrorMaker is a tool to mirror source Kafka cluster into a target (mirror) Kafka cluster.
@@ -67,7 +84,7 @@ func NewMirrorMakerConfig() *MirrorMakerConfig {
 type MirrorMaker struct {
 	config          *MirrorMakerConfig
 	consumers       []*Consumer
-	producers       []*sarama.Producer
+	producers       []Producer
 	messageChannels []chan *Message
 }
 
@@ -112,6 +129,9 @@ func (this *MirrorMaker) startConsumers() {
 		if err != nil {
 			panic(err)
 		}
+		config.KeyDecoder = this.config.KeyDecoder
+		config.ValueDecoder = this.config.ValueDecoder
+
 		zkConfig, err := ZookeeperConfigFromFile(consumerConfigFile)
 		if err != nil {
 			panic(err)
@@ -168,43 +188,14 @@ func (this *MirrorMaker) startProducers() {
 		if err != nil {
 			panic(err)
 		}
-		if err = conf.Validate(); err != nil {
-			panic(err)
-		}
-
-		client, err := sarama.NewClient(conf.Clientid, conf.BrokerList, sarama.NewClientConfig())
-		if err != nil {
-			panic(err)
-		}
-
-		config := sarama.NewProducerConfig()
-		config.ChannelBufferSize = conf.SendBufferSize
-		switch strings.ToLower(conf.CompressionCodec) {
-		case "none":
-			config.Compression = sarama.CompressionNone
-		case "gzip":
-			config.Compression = sarama.CompressionGZIP
-		case "snappy":
-			config.Compression = sarama.CompressionSnappy
-		}
-		config.FlushByteCount = conf.FlushByteCount
-		config.FlushFrequency = conf.FlushTimeout
-		config.FlushMsgCount = conf.BatchSize
-		config.MaxMessageBytes = conf.MaxMessageBytes
-		config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
 		if this.config.PreservePartitions {
-			config.Partitioner = NewIntPartitioner
+			conf.Partitioner = NewFixedPartitioner
 		} else {
-			config.Partitioner = sarama.NewRandomPartitioner
+			conf.Partitioner = NewRandomPartitioner
 		}
-		config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
-		config.RetryBackoff = conf.RetryBackoff
-		config.Timeout = conf.Timeout
-
-		producer, err := sarama.NewProducer(client, config)
-		if err != nil {
-			panic(err)
-		}
+		conf.KeyEncoder = this.config.KeyEncoder
+		conf.ValueEncoder = this.config.ValueEncoder
+		producer := this.config.ProducerConstructor(conf)
 		this.producers = append(this.producers, producer)
 		if this.config.PreserveOrder {
 			go this.produceRoutine(producer, i)
@@ -214,15 +205,14 @@ func (this *MirrorMaker) startProducers() {
 	}
 }
 
-func (this *MirrorMaker) produceRoutine(producer *sarama.Producer, channelIndex int) {
+func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
+	partitionEncoder := &Int32Encoder{}
 	for msg := range this.messageChannels[channelIndex] {
-		var key sarama.Encoder
-		if !this.config.PreservePartitions {
-			key = sarama.ByteEncoder(msg.Key)
+		if this.config.PreservePartitions {
+			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.Value, KeyEncoder: partitionEncoder}
 		} else {
-			key = Int32Encoder(msg.Partition)
+			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.Value}
 		}
-		producer.Input() <- &sarama.ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: key, Value: sarama.ByteEncoder(msg.Value)}
 	}
 }
 
@@ -230,53 +220,4 @@ func topicPartitionHash(msg *Message) int {
 	h := fnv.New32a()
 	h.Write([]byte(fmt.Sprintf("%s%d", msg.Topic, msg.Partition)))
 	return int(h.Sum32())
-}
-
-// IntPartitioner is used when we want to preserve partitions.
-// This partitioner should be used ONLY with Int32Encoder as it contains unsafe conversions (for performance reasons mostly).
-type IntPartitioner struct{}
-
-// PartitionerConstructor function used by Sarama library.
-func NewIntPartitioner() sarama.Partitioner {
-	return new(IntPartitioner)
-}
-
-// Partition takes the key and partition count and chooses a partition. IntPartitioner should ONLY receive Int32Encoder keys.
-// Passing it a Int32Encoder(2) key means it should assign the incoming message partition = 2 (assuming this partition exists, otherwise there's no guarantee which partition will be picked).
-func (this *IntPartitioner) Partition(key sarama.Encoder, numPartitions int32) (int32, error) {
-	if key == nil {
-		panic("IntPartitioner does not work without keys.")
-	}
-	b, err := key.Encode()
-	if err != nil {
-		return -1, err
-	}
-
-	buf := bytes.NewBuffer(b)
-	partition, err := binary.ReadUvarint(buf)
-	if err != nil {
-		return -1, err
-	}
-
-	return int32(partition) % numPartitions, nil
-}
-
-// Another Partitioner method used by Sarama.
-func (this *IntPartitioner) RequiresConsistency() bool {
-	return true
-}
-
-// Int32Encoder takes an int32 and is able to transform it into a []byte.
-type Int32Encoder int32
-
-// Encodes the current value into a []byte. Should never return an error.
-func (this Int32Encoder) Encode() ([]byte, error) {
-	buf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buf, uint32(this))
-	return buf, nil
-}
-
-// Length for Int32Encoder is always 4.
-func (this Int32Encoder) Length() int {
-	return 4
 }
