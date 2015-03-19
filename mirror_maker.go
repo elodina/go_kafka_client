@@ -233,18 +233,23 @@ func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
 
 func (this *MirrorMaker) timingsRoutine(producer Producer) {
 	partitionEncoder := &Int32Encoder{}
+	partitionDecoder := &Int32Decoder{}
 	for msg := range producer.Successes() {
-		decoded, err := this.config.ValueDecoder.Decode(msg.Value.([]byte))
+		decodedKey, err := partitionDecoder.Decode(msg.Key.([]byte))
+		if err != nil {
+			Errorf(this, "Failed to decode %v", msg.Key)
+		}
+		decodedValue, err := this.config.ValueDecoder.Decode(msg.Value.([]byte))
 		if err != nil {
 			Errorf(this, "Failed to decode %v", msg.Value)
 		}
 
-		if record, ok := decoded.(*avro.GenericRecord); ok {
+		if record, ok := decodedValue.(*avro.GenericRecord); ok {
 			addTiming(record)
-			producer.Input() <- &ProducerMessage{Topic: "timings_" + this.config.TopicPrefix + msg.Topic, Key: msg.Key,
+			producer.Input() <- &ProducerMessage{Topic: "timings_" + this.config.TopicPrefix + msg.Topic, Key: decodedKey.(uint32),
 				Value: msg.Value, KeyEncoder: partitionEncoder}
 		} else {
-			Errorf(this, "Invalid avro schema type %s", decoded)
+			Errorf(this, "Invalid avro schema type %s", decodedValue)
 		}
 	}
 }
