@@ -229,6 +229,7 @@ func (this *MirrorMaker) startProducers() {
 		if this.config.TimingsProducerConfig != "" {
 			go this.timingsRoutine(producer)
 		}
+		go this.failedRoutine(producer)
 		if this.config.PreserveOrder {
 			go this.produceRoutine(producer, i)
 		} else {
@@ -268,6 +269,12 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 		} else {
 			Errorf(this, "Invalid avro schema type %s", decodedValue)
 		}
+	}
+}
+
+func (this *MirrorMaker) failedRoutine(producer Producer) {
+	for msg := range producer.Errors() {
+		Error("mirrormaker", msg.err)
 	}
 }
 
