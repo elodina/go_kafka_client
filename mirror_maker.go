@@ -298,19 +298,19 @@ func (this *MirrorMaker) addTiming(record *avro.GenericRecord) *avro.GenericReco
 		this.newSchema = &schema
 		this.newSchema.Fields = append(this.newSchema.Fields, TimingField)
 	}
-	var timings []interface {}
+	var timings []int64
 	if record.Get("timings") == nil {
-		timings = make([]interface {}, 0)
+		timings = make([]int64, 0)
 		newRecord := avro.NewGenericRecord(this.newSchema)
 		for _, field := range this.newSchema.Fields {
 			newRecord.Set(field.Name, record.Get(field.Name))
 		}
 		record = newRecord
-		record.Set("timings", timings)
 	} else {
-		timings = record.Get("timings").([]interface {})
+		timings = record.Get("timings").([]int64)
 	}
 	timings = append(timings, now)
+	record.Set("timings", timings)
 
 	return record
 }
