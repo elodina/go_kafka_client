@@ -210,6 +210,7 @@ func (this *MirrorMaker) startProducers() {
 		conf.KeyEncoder = this.config.KeyEncoder
 		conf.ValueEncoder = this.config.ValueEncoder
 		this.timingsProducer = this.config.ProducerConstructor(conf)
+		go this.failedRoutine(this.timingsProducer)
 	}
 
 	for i := 0; i < this.config.NumProducers; i++ {
@@ -264,7 +265,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 
 		if record, ok := decodedValue.(*avro.GenericRecord); ok {
 			addTiming(record)
-			this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + this.config.TopicPrefix + msg.Topic, Key: decodedKey.(uint32),
+			this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + msg.Topic, Key: decodedKey.(uint32),
 				Value: record, KeyEncoder: partitionEncoder}
 		} else {
 			Errorf(this, "Invalid avro schema type %s", decodedValue)
