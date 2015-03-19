@@ -23,8 +23,8 @@ import (
 )
 
 var TimingField = &avro.SchemaField{
-	Name: "timings",
-	Doc: "Timings",
+	Name:    "timings",
+	Doc:     "Timings",
 	Default: "null",
 	Type: &avro.ArraySchema{
 		Items: &avro.LongSchema{},
@@ -87,11 +87,12 @@ type MirrorMakerConfig struct {
 // Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
 	return &MirrorMakerConfig{
-		KeyEncoder:          &ByteEncoder{},
-		ValueEncoder:        &ByteEncoder{},
-		KeyDecoder:          &ByteDecoder{},
-		ValueDecoder:        &ByteDecoder{},
-		ProducerConstructor: NewSaramaProducer,
+		KeyEncoder:            &ByteEncoder{},
+		ValueEncoder:          &ByteEncoder{},
+		KeyDecoder:            &ByteDecoder{},
+		ValueDecoder:          &ByteDecoder{},
+		ProducerConstructor:   NewSaramaProducer,
+		TimingsProducerConfig: "",
 	}
 }
 
@@ -103,7 +104,7 @@ type MirrorMaker struct {
 	producers       []Producer
 	messageChannels []chan *Message
 	timingsProducer Producer
-	newSchema		*avro.RecordSchema
+	newSchema       *avro.RecordSchema
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
@@ -168,7 +169,7 @@ func (this *MirrorMaker) startConsumers() {
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 				if this.config.TimingsProducerConfig != "" {
 					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
-						record = this.addTiming(record)
+						msg.DecodedValue = this.addTiming(record)
 						this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 					} else {
 						return NewProcessingFailedResult(id)
@@ -305,11 +306,11 @@ func (this *MirrorMaker) addTiming(record *avro.GenericRecord) *avro.GenericReco
 			newRecord.Set(field.Name, record.Get(field.Name))
 		}
 		record = newRecord
+		record.Set("timings", timings)
 	} else {
 		timings = record.Get("timings").([]int64)
 	}
 	timings = append(timings, now)
-	record.Set("timings", timings)
 
 	return record
 }
