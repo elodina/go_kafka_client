@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/jimlawless/cfg"
-	avro "github.com/stealthly/go-avro"
 	"hash/fnv"
 	"math/rand"
 	"reflect"
@@ -345,14 +344,4 @@ func setInt32Config(where *int32, what string) error {
 		return err
 	}
 	return nil
-}
-
-func addTiming(record *avro.GenericRecord) {
-	now := time.Now().Unix()
-	var timings []int64
-	if record.Get("timings") == nil {
-		timings = make([]int64, 0)
-		record.Set("timings", timings)
-	}
-	timings = append(timings, now)
 }

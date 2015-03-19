@@ -19,7 +19,17 @@ import (
 	"fmt"
 	avro "github.com/stealthly/go-avro"
 	"hash/fnv"
+	"time"
 )
+
+var TimingField = &avro.SchemaField{
+	Name: "timings",
+	Doc: "Timings",
+	Default: "null",
+	Type: &avro.ArraySchema{
+		Items: &avro.LongSchema{},
+	},
+}
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
 type MirrorMakerConfig struct {
@@ -93,6 +103,7 @@ type MirrorMaker struct {
 	producers       []Producer
 	messageChannels []chan *Message
 	timingsProducer Producer
+	newSchema		*avro.RecordSchema
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
@@ -157,7 +168,7 @@ func (this *MirrorMaker) startConsumers() {
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 				if this.config.TimingsProducerConfig != "" {
 					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
-						addTiming(record)
+						this.addTiming(record)
 						this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 					} else {
 						return NewProcessingFailedResult(id)
@@ -264,7 +275,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 		}
 
 		if record, ok := decodedValue.(*avro.GenericRecord); ok {
-			addTiming(record)
+			this.addTiming(record)
 			this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + msg.Topic, Key: decodedKey.(uint32),
 				Value: record, KeyEncoder: partitionEncoder}
 		} else {
@@ -277,6 +288,21 @@ func (this *MirrorMaker) failedRoutine(producer Producer) {
 	for msg := range producer.Errors() {
 		Error("mirrormaker", msg.err)
 	}
+}
+
+func (this *MirrorMaker) addTiming(record *avro.GenericRecord) {
+	now := time.Now().Unix()
+	if this.newSchema == nil {
+		schema := *record.Schema().(*avro.RecordSchema)
+		this.newSchema = &schema
+		this.newSchema.Fields = append(this.newSchema.Fields, TimingField)
+	}
+	var timings []int64
+	if record.Get("timings") == nil {
+		timings = make([]int64, 0)
+		record.Set("timings", timings)
+	}
+	timings = append(timings, now)
 }
 
 func topicPartitionHash(msg *Message) int {
