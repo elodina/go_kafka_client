@@ -247,7 +247,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 		if record, ok := decodedValue.(*avro.GenericRecord); ok {
 			addTiming(record)
 			producer.Input() <- &ProducerMessage{Topic: "timings_" + this.config.TopicPrefix + msg.Topic, Key: decodedKey.(uint32),
-				Value: msg.Value, KeyEncoder: partitionEncoder}
+				Value: record, KeyEncoder: partitionEncoder}
 		} else {
 			Errorf(this, "Invalid avro schema type %s", decodedValue)
 		}
