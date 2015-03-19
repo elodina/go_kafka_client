@@ -47,7 +47,7 @@ var prefix = flag.String("prefix", "", "Destination topic prefix.")
 var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffered between the consumer and producer.")
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 var schemaRegistryUrl = flag.String("schema.registry.url", "", "Avro schema registry URL for message encoding/decoding")
-var timings = flag.Bool("timings", false, "Whether add timings to message or not. Note: used only for avro encoded messages")
+var timingsProducerConfig = flag.String("timings.producer.config", "", "Path to producer configuration file for timings.")
 
 func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	flag.Var(&consumerConfig, "consumer.config", "Path to consumer configuration file.")
@@ -70,7 +70,7 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 		fmt.Println("Queue size should be equal or greater than 0")
 		os.Exit(1)
 	}
-	if *timings && *schemaRegistryUrl == "" {
+	if *timingsProducerConfig == "" && *schemaRegistryUrl == "" {
 		fmt.Println("--schema.registry.url parameter is required when --timings is used")
 	}
 
@@ -91,7 +91,7 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 		config.KeyDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
 		config.ValueDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
 	}
-	config.Timings = *timings
+	config.Timings = *timingsProducerConfig
 
 	return config
 }

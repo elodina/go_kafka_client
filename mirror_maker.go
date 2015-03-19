@@ -68,9 +68,10 @@ type MirrorMakerConfig struct {
 	// Function that generates producer instances
 	ProducerConstructor ProducerConstructor
 
+	// Path to producer configuration, that is responsible for logging timings
 	// Defines whether add timings to message or not.
 	// Note: used only for avro encoded messages
-	Timings bool
+	TimingsProducerConfig string
 }
 
 // Creates an empty MirrorMakerConfig.
@@ -91,6 +92,7 @@ type MirrorMaker struct {
 	consumers       []*Consumer
 	producers       []Producer
 	messageChannels []chan *Message
+	timingsProducer Producer
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
@@ -153,7 +155,7 @@ func (this *MirrorMaker) startConsumers() {
 		if this.config.PreserveOrder {
 			numProducers := this.config.NumProducers
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-				if this.config.Timings {
+				if this.config.TimingsProducerConfig != "" {
 					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
 						addTiming(record)
 						this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
@@ -195,6 +197,21 @@ func (this *MirrorMaker) initializeMessageChannels() {
 }
 
 func (this *MirrorMaker) startProducers() {
+	if this.config.TimingsProducerConfig != "" {
+		conf, err := ProducerConfigFromFile(this.config.TimingsProducerConfig)
+		if err != nil {
+			panic(err)
+		}
+		if this.config.PreservePartitions {
+			conf.Partitioner = NewFixedPartitioner
+		} else {
+			conf.Partitioner = NewRandomPartitioner
+		}
+		conf.KeyEncoder = this.config.KeyEncoder
+		conf.ValueEncoder = this.config.ValueEncoder
+		this.timingsProducer = this.config.ProducerConstructor(conf)
+	}
+
 	for i := 0; i < this.config.NumProducers; i++ {
 		conf, err := ProducerConfigFromFile(this.config.ProducerConfig)
 		if err != nil {
@@ -209,7 +226,7 @@ func (this *MirrorMaker) startProducers() {
 		conf.ValueEncoder = this.config.ValueEncoder
 		producer := this.config.ProducerConstructor(conf)
 		this.producers = append(this.producers, producer)
-		if this.config.Timings {
+		if this.config.TimingsProducerConfig != "" {
 			go this.timingsRoutine(producer)
 		}
 		if this.config.PreserveOrder {
@@ -246,7 +263,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 
 		if record, ok := decodedValue.(*avro.GenericRecord); ok {
 			addTiming(record)
-			producer.Input() <- &ProducerMessage{Topic: "timings_" + this.config.TopicPrefix + msg.Topic, Key: decodedKey.(uint32),
+			this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + this.config.TopicPrefix + msg.Topic, Key: decodedKey.(uint32),
 				Value: record, KeyEncoder: partitionEncoder}
 		} else {
 			Errorf(this, "Invalid avro schema type %s", decodedValue)
