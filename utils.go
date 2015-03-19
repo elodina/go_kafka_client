@@ -350,7 +350,7 @@ func setInt32Config(where *int32, what string) error {
 func addTiming(record *avro.GenericRecord) {
 	now := time.Now().Unix()
 	var timings []int64
-	if timings = record.Get("timings").([]int64); timings == nil {
+	if record.Get("timings") == nil {
 		timings = make([]int64, 0)
 		record.Set("timings", timings)
 	}
