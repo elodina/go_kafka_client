@@ -91,7 +91,7 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 		config.KeyDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
 		config.ValueDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
 	}
-	config.Timings = *timingsProducerConfig
+	config.TimingsProducerConfig = *timingsProducerConfig
 
 	return config
 }
