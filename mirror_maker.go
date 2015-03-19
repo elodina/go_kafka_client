@@ -156,11 +156,11 @@ func (this *MirrorMaker) startConsumers() {
 				if this.config.Timings {
 					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
 						addTiming(record)
+						this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 					} else {
 						return NewProcessingFailedResult(id)
 					}
 				}
-				this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 
 				return NewSuccessfulResult(id)
 			}
