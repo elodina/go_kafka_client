@@ -168,7 +168,7 @@ func (this *MirrorMaker) startConsumers() {
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 				if this.config.TimingsProducerConfig != "" {
 					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
-						this.addTiming(record)
+						record = this.addTiming(record)
 						this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 					} else {
 						return NewProcessingFailedResult(id)
@@ -275,7 +275,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 		}
 
 		if record, ok := decodedValue.(*avro.GenericRecord); ok {
-			this.addTiming(record)
+			record = this.addTiming(record)
 			this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + msg.Topic, Key: decodedKey.(uint32),
 				Value: record, KeyEncoder: partitionEncoder}
 		} else {
@@ -290,7 +290,7 @@ func (this *MirrorMaker) failedRoutine(producer Producer) {
 	}
 }
 
-func (this *MirrorMaker) addTiming(record *avro.GenericRecord) {
+func (this *MirrorMaker) addTiming(record *avro.GenericRecord) *avro.GenericRecord {
 	now := time.Now().Unix()
 	if this.newSchema == nil {
 		schema := *record.Schema().(*avro.RecordSchema)
@@ -300,9 +300,18 @@ func (this *MirrorMaker) addTiming(record *avro.GenericRecord) {
 	var timings []int64
 	if record.Get("timings") == nil {
 		timings = make([]int64, 0)
-		record.Set("timings", timings)
+		newRecord := avro.NewGenericRecord(this.newSchema)
+		for _, field := range this.newSchema.Fields {
+			newRecord.Set(field.Name, record.Get(field.Name))
+		}
+		record = newRecord
+	} else {
+		timings = record.Get("timings").([]int64)
 	}
 	timings = append(timings, now)
+	record.Set("timings", timings)
+
+	return record
 }
 
 func topicPartitionHash(msg *Message) int {
