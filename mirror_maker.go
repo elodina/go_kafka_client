@@ -28,10 +28,10 @@ var TimingField = &avro.SchemaField{
 	Default: "null",
 	Type: &avro.UnionSchema{
 		Types: []avro.Schema{
+			&avro.NullSchema{},
 			&avro.ArraySchema{
 				Items: &avro.LongSchema{},
 			},
-			&avro.NullSchema{},
 		},
 	},
 }
