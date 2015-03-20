@@ -243,6 +243,9 @@ func (this *MirrorMaker) startProducers() {
 		}
 		conf.KeyEncoder = this.config.KeyEncoder
 		conf.ValueEncoder = this.config.ValueEncoder
+		if this.config.TimingsProducerConfig != "" {
+			conf.AckSuccesses = true
+		}
 		producer := this.config.ProducerConstructor(conf)
 		this.producers = append(this.producers, producer)
 		if this.config.TimingsProducerConfig != "" {

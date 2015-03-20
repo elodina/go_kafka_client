@@ -55,7 +55,7 @@ func NewSaramaProducer(conf *ProducerConfig) Producer {
 	config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
 	config.RetryBackoff = conf.RetryBackoff
 	config.Timeout = conf.Timeout
-	config.AckSuccesses = true
+	config.AckSuccesses = conf.AckSuccesses
 
 	partitionerFactory := &SaramaPartitionerFactory{conf.Partitioner}
 	config.Partitioner = partitionerFactory.PartitionerConstructor
