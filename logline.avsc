@@ -1,0 +1,43 @@
+{
+    "type": "record",
+    "name": "logLine",
+    "fields": [
+        {
+            "name": "line",
+            "type": "string",
+            "default": ""
+        },
+        {
+            "name": "source",
+            "type": "string",
+            default: ""
+        },
+        {
+            "name": "tag",
+            "type": [
+                "null",
+                {
+                    "type": "map",
+                    "values": "string"
+                }
+            ],
+            "default": "null"
+        },
+        {
+            "name": "logtypeid",
+            "type": "long",
+            "default": 0
+        },
+        {
+            "name": "timings",
+            "type": [
+                "null",
+                {
+                    "type": "map",
+                    "values": "long"
+                }
+            ],
+            "default": "null"
+        }
+    ]
+}

@@ -20,21 +20,8 @@ import (
 	avro "github.com/stealthly/go-avro"
 	"hash/fnv"
 	"time"
+	"io/ioutil"
 )
-
-var TimingField = &avro.SchemaField{
-	Name:    "timings",
-	Doc:     "Timings",
-	Default: "null",
-	Type: &avro.UnionSchema{
-		Types: []avro.Schema{
-			&avro.NullSchema{},
-			&avro.ArraySchema{
-				Items: &avro.LongSchema{},
-			},
-		},
-	},
-}
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
 type MirrorMakerConfig struct {
@@ -109,7 +96,7 @@ type MirrorMaker struct {
 	producers       []Producer
 	messageChannels []chan *Message
 	timingsProducer Producer
-	newSchema       *avro.RecordSchema
+	logLineSchema   *avro.RecordSchema
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
@@ -174,7 +161,7 @@ func (this *MirrorMaker) startConsumers() {
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 				if this.config.TimingsProducerConfig != "" {
 					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
-						msg.DecodedValue = this.addTiming(record)
+						msg.DecodedValue = this.AddTiming(record, time.Now().Unix())
 					} else {
 						return NewProcessingFailedResult(id)
 					}
@@ -290,7 +277,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 		}
 
 		if record, ok := decodedValue.(*avro.GenericRecord); ok {
-			record = this.addTiming(record)
+			record = this.AddTiming(record, time.Now().Unix())
 			if this.config.PreservePartitions {
 				this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + msg.Topic, Key: int32(decodedKey.(uint32)), Value: record}
 			} else {
@@ -308,28 +295,36 @@ func (this *MirrorMaker) failedRoutine(producer Producer) {
 	}
 }
 
-func (this *MirrorMaker) addTiming(record *avro.GenericRecord) *avro.GenericRecord {
-	now := time.Now().Unix()
-	if this.newSchema == nil {
-		schema := *record.Schema().(*avro.RecordSchema)
-		this.newSchema = &schema
-		this.newSchema.Fields = append(this.newSchema.Fields, TimingField)
-	}
-	var timings []interface{}
-	if record.Get("timings") == nil {
-		timings = make([]interface{}, 0)
-		newRecord := avro.NewGenericRecord(this.newSchema)
-		for _, field := range this.newSchema.Fields {
-			newRecord.Set(field.Name, record.Get(field.Name))
+func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, now int64) *avro.GenericRecord {
+	if this.logLineSchema == nil {
+		file, err := ioutil.ReadFile("logline.avsc")
+		if err != nil {
+			panic(err)
 		}
-		record = newRecord
-	} else {
-		timings = record.Get("timings").([]interface{})
+		parsed, err := avro.ParseSchema(string(file))
+		if err != nil {
+			panic(err)
+		}
+		this.logLineSchema = parsed.(*avro.RecordSchema)
 	}
-	timings = append(timings, now)
-	record.Set("timings", timings)
+	newSchema := *record.Schema().(*avro.RecordSchema)
+	newSchema.Fields = append(newSchema.Fields, this.logLineSchema.Fields...)
+	newRecord := avro.NewGenericRecord(&newSchema)
+	for _, field := range record.Schema().(*avro.RecordSchema).Fields {
+		newRecord.Set(field.Name, record.Get(field.Name))
+	}
 
-	return record
+	var timings []interface{}
+	if newRecord.Get("timings") == nil {
+		timings = make([]interface{}, 0)
+	} else {
+		timings = newRecord.Get("timings").([]interface {})
+	}
+
+	timings = append(timings, now)
+	newRecord.Set("timings", timings)
+
+	return newRecord
 }
 
 func topicPartitionHash(msg *Message) int {
