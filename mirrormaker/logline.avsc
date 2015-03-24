@@ -1,5 +1,6 @@
 {
     "type": "record",
+    "name": "logLine",
     "fields": [
         {
             "name": "line",
@@ -37,5 +38,3 @@
         }
     ]
 }
-
-./bin/kafka-avro-console-consumer --topic test --zookeeper localhost:2181 --from-beginning
