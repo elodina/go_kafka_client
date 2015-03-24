@@ -21,6 +21,7 @@ import (
 	"hash/fnv"
 	"time"
 	"io/ioutil"
+	"reflect"
 )
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
@@ -310,10 +311,25 @@ func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, now int64) *avro.
 		this.logLineSchema = parsed.(*avro.RecordSchema)
 	}
 	if !this.evolutioned.exists(record.Schema().String()) {
+		currentSchema := record.Schema().(*avro.RecordSchema)
 		newSchema := *record.Schema().(*avro.RecordSchema)
-		newSchema.Fields = append(newSchema.Fields, this.logLineSchema.Fields...)
+		for _, newField := range this.logLineSchema.Fields {
+			var exists bool
+			for _, currentField := range currentSchema.Fields {
+				if currentField.Name == newField.Name {
+					if reflect.DeepEqual(currentField, newField) {
+						exists = true
+						break
+					}
+					panic(fmt.Sprintf("Incompatible field %s in schema %s", currentField.Name, currentSchema.String()))
+				}
+			}
+			if !exists {
+				newSchema.Fields = append(newSchema.Fields, newField)
+			}
+		}
 		newRecord := avro.NewGenericRecord(&newSchema)
-		for _, field := range record.Schema().(*avro.RecordSchema).Fields {
+		for _, field := range currentSchema.Fields {
 			newRecord.Set(field.Name, record.Get(field.Name))
 		}
 		record = newRecord

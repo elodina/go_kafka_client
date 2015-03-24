@@ -37,3 +37,5 @@
         }
     ]
 }
+
+./bin/kafka-avro-console-consumer --topic test --zookeeper localhost:2181 --from-beginning
