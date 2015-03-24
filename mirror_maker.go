@@ -97,12 +97,14 @@ type MirrorMaker struct {
 	messageChannels []chan *Message
 	timingsProducer Producer
 	logLineSchema   *avro.RecordSchema
+	evolutioned		*schemaSet
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
 func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 	return &MirrorMaker{
 		config: config,
+		evolutioned: newSchemaSet(),
 	}
 }
 
@@ -307,28 +309,53 @@ func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, now int64) *avro.
 		}
 		this.logLineSchema = parsed.(*avro.RecordSchema)
 	}
-	newSchema := *record.Schema().(*avro.RecordSchema)
-	newSchema.Fields = append(newSchema.Fields, this.logLineSchema.Fields...)
-	newRecord := avro.NewGenericRecord(&newSchema)
-	for _, field := range record.Schema().(*avro.RecordSchema).Fields {
-		newRecord.Set(field.Name, record.Get(field.Name))
+	if !this.evolutioned.exists(record.Schema().String()) {
+		newSchema := *record.Schema().(*avro.RecordSchema)
+		newSchema.Fields = append(newSchema.Fields, this.logLineSchema.Fields...)
+		newRecord := avro.NewGenericRecord(&newSchema)
+		for _, field := range record.Schema().(*avro.RecordSchema).Fields {
+			newRecord.Set(field.Name, record.Get(field.Name))
+		}
+		record = newRecord
+		this.evolutioned.add(record.Schema().String())
 	}
 
 	var timings []interface{}
-	if newRecord.Get("timings") == nil {
+	if record.Get("timings") == nil {
 		timings = make([]interface{}, 0)
 	} else {
-		timings = newRecord.Get("timings").([]interface {})
+		timings = record.Get("timings").([]interface {})
 	}
 
 	timings = append(timings, now)
-	newRecord.Set("timings", timings)
+	record.Set("timings", timings)
 
-	return newRecord
+	return record
 }
 
 func topicPartitionHash(msg *Message) int {
 	h := fnv.New32a()
 	h.Write([]byte(fmt.Sprintf("%s%d", msg.Topic, msg.Partition)))
 	return int(h.Sum32())
+}
+
+type schemaSet struct {
+	internal map[string]interface {}
+}
+
+func newSchemaSet() *schemaSet {
+	return &schemaSet{
+		internal: make(map[string]interface {}),
+	}
+}
+
+func (this *schemaSet) add(schema string) {
+	if _, exists := this.internal[schema]; !exists {
+		this.internal[schema] = nil
+	}
+}
+
+func (this *schemaSet) exists(schema string) bool {
+	_, exists := this.internal[schema]
+	return exists
 }

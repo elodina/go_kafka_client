@@ -4,13 +4,11 @@
     "fields": [
         {
             "name": "line",
-            "type": "string",
-            "default": ""
+            "type": ["null", "string"],
         },
         {
             "name": "source",
-            "type": "string",
-            default: ""
+            "type": ["null", "string"],
         },
         {
             "name": "tag",
@@ -25,8 +23,7 @@
         },
         {
             "name": "logtypeid",
-            "type": "long",
-            "default": 0
+            "type": ["null", "long"]
         },
         {
             "name": "timings",
