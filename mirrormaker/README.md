@@ -28,4 +28,8 @@ The tool uses a Kafka consumer to consume messages from the source cluster, and 
 
 `--queue.size` - number of messages that are buffered between the consumer and producer. *Defaults to 10000*.
 
-`--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.
+`--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.  
+
+`--timings.producer.config` - property file to configure embedded timings producer.  
+
+`--schema.registry.url` - Avro schema registry URL for requesting avro schemas. 

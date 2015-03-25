@@ -19,9 +19,9 @@ import (
 	"fmt"
 	avro "github.com/stealthly/go-avro"
 	"hash/fnv"
-	"time"
 	"io/ioutil"
 	"reflect"
+	"time"
 )
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
@@ -98,14 +98,21 @@ type MirrorMaker struct {
 	messageChannels []chan *Message
 	timingsProducer Producer
 	logLineSchema   *avro.RecordSchema
-	evolutioned		*schemaSet
+	evolutioned     *schemaSet
+	errors          chan *FailedMessage
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
 func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
+	var logLineSchema *avro.RecordSchema
+	if config.TimingsProducerConfig != "" {
+		logLineSchema = readLoglineSchema()
+	}
 	return &MirrorMaker{
-		config: config,
+		config:      config,
+		logLineSchema: logLineSchema,
 		evolutioned: newSchemaSet(),
+		errors:      make(chan *FailedMessage),
 	}
 }
 
@@ -163,8 +170,9 @@ func (this *MirrorMaker) startConsumers() {
 			numProducers := this.config.NumProducers
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 				if this.config.TimingsProducerConfig != "" {
+					consumed := time.Now().Unix()
 					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
-						msg.DecodedValue = this.AddTiming(record, time.Now().Unix())
+						msg.DecodedValue = this.AddTiming(record, "consumed", consumed)
 					} else {
 						return NewProcessingFailedResult(id)
 					}
@@ -253,6 +261,14 @@ func (this *MirrorMaker) startProducers() {
 func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
 	partitionEncoder := &Int32Encoder{}
 	for msg := range this.messageChannels[channelIndex] {
+		if this.config.TimingsProducerConfig != "" {
+			preProduce := time.Now().UnixNano()
+			if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
+				msg.DecodedValue = this.AddTiming(record, "pre-produce", preProduce)
+			} else {
+				panic("Failed to decode message")
+			}
+		}
 		if this.config.PreservePartitions {
 			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.DecodedValue, KeyEncoder: partitionEncoder}
 		} else {
@@ -280,7 +296,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 		}
 
 		if record, ok := decodedValue.(*avro.GenericRecord); ok {
-			record = this.AddTiming(record, time.Now().Unix())
+			record = this.AddTiming(record, "post-produce", time.Now().Unix())
 			if this.config.PreservePartitions {
 				this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + msg.Topic, Key: int32(decodedKey.(uint32)), Value: record}
 			} else {
@@ -292,24 +308,7 @@ func (this *MirrorMaker) timingsRoutine(producer Producer) {
 	}
 }
 
-func (this *MirrorMaker) failedRoutine(producer Producer) {
-	for msg := range producer.Errors() {
-		Error("mirrormaker", msg.err)
-	}
-}
-
-func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, now int64) *avro.GenericRecord {
-	if this.logLineSchema == nil {
-		file, err := ioutil.ReadFile("logline.avsc")
-		if err != nil {
-			panic(err)
-		}
-		parsed, err := avro.ParseSchema(string(file))
-		if err != nil {
-			panic(err)
-		}
-		this.logLineSchema = parsed.(*avro.RecordSchema)
-	}
+func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, tag string, now int64) *avro.GenericRecord {
 	if !this.evolutioned.exists(record.Schema().String()) {
 		currentSchema := record.Schema().(*avro.RecordSchema)
 		newSchema := *record.Schema().(*avro.RecordSchema)
@@ -336,17 +335,36 @@ func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, now int64) *avro.
 		this.evolutioned.add(record.Schema().String())
 	}
 
-	var timings []interface{}
+	var timings map[string]interface{}
 	if record.Get("timings") == nil {
-		timings = make([]interface{}, 0)
+		timings = make(map[string]interface{})
 	} else {
-		timings = record.Get("timings").([]interface {})
+		timings = record.Get("timings").(map[string]interface{})
 	}
 
-	timings = append(timings, now)
+	timings[tag] = now
 	record.Set("timings", timings)
 
 	return record
+}
+
+func (this *MirrorMaker) Errors() <-chan *FailedMessage {
+	return this.errors
+}
+
+func readLoglineSchema() *avro.RecordSchema {
+	file, err := ioutil.ReadFile("logline.avsc")
+	if err != nil {
+		panic(err)
+	}
+
+	return avro.MustParseSchema(string(file)).(*avro.RecordSchema)
+}
+
+func (this *MirrorMaker) failedRoutine(producer Producer) {
+	for msg := range producer.Errors() {
+		this.errors <- msg
+	}
 }
 
 func topicPartitionHash(msg *Message) int {
@@ -356,12 +374,12 @@ func topicPartitionHash(msg *Message) int {
 }
 
 type schemaSet struct {
-	internal map[string]interface {}
+	internal map[string]interface{}
 }
 
 func newSchemaSet() *schemaSet {
 	return &schemaSet{
-		internal: make(map[string]interface {}),
+		internal: make(map[string]interface{}),
 	}
 }
 
