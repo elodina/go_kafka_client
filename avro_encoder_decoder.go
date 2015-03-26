@@ -48,6 +48,10 @@ func NewKafkaAvroEncoder(url string) *KafkaAvroEncoder {
 }
 
 func (this *KafkaAvroEncoder) Encode(obj interface{}) ([]byte, error) {
+	if obj == nil {
+		return nil, nil
+	}
+
 	switch record := obj.(type) {
 	case *avro.GenericRecord:
 		{

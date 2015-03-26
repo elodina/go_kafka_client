@@ -28,6 +28,9 @@ type Decoder interface {
 type StringEncoder struct{}
 
 func (this *StringEncoder) Encode(what interface{}) ([]byte, error) {
+	if what == nil {
+		return nil, nil
+	}
 	return []byte(what.(string)), nil
 }
 
@@ -54,6 +57,9 @@ func (this *Int32Decoder) Decode(bytes []byte) (interface{}, error) {
 type ByteEncoder struct{}
 
 func (this *ByteEncoder) Encode(what interface{}) ([]byte, error) {
+	if what == nil {
+		return nil, nil
+	}
 	return what.([]byte), nil
 }
 
