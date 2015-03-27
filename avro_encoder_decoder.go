@@ -20,7 +20,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/stealthly/go-avro"
+	avro "github.com/stealthly/go-avro"
 )
 
 var magic_bytes = []byte{0}
@@ -48,36 +48,29 @@ func NewKafkaAvroEncoder(url string) *KafkaAvroEncoder {
 }
 
 func (this *KafkaAvroEncoder) Encode(obj interface{}) ([]byte, error) {
-	switch record := obj.(type) {
-	case *avro.GenericRecord:
-		{
-			if record == nil {
-				return nil, nil
-			}
-
-			subject := record.Schema().GetName() + "-value"
-			schema := this.getSchema(obj)
-			id, err := this.schemaRegistry.Register(subject, schema)
-			if err != nil {
-				return nil, err
-			}
-
-			buffer := &bytes.Buffer{}
-			buffer.Write(magic_bytes)
-			idSlice := make([]byte, 4)
-			binary.BigEndian.PutUint32(idSlice, uint32(id))
-			buffer.Write(idSlice)
-
-			enc := avro.NewBinaryEncoder(buffer)
-			writer := avro.NewGenericDatumWriter()
-			writer.SetSchema(schema)
-			writer.Write(obj, enc)
-
-			return buffer.Bytes(), nil
-		}
-	default:
-		return nil, errors.New("*GenericRecord is expected")
+	if obj == nil {
+		return nil, nil
 	}
+
+	schema := this.getSchema(obj)
+	subject := schema.GetName() + "-value"
+	id, err := this.schemaRegistry.Register(subject, schema)
+	if err != nil {
+		return nil, err
+	}
+
+	buffer := &bytes.Buffer{}
+	buffer.Write(magic_bytes)
+	idSlice := make([]byte, 4)
+	binary.BigEndian.PutUint32(idSlice, uint32(id))
+	buffer.Write(idSlice)
+
+	enc := avro.NewBinaryEncoder(buffer)
+	writer := avro.NewGenericDatumWriter()
+	writer.SetSchema(schema)
+	writer.Write(obj, enc)
+
+	return buffer.Bytes(), nil
 }
 
 func (this *KafkaAvroEncoder) getSchema(obj interface{}) avro.Schema {
