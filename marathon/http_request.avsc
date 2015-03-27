@@ -1,0 +1,25 @@
+{
+   "namespace":"ly.stealth.kafka",
+   "type":"record",
+   "name":"HttpRequest",
+   "fields":[
+      {
+         "name":"source",
+         "type":"string"
+      },
+      {
+         "name":"headers",
+         "type":{
+            "type":"map",
+            "values":{
+               "type":"array",
+               "items":"string"
+            }
+         }
+      },
+      {
+         "name":"body",
+         "type":"bytes"
+      }
+   ]
+}
