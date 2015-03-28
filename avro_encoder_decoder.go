@@ -137,7 +137,7 @@ func (this *KafkaAvroDecoder) Decode(bytes []byte) (interface{}, error) {
 		} else {
 			reader := avro.NewGenericDatumReader()
 			reader.SetSchema(schema)
-            value := avro.NewGenericRecord(schema)
+			value := avro.NewGenericRecord(schema)
 			err := reader.Read(value, avro.NewBinaryDecoder(bytes[5:]))
 
 			return value, err
