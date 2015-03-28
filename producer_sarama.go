@@ -137,7 +137,7 @@ func (this *SaramaProducer) Input() chan<- *ProducerMessage {
 				panic(err)
 			}
 			value := sarama.ByteEncoder(encodedValue)
-			saramaMessage := &sarama.MessageToSend{
+			saramaMessage := &sarama.ProducerMessage{
 				Topic: message.Topic,
 				Key:   key,
 				Value: value,
@@ -154,7 +154,7 @@ func (this *SaramaProducer) Close() error {
 }
 
 func (this *SaramaProducer) AsyncClose() {
-	this.saramaProducer.Close()
+	this.saramaProducer.AsyncClose()
 }
 
 func (this *SaramaProducer) getKeyEncoder(message *ProducerMessage) Encoder {

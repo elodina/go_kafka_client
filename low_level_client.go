@@ -108,7 +108,7 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 		for topic, partitionAndData := range response.Blocks {
 			for partition, data := range partitionAndData {
 				switch data.Err {
-				case sarama.NoError:
+				case sarama.ErrNoError:
 					{
 						if len(data.MsgSet.Messages) > 0 {
 							this.filterPartitionData(data, offset)
@@ -132,7 +132,7 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 
 // Checks whether the given error indicates an OffsetOutOfRange error.
 func (this *SaramaClient) IsOffsetOutOfRange(err error) bool {
-	return err == sarama.OffsetOutOfRange
+	return err == sarama.ErrOffsetOutOfRange
 }
 
 // This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
