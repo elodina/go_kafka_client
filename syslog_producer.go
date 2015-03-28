@@ -50,7 +50,7 @@ type SyslogProducerConfig struct {
 	// Kafka Broker List host:port,host:port
 	BrokerList string
 
-	//	Transformer func(message syslogparser.LogParts, topic string) *sarama.MessageToSend
+	// Transformer func(message syslogparser.LogParts, topic string) *sarama.ProducerMessage
 	Transformer func(message *SyslogMessage, topic string) *sarama.ProducerMessage
 }
 
