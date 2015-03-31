@@ -508,8 +508,52 @@ func TestCreateTopicAfterStartConsuming(t *testing.T) {
     closeWithin(t, delayTimeout, consumer)
 }
 
+func TestConsumeDistinctTopicsWithDistinctPartitions(t *testing.T) {
+	topic1 := fmt.Sprintf("testConsumeDistinctTopics-%d", time.Now().UnixNano())
+	topic1Partitions := 16
+	topic2 := fmt.Sprintf("testConsumeDistinctTopics-%d", time.Now().UnixNano())
+	topic2Partitions := 4
+
+	CreateMultiplePartitionsTopic(localZk, topic1, topic1Partitions)
+	EnsureHasLeader(localZk, topic1)
+	Infof("distinct-topics-test", "Topic %s is created and has a leader elected", topic1)
+
+	CreateMultiplePartitionsTopic(localZk, topic2, topic2Partitions)
+	EnsureHasLeader(localZk, topic2)
+	Infof("distinct-topics-test", "Topic %s is created and has a leader elected", topic2)
+
+	consumeMessages := 100
+	delayTimeout := 10 * time.Second
+	consumeTimeout := 60 * time.Second
+	consumeStatus := make(chan map[string]map[int]int)
+	for partition := 0; partition < topic1Partitions; partition++ {
+		produceNToTopicPartition(t, consumeMessages, topic1, partition, localBroker)
+	}
+	Infof("distinct-topics-test", "Produced %d messages to each partition of topic %s", consumeMessages, topic1)
+	for partition := 0; partition < topic2Partitions; partition++ {
+		produceNToTopicPartition(t, consumeMessages, topic2, partition, localBroker)
+	}
+	Infof("distinct-topics-test", "Produced %d messages to each partition of topic %s", consumeMessages, topic2)
+
+	config := testConsumerConfig()
+	config.Strategy = newAllPartitionsTrackingStrategy(t, consumeMessages * (topic1Partitions + topic2Partitions), consumeTimeout, consumeStatus)
+	config.KeyDecoder = &Int32Decoder{}
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic1: topic1Partitions, topic2: topic2Partitions})
+
+	consumed := <-consumeStatus
+	for _, partitionInfo := range consumed {
+		for _, numMessages := range partitionInfo {
+			if numMessages != consumeMessages {
+				t.Errorf("Failed to consume %d messages within %s. Actual messages = %v", consumeMessages, consumeTimeout, consumed)
+			}
+		}
+	}
+
+	closeWithin(t, delayTimeout, consumer)
+}
+
 func TestConsumeMultipleTopics(t *testing.T) {
-    Logger = NewDefaultLogger(TraceLevel)
     partitions1 := 16
     partitions2 := 4
     topic1 := fmt.Sprintf("testConsumeMultipleTopics-1-%d", time.Now().Unix())
@@ -599,20 +643,50 @@ func newPartitionTrackingStrategy(t *testing.T, expectedMessages int, timeout ti
 		})
 	}()
 	return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-        Tracef("test", "Processing message: %s", string(msg.Value))
 		inLock(&consumedMessagesLock, func() {
 			if msg.Partition == trackPartition || trackPartition == -1 {
 				partitionConsumedMessages++
 			}
 			allConsumedMessages++
-            Tracef("test", "Increment message: %d", allConsumedMessages)
 			if allConsumedMessages == expectedMessages {
-                Tracef("test", "CONSUME FINISHED: %d", allConsumedMessages)
 				consumeFinished <- true
 			}
 		})
 		return NewSuccessfulResult(id)
 	}
+}
+
+func newAllPartitionsTrackingStrategy(t *testing.T, expectedMessages int, timeout time.Duration, notify chan map[string]map[int]int) WorkerStrategy {
+    allConsumedMessages := make(map[string]map[int]int)
+    var consumedMessagesLock sync.Mutex
+    consumeFinished := make(chan bool)
+    go func() {
+        select {
+        case <-consumeFinished:
+        case <-time.After(timeout):
+        }
+        inLock(&consumedMessagesLock, func() {
+            notify <- allConsumedMessages
+        })
+    }()
+    return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+        inLock(&consumedMessagesLock, func() {
+            if _, exists := allConsumedMessages[msg.Topic]; !exists {
+                allConsumedMessages[msg.Topic] = make(map[int]int)
+            }
+            allConsumedMessages[msg.Topic][int(msg.DecodedKey.(uint32))]++
+            total := 0
+            for _, partitionInfo := range allConsumedMessages {
+                for _, numMessages := range partitionInfo {
+                    total += numMessages
+                }
+            }
+            if total == expectedMessages {
+                consumeFinished <- true
+            }
+        })
+        return NewSuccessfulResult(id)
+    }
 }
 
 func atomicIncrement(counter *int, lock *sync.Mutex) {
