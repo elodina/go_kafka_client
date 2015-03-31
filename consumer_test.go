@@ -508,6 +508,42 @@ func TestCreateTopicAfterStartConsuming(t *testing.T) {
     closeWithin(t, delayTimeout, consumer)
 }
 
+func TestConsumeMultipleTopics(t *testing.T) {
+    Logger = NewDefaultLogger(TraceLevel)
+    partitions1 := 16
+    partitions2 := 4
+    topic1 := fmt.Sprintf("testConsumeMultipleTopics-1-%d", time.Now().Unix())
+    topic2 := fmt.Sprintf("testConsumeMultipleTopics-2-%d", time.Now().Unix())
+
+    CreateMultiplePartitionsTopic(localZk, topic1, partitions1)
+    EnsureHasLeader(localZk, topic1)
+    CreateMultiplePartitionsTopic(localZk, topic2, partitions2)
+    EnsureHasLeader(localZk, topic2)
+
+    consumeMessages := 5000
+    produceMessages1 := 4000
+    produceMessages2 := 1000
+    delayTimeout := 10 * time.Second
+    consumeTimeout := 60 * time.Second
+    consumeStatus := make(chan int)
+
+    config := testConsumerConfig()
+    config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+    consumer := NewConsumer(config)
+    go consumer.StartStatic(map[string]int{topic1: 2, topic2: 2})
+
+    Infof(topic1, "Produce %d message", produceMessages1)
+    produceN(t, produceMessages1, topic1, localBroker)
+    Infof(topic2, "Produce %d message", produceMessages2)
+    produceN(t, produceMessages2, topic2, localBroker)
+
+    if actual := <-consumeStatus; actual != consumeMessages {
+        t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+    }
+
+    closeWithin(t, delayTimeout, consumer)
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset
@@ -563,12 +599,15 @@ func newPartitionTrackingStrategy(t *testing.T, expectedMessages int, timeout ti
 		})
 	}()
 	return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+        Tracef("test", "Processing message: %s", string(msg.Value))
 		inLock(&consumedMessagesLock, func() {
 			if msg.Partition == trackPartition || trackPartition == -1 {
 				partitionConsumedMessages++
 			}
 			allConsumedMessages++
+            Tracef("test", "Increment message: %d", allConsumedMessages)
 			if allConsumedMessages == expectedMessages {
+                Tracef("test", "CONSUME FINISHED: %d", allConsumedMessages)
 				consumeFinished <- true
 			}
 		})
