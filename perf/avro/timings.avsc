@@ -1,0 +1,10 @@
+{
+	"namespace": "ly.stealth.kafka.metrics",
+	"type": "record",
+	"name": "Timings",
+	"fields": [
+		{"name": "id", "type": "long"},
+		{"name": "timings",  "type": {"type":"array", "items": "long"} },
+		{"name": "value", "type": "bytes"}
+	]
+}
