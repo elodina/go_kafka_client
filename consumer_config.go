@@ -158,6 +158,9 @@ type ConsumerConfig struct {
 
 	/* Message values decoder */
 	ValueDecoder Decoder
+
+    /* Flag for debug mode */
+    Debug bool
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.

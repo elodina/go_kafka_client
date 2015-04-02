@@ -114,7 +114,7 @@ func produceAvro() {
 			}
 			record := rawRecord.(*avro.GenericRecord)
 			timings := record.Get("timings").([]interface{})
-			timings = append(timings, time.Now().UnixNano())
+			timings = append(timings, time.Now().UnixNano() / int64(time.Millisecond))
 			record.Set("timings", timings)
 
 			producer2.Input() <- &kafka.ProducerMessage{Topic: *topic2, Value: record}
@@ -143,16 +143,12 @@ func parseAndValidateArgs() {
 		os.Exit(1)
 	}
 
-	if !*protobuf {
-		if *schemaRegistry == "" {
-			fmt.Println("Schema registry is required")
-			os.Exit(1)
-		}
-
-		if *avroSchema == "" {
-			fmt.Println("Avro schema is required")
-			os.Exit(1)
-		}
+    if *schemaRegistry != "" {
+	    *protobuf = false
+        if *avroSchema == "" {
+            fmt.Println("Avro schema is required")
+            os.Exit(1)
+        }
 	}
 
 	if *perSecond <= 0 {
