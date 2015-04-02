@@ -159,8 +159,8 @@ type ConsumerConfig struct {
 	/* Message values decoder */
 	ValueDecoder Decoder
 
-    /* Flag for debug mode */
-    Debug bool
+	/* Flag for debug mode */
+	Debug bool
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.
@@ -197,10 +197,10 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchBatchTimeout = 5 * time.Second
 
 	config.FetchMaxRetries = 5
-	config.RequeueAskNextBackoff = 5 * time.Second
+	config.RequeueAskNextBackoff = 50 * time.Millisecond
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
-	config.FetchRequestBackoff = 100 * time.Millisecond
+	config.FetchRequestBackoff = 10 * time.Millisecond
 
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 	config.BlueGreenDeploymentEnabled = true

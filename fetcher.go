@@ -232,6 +232,7 @@ func (f *consumerFetcherRoutine) start() {
 		select {
 		case nextTopicPartition := <-f.askNext:
 			{
+				timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 				f.manager.metrics.FetchersIdleTimer().Update(time.Since(ts))
 				Debugf(f, "Received asknext for %s", &nextTopicPartition)
 				inLock(&f.lock, func() {
@@ -262,6 +263,12 @@ func (f *consumerFetcherRoutine) start() {
 								Warnf(f, "Got a fetch error: %s", err)
 								//TODO new backoff type?
 								time.Sleep(1 * time.Second)
+							}
+						}
+
+						if f.manager.config.Debug {
+							for _, message := range messages {
+								message.DecodedKey = append([]int64{timestamp}, message.DecodedKey.([]int64)...)
 							}
 						}
 
@@ -352,12 +359,12 @@ func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *Topic
 		return
 	}
 
-    // Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
-    // This just guarantees we dont get a nil pointer dereference here
-    if topicInfo, exists := f.allPartitionMap[*topicAndPartition]; exists {
-        topicInfo.FetchedOffset = newOffset
-        f.partitionMap[*topicAndPartition] = newOffset
-    }
+	// Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
+	// This just guarantees we dont get a nil pointer dereference here
+	if topicInfo, exists := f.allPartitionMap[*topicAndPartition]; exists {
+		topicInfo.FetchedOffset = newOffset
+		f.partitionMap[*topicAndPartition] = newOffset
+	}
 }
 
 func (f *consumerFetcherRoutine) removeAllPartitions() {

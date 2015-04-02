@@ -26,34 +26,29 @@ import (
     "time"
     "github.com/golang/protobuf/proto"
     sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
+    "github.com/rcrowley/go-metrics"
 )
 
-var brokerList = flag.String("broker.list", "", "Broker List to produce messages too.")
 var zookeeper = flag.String("zookeeper", "", "Zookeeper urls for consumer to use.")
 var schemaRegistry = flag.String("schema.registry", "", "Confluent schema registry url")
-var consumeTopic = flag.String("consume.topic", "", "Topic to consume timings from.")
-var produceTopic = flag.String("produce.topic", "", "Topic to produce timings to.")
+var topic = flag.String("topic", "", "Topic to consume timings from.")
 var siesta = flag.Bool("siesta", false, "Use siesta client.")
 
 var protobuf = true
 
-var producer kafka.Producer
+var timings = make(chan []int64, 100000)
 
 func main() {
     parseAndValidateArgs()
     ctrlc := make(chan os.Signal, 1)
     signal.Notify(ctrlc, os.Interrupt)
 
-    producerConfig := kafka.DefaultProducerConfig()
-    producerConfig.BrokerList = strings.Split(*brokerList, ",")
-
     zkConfig := kafka.NewZookeeperConfig()
     zkConfig.ZookeeperConnect = strings.Split(*zookeeper, ",")
     coordinator := kafka.NewZookeeperCoordinator(zkConfig)
 
     config := kafka.DefaultConsumerConfig()
-    config.Debug = true
-    config.Groupid = "perf-mirror"
+    config.Groupid = "perf-consumer"
     config.AutoOffsetReset = "smallest"
     config.Coordinator = coordinator
     config.WorkerFailedAttemptCallback = FailedAttemptCallback
@@ -63,42 +58,65 @@ func main() {
     }
 
     if protobuf {
-        setupProtoConfig(config)
+        setupLogLineProtoConfig(config)
     } else {
-        producerConfig.ValueEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistry)
         setupAvroConfig(config)
     }
 
-    producer = kafka.NewSaramaProducer(producerConfig)
     consumer := kafka.NewConsumer(config)
 
-    go consumer.StartStatic(map[string]int {*consumeTopic : 1})
+    go consumer.StartStatic(map[string]int {*topic : 2})
+
+    go func() {
+        latencies := make([]metrics.Histogram, 0)
+        endToEnd := metrics.NewRegisteredHistogram(fmt.Sprint("Latency-end-to-end"), metrics.DefaultRegistry, metrics.NewUniformSample(10000))
+        go func() {
+            for {
+                time.Sleep(1 * time.Second)
+                for i, meter := range latencies {
+                    fmt.Printf("Step %d: %f\n", i+1, meter.Mean())
+                }
+                fmt.Printf("End-to-end: %f\n", endToEnd.Mean())
+                fmt.Println()
+            }
+        }()
+
+        initialized := false
+        for timing := range timings {
+            if !initialized {
+                for i := 1; i < len(timing); i++ {
+                    latencies = append(latencies, metrics.NewRegisteredHistogram(fmt.Sprintf("Latency-step-%d", i), metrics.DefaultRegistry, metrics.NewUniformSample(10000)))
+                }
+                initialized = true
+            }
+
+            if len(timing) - 1 != len(latencies) {
+                fmt.Println("Got wrong latencies, skipping..")
+                continue
+            }
+
+            for i := 1; i < len(timing); i++ {
+                latencies[i-1].Update(int64(timing[i] - timing[i-1]))
+            }
+            endToEnd.Update(int64(timing[len(timing)-1] - timing[0]))
+        }
+    }()
 
     <-ctrlc
     fmt.Println("Shutdown triggered, closing consumer")
     <-consumer.Close()
-    producer.Close()
+    close(timings)
 }
 
 func parseAndValidateArgs() {
     flag.Parse()
-    if *brokerList == "" {
-        fmt.Println("Broker list is required")
-        os.Exit(1)
-    }
-
     if *zookeeper == "" {
         fmt.Println("Zookeeper connection string is required")
         os.Exit(1)
     }
 
-    if *consumeTopic == "" {
-        fmt.Println("Consume topic is required")
-        os.Exit(1)
-    }
-
-    if *produceTopic == "" {
-        fmt.Println("Produce topic is required")
+    if *topic == "" {
+        fmt.Println("Topic is required")
         os.Exit(1)
     }
 
@@ -112,21 +130,18 @@ func setupAvroConfig(config *kafka.ConsumerConfig) {
     config.Strategy = avroStrategy
 }
 
-func setupProtoConfig(config *kafka.ConsumerConfig) {
+func setupLogLineProtoConfig(config *kafka.ConsumerConfig) {
     config.Strategy = logLineProtoStrategy
 }
 
 func avroStrategy(_ *kafka.Worker, msg *kafka.Message, id kafka.TaskId) kafka.WorkerResult {
     record := msg.DecodedValue.(*avro.GenericRecord)
 
-    messageTimings := record.Get("timings").([]interface{})
-    for _, timing := range msg.DecodedKey.([]int64) {
-        messageTimings = append(messageTimings, timing)
+    newTimings := make([]int64, 0)
+    for _, timing := range record.Get("timings").([]interface{}) {
+        newTimings = append(newTimings, timing.(int64))
     }
-    messageTimings = append(messageTimings, time.Now().UnixNano()/int64(time.Millisecond))
-    record.Set("timings", messageTimings)
-
-    producer.Input() <- &kafka.ProducerMessage{Topic: *produceTopic, Value: record}
+    timings <- newTimings
 
     return kafka.NewSuccessfulResult(id)
 }
@@ -134,15 +149,7 @@ func avroStrategy(_ *kafka.Worker, msg *kafka.Message, id kafka.TaskId) kafka.Wo
 func logLineProtoStrategy(_ *kafka.Worker, msg *kafka.Message, id kafka.TaskId) kafka.WorkerResult {
     line := &sp.LogLine{}
     proto.Unmarshal(msg.Value, line)
-    line.Timings = append(line.Timings, msg.DecodedKey.([]int64)...)
-    line.Timings = append(line.Timings, time.Now().UnixNano()/int64(time.Millisecond))
-
-    bytes, err := proto.Marshal(line)
-    if err != nil {
-        panic(err)
-    }
-
-    producer.Input() <- &kafka.ProducerMessage{Topic: *produceTopic, Value: bytes}
+    timings <- line.Timings
 
     return kafka.NewSuccessfulResult(id)
 }

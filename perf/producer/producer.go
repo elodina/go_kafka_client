@@ -32,20 +32,21 @@ var schemaRegistry = flag.String("schema.registry", "", "Confluent schema regist
 var topic1 = flag.String("topic1", "", "Topic to produce generated values to.")
 var topic2 = flag.String("topic2", "", "Topic to produce generated values to after getting an ack from topic1.")
 var avroSchema = flag.String("avsc", "../avro/timings.avsc", "Avro schema to use.")
-var protobuf = flag.Bool("proto", true, "Flag to send messages as protocol buffers. Turned on by default.")
 var perSecond = flag.Int("msg.per.sec", 0, "Messages per second to send.")
+
+var protobuf = true
 
 func main() {
 	parseAndValidateArgs()
 
-	if *protobuf {
-		produceProtobuf()
+	if protobuf {
+		produceLogLineProtobuf()
 	} else {
 		produceAvro()
 	}
 }
 
-func produceProtobuf() {
+func produceLogLineProtobuf() {
 	config1 := kafka.DefaultProducerConfig()
 	config1.BrokerList = strings.Split(*brokerList, ",")
 	config1.AckSuccesses = true
@@ -105,6 +106,11 @@ func produceAvro() {
 		panic(err)
 	}
 
+    _, err = kafka.NewCachedSchemaRegistryClient(*schemaRegistry).Register(avroSchema.GetName() + "-value", avroSchema)
+    if err != nil {
+        panic(err)
+    }
+
 	decoder := kafka.NewKafkaAvroDecoder(*schemaRegistry)
 	go func() {
 		for message := range producer1.Successes() {
@@ -144,7 +150,7 @@ func parseAndValidateArgs() {
 	}
 
     if *schemaRegistry != "" {
-	    *protobuf = false
+	    protobuf = false
         if *avroSchema == "" {
             fmt.Println("Avro schema is required")
             os.Exit(1)
