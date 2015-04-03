@@ -124,6 +124,10 @@ type ConsumerConfig struct {
 	/* Backoff between fetch requests if no messages were fetched from a previous fetch. */
 	RequeueAskNextBackoff time.Duration
 
+    /* Maximum backoff between fetch requests if no messages were fetched from a previous fetch.
+    RequeueAskNextBackoff will grow exponentially up to this value when receiving empty fetches and will reset each time on non-empty fetch. */
+    RequeueAskNextMaxBackoff time.Duration
+
 	/* Maximum fetch retries if no messages were fetched from a previous fetch */
 	FetchMaxRetries int
 
@@ -197,7 +201,8 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchBatchTimeout = 5 * time.Second
 
 	config.FetchMaxRetries = 5
-	config.RequeueAskNextBackoff = 50 * time.Millisecond
+	config.RequeueAskNextBackoff = 10 * time.Millisecond
+    config.RequeueAskNextMaxBackoff = 2 * time.Second
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
 	config.FetchRequestBackoff = 10 * time.Millisecond
