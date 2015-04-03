@@ -382,7 +382,6 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 	Debug(f, "Remove partitions")
 	inLock(&f.lock, func() {
 		for _, topicAndPartition := range partitions {
-			delete(f.askNext, topicAndPartition)
 			delete(f.partitionMap, topicAndPartition)
 		}
 	})
