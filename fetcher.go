@@ -205,7 +205,7 @@ type consumerFetcherRoutine struct {
 	lock            sync.Mutex
 	closeFinished   chan bool
 	fetchStopper    chan bool
-	askNext         chan TopicAndPartition
+	askNext         map[TopicAndPartition]chan bool
 }
 
 func (f *consumerFetcherRoutine) String() string {
@@ -220,64 +220,74 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, allPartitionMap 
 		partitionMap:    make(map[TopicAndPartition]int64),
 		closeFinished:   make(chan bool),
 		fetchStopper:    make(chan bool),
-		askNext:         make(chan TopicAndPartition),
+		askNext:         make(map[TopicAndPartition]chan bool),
 	}
 }
 
 func (f *consumerFetcherRoutine) start() {
 	Info(f, "Fetcher started")
 	for {
+		if len(f.askNext) == 0 {
+			time.Sleep(f.manager.config.FetchRequestBackoff)
+		}
+
 		Trace(f, "Waiting for asknext or die")
 		ts := time.Now()
-		select {
-		case nextTopicPartition := <-f.askNext:
-			{
-				f.manager.metrics.FetchersIdleTimer().Update(time.Since(ts))
-				Debugf(f, "Received asknext for %s", &nextTopicPartition)
-				inLock(&f.lock, func() {
-					if !f.manager.shuttingDown {
-						Trace(f, "Next asked")
-						offset := InvalidOffset
-						Debugf(f, "Partition map: %v", f.partitionMap)
-						if existingOffset, exists := f.partitionMap[nextTopicPartition]; exists {
-							offset = existingOffset
-						}
+		for nextTopicPartition, askNext := range f.askNext {
+			if askNext == nil {
+				continue
+			}
 
-						if f.allPartitionMap[nextTopicPartition] == nil {
-							Warnf(f, "Message buffer for partition %s has been terminated. Aborting processing task...", nextTopicPartition)
-							return
-						}
+			select {
+			case <-askNext:
+				{
+					f.manager.metrics.FetchersIdleTimer().Update(time.Since(ts))
+					Debugf(f, "Received asknext for %s", &nextTopicPartition)
+					inLock(&f.lock, func() {
+						if !f.manager.shuttingDown {
+							Trace(f, "Next asked")
+							offset := InvalidOffset
+							Debugf(f, "Partition map: %v", f.partitionMap)
+							if existingOffset, exists := f.partitionMap[nextTopicPartition]; exists {
+								offset = existingOffset
+							}
 
-						var messages []*Message
-						var err error
-						f.manager.metrics.FetchDurationTimer().Time(func() {
-							messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset)
-						})
+							if f.allPartitionMap[nextTopicPartition] == nil {
+								Warnf(f, "Message buffer for partition %s has been terminated. Aborting processing task...", nextTopicPartition)
+								return
+							}
 
-						if err != nil {
-							if f.manager.client.IsOffsetOutOfRange(err) {
-								Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
-								f.handleOffsetOutOfRange(&nextTopicPartition)
-							} else {
-								Warnf(f, "Got a fetch error: %s", err)
-								//TODO new backoff type?
-								time.Sleep(1 * time.Second)
+							var messages []*Message
+							var err error
+							f.manager.metrics.FetchDurationTimer().Time(func() {
+								messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset)
+							})
+
+							if err != nil {
+								if f.manager.client.IsOffsetOutOfRange(err) {
+									Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
+									f.handleOffsetOutOfRange(&nextTopicPartition)
+								} else {
+									Warnf(f, "Got a fetch error: %s", err)
+									//TODO new backoff type?
+									time.Sleep(1 * time.Second)
+								}
+							}
+
+							go f.processPartitionData(nextTopicPartition, messages)
+
+							if len(messages) == 0 {
+								go f.requeue(nextTopicPartition)
 							}
 						}
-
-						go f.processPartitionData(nextTopicPartition, messages)
-
-						if len(messages) == 0 {
-							go f.requeue(nextTopicPartition)
-						}
-					}
-				})
-				time.Sleep(f.manager.config.FetchRequestBackoff)
-			}
-		case <-f.fetchStopper:
-			{
-				Info(f, "Stopped fetcher")
-				return
+					})
+				}
+			case <-time.After(f.manager.config.FetchRequestBackoff): continue
+			case <-f.fetchStopper:
+				{
+					Info(f, "Stopped fetcher")
+					return
+				}
 			}
 		}
 	}
@@ -285,14 +295,13 @@ func (f *consumerFetcherRoutine) start() {
 
 func (f *consumerFetcherRoutine) requeue(topicPartition TopicAndPartition) {
 	Debug(f, "Asknext received no messages, requeue request")
-	time.Sleep(f.manager.config.RequeueAskNextBackoff)
-	f.askNext <- topicPartition
+	f.askNext[topicPartition] <- true
 	Debugf(f, "Requeued request %s", topicPartition)
 }
 
 func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
 	Debugf(f, "Adding partitions: %v", partitionAndOffsets)
-	newPartitions := make(map[TopicAndPartition]chan TopicAndPartition)
+	newPartitions := make(map[TopicAndPartition]chan bool)
 	inLock(&f.lock, func() {
 		for topicAndPartition, offset := range partitionAndOffsets {
 			if _, contains := f.partitionMap[topicAndPartition]; !contains {
@@ -302,8 +311,9 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 				} else {
 					f.partitionMap[topicAndPartition] = validOffset
 				}
-				f.manager.partitionMap[topicAndPartition].Buffer.start(f.askNext)
-				newPartitions[topicAndPartition] = f.askNext
+				f.askNext[topicAndPartition] = make(chan bool)
+				f.manager.partitionMap[topicAndPartition].Buffer.start(f.askNext[topicAndPartition])
+				newPartitions[topicAndPartition] = f.askNext[topicAndPartition]
 				Debugf(f, "Owner of %s", topicAndPartition)
 			}
 		}
@@ -314,7 +324,7 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 	Loop:
 		for {
 			select {
-			case askNext <- topicAndPartition:
+			case askNext <- true:
 				break Loop
 			case <-time.After(1 * time.Second):
 				{
@@ -352,12 +362,12 @@ func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *Topic
 		return
 	}
 
-    // Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
-    // This just guarantees we dont get a nil pointer dereference here
-    if topicInfo, exists := f.allPartitionMap[*topicAndPartition]; exists {
-        topicInfo.FetchedOffset = newOffset
-        f.partitionMap[*topicAndPartition] = newOffset
-    }
+	// Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
+	// This just guarantees we dont get a nil pointer dereference here
+	if topicInfo, exists := f.allPartitionMap[*topicAndPartition]; exists {
+		topicInfo.FetchedOffset = newOffset
+		f.partitionMap[*topicAndPartition] = newOffset
+	}
 }
 
 func (f *consumerFetcherRoutine) removeAllPartitions() {
@@ -372,6 +382,7 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 	Debug(f, "Remove partitions")
 	inLock(&f.lock, func() {
 		for _, topicAndPartition := range partitions {
+			delete(f.askNext, topicAndPartition)
 			delete(f.partitionMap, topicAndPartition)
 		}
 	})
