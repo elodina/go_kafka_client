@@ -30,7 +30,7 @@ type messageBuffer struct {
 	Close          chan bool
 	stopSending    bool
 	TopicPartition TopicAndPartition
-	askNextBatch   chan TopicAndPartition
+	askNextBatch   chan bool
 }
 
 func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Message, config *ConsumerConfig) *messageBuffer {
@@ -89,7 +89,7 @@ func (mb *messageBuffer) flush() {
 	}
 }
 
-func (mb *messageBuffer) start(fetcherChannel chan TopicAndPartition) {
+func (mb *messageBuffer) start(fetcherChannel chan bool) {
 	mb.askNextBatch = fetcherChannel
 	go mb.autoFlush()
 }
@@ -123,7 +123,7 @@ func (mb *messageBuffer) addBatch(messages []*Message) {
 	askNextLoop:
 		for !mb.stopSending {
 			select {
-			case mb.askNextBatch <- mb.TopicPartition:
+			case mb.askNextBatch <- true:
 				{
 					Trace(mb, "Asking for next batch")
 					break askNextLoop

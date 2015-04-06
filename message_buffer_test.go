@@ -29,7 +29,7 @@ func TestMessageBuffer(t *testing.T) {
 
 	out := make(chan []*Message)
 	topicPartition := TopicAndPartition{"fakeTopic", 0}
-	askNextBatch := make(chan TopicAndPartition)
+	askNextBatch := make(chan bool)
 	buffer := newMessageBuffer(topicPartition, out, config)
 	buffer.start(askNextBatch)
 
@@ -50,7 +50,7 @@ func TestMessageBuffer(t *testing.T) {
 	receiveNoMessages(t, 4*time.Second, out)
 }
 
-func expectAskNext(t *testing.T, askNext chan TopicAndPartition, timeout time.Duration) {
+func expectAskNext(t *testing.T, askNext chan bool, timeout time.Duration) {
 	select {
 	case <-askNext:
 		Trace("test", "Got asknext")

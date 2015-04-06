@@ -170,7 +170,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.QueuedMaxMessages = 3
 	config.RebalanceMaxRetries = 4
 	config.FetchMinBytes = 1
-	config.FetchWaitMaxMs = 100
+	config.FetchWaitMaxMs = 1000
 	config.RebalanceBackoff = 5 * time.Second
 	config.RefreshLeaderBackoff = 200 * time.Millisecond
 	config.OffsetsCommitMaxRetries = 5
@@ -194,7 +194,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchBatchTimeout = 5 * time.Second
 
 	config.FetchMaxRetries = 5
-	config.RequeueAskNextBackoff = 5 * time.Second
+	config.RequeueAskNextBackoff = 25 * time.Millisecond
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
 	config.FetchRequestBackoff = 100 * time.Millisecond
