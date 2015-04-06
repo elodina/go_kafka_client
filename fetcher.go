@@ -272,7 +272,6 @@ func (f *consumerFetcherRoutine) start() {
 						}
 					}
 				})
-				time.Sleep(f.manager.config.FetchRequestBackoff)
 			}
 		case <-f.fetchStopper:
 			{
