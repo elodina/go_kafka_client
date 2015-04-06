@@ -59,7 +59,7 @@ before_install:
 - $REGISTRY_HOME/bin/schema-registry-start $REGISTRY_HOME/etc/schema-registry/schema-registry.properties &
 - gpm install
 
-script: go test -v -timeout 20m ./...
+script: go test -v -timeout 20m
 
 after_script:
 - $KAFKA_PATH/bin/kafka-server-stop.sh
