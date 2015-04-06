@@ -107,6 +107,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 		for k, v := range newPartitionMap {
 			m.partitionMap[k] = v
 		}
+        time.Sleep(time.Second)
 		m.addFetcherForPartitions(partitionAndOffsets)
 
 		m.updateInProgress = false
@@ -138,12 +139,7 @@ func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map
 			m.fetcherRoutineMap[fetcherId] = fetcherRoutine
 			go fetcherRoutine.start()
 		}
-
-		partitionToOffsetMap := make(map[TopicAndPartition]int64)
-		for tp, offset := range partitionOffsets {
-			partitionToOffsetMap[tp] = offset
-		}
-		m.fetcherRoutineMap[fetcherId].addPartitions(partitionToOffsetMap)
+		m.fetcherRoutineMap[fetcherId].addPartitions(partitionOffsets)
 	}
 }
 
@@ -234,9 +230,7 @@ func (f *consumerFetcherRoutine) start() {
 		Trace(f, "Waiting for asknext or die")
 		ts := time.Now()
 		for nextTopicPartition, askNext := range f.askNext {
-			if askNext == nil {
-				continue
-			}
+            Tracef(f, "Waiting for asknext from partition=%d", nextTopicPartition.Partition)
 
 			select {
 			case <-askNext:
@@ -382,6 +376,7 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 	Debug(f, "Remove partitions")
 	inLock(&f.lock, func() {
 		for _, topicAndPartition := range partitions {
+            delete(f.askNext, topicAndPartition)
 			delete(f.partitionMap, topicAndPartition)
 		}
 	})

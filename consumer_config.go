@@ -194,7 +194,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchBatchTimeout = 5 * time.Second
 
 	config.FetchMaxRetries = 5
-	config.RequeueAskNextBackoff = 5 * time.Second
+	config.RequeueAskNextBackoff = 25 * time.Millisecond
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
 	config.FetchRequestBackoff = 100 * time.Millisecond
