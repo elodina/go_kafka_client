@@ -397,7 +397,6 @@ func TestBlueGreenDeployment(t *testing.T) {
 }
 
 func TestConsumeAfterRebalance(t *testing.T) {
-	//Logger = NewDefaultLogger(DebugLevel)
 	partitions := 10
 	topic := fmt.Sprintf("testConsumeAfterRebalance-%d", time.Now().Unix())
 	group := fmt.Sprintf("consumeAfterRebalanceGroup-%d", time.Now().Unix())

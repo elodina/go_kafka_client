@@ -565,8 +565,8 @@ func (c *Consumer) rebalance() {
 		inLock(&c.rebalanceLock, func() {
 			success := false
 			var stateHash string
+			Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 			for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-				Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 				partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 				var context *assignmentContext
 				var err error

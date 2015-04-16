@@ -421,45 +421,47 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 			select {
 			case e, ok := <-zkEvents:
 				{
-					Debugf(this, "Event path %s", e.Path)
-					if ok && e.Type == zk.EventNotWatching || e.State == zk.StateDisconnected {
-						if strings.HasPrefix(e.Path, newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir) {
-							Info(this, "Trying to renew watcher for consumer registry")
-							consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
-							Info(this, "Trying to renew watcher for consumer API dir")
-							blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, this.rootedPath(brokerTopicsPath)) {
-							Info(this, "Trying to renew watcher for consumer topic dir")
-							topicsWatcher, err = this.getTopicsWatcher()
-							if err != nil {
-								panic(err)
-							}
-						} else if strings.HasPrefix(e.Path, this.rootedPath(brokerIdsPath)) {
-							Info(this, "Trying to renew watcher for brokers in cluster")
-							brokersWatcher, err = this.getAllBrokersInClusterWatcher()
-							if err != nil {
-								panic(err)
-							}
-						} else {
-							Warnf(this, "Unknown event path: %s", e.Path)
-						}
-
-						stopRedirecting <- true
-						stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
-					} else {
-						if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+					if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+						if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
+						newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 							changes <- BlueGreenRequest
 						} else {
 							changes <- Regular
 						}
 					}
+
+					Debugf(this, "Event path %s", e.Path)
+					if strings.HasPrefix(e.Path, newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir) {
+						Info(this, "Trying to renew watcher for consumer registry")
+						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+						Info(this, "Trying to renew watcher for consumer API dir")
+						blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, this.rootedPath(brokerTopicsPath)) {
+						Info(this, "Trying to renew watcher for consumer topic dir")
+						topicsWatcher, err = this.getTopicsWatcher()
+						if err != nil {
+							panic(err)
+						}
+					} else if strings.HasPrefix(e.Path, this.rootedPath(brokerIdsPath)) {
+						Info(this, "Trying to renew watcher for brokers in cluster")
+						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+						if err != nil {
+							panic(err)
+						}
+					} else {
+						Warnf(this, "Unknown event path: %s", e.Path)
+					}
+
+
+					stopRedirecting <- true
+					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
 				}
 			case <-this.unsubscribe:
 				{
