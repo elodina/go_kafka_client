@@ -397,6 +397,7 @@ func TestBlueGreenDeployment(t *testing.T) {
 }
 
 func TestConsumeAfterRebalance(t *testing.T) {
+	//Logger = NewDefaultLogger(DebugLevel)
 	partitions := 10
 	topic := fmt.Sprintf("testConsumeAfterRebalance-%d", time.Now().Unix())
 	group := fmt.Sprintf("consumeAfterRebalanceGroup-%d", time.Now().Unix())
@@ -643,6 +644,7 @@ func newPartitionTrackingStrategy(t *testing.T, expectedMessages int, timeout ti
 		})
 	}()
 	return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		fmt.Println(fmt.Sprintf("Got a message %v", msg.DecodedValue))
 		inLock(&consumedMessagesLock, func() {
 			if msg.Partition == trackPartition || trackPartition == -1 {
 				partitionConsumedMessages++

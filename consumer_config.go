@@ -202,7 +202,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 	config.BlueGreenDeploymentEnabled = true
 	config.DeploymentTimeout = 0 * time.Second
-	config.BarrierTimeout = 30 * time.Second
+	config.BarrierTimeout = 5 * time.Second
 	config.LowLevelClient = NewSaramaClient(config)
 
 	config.KeyDecoder = &ByteDecoder{}
