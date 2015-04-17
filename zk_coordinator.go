@@ -604,7 +604,7 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 
 		if ask == nil {
 			if !passed {
-				err = this.removeStateBarrier(group, barrierName, api)
+				err = this.RemoveStateBarrier(group, barrierName, api)
 				if err != nil {
 					Error(this, err.Error())
 				}
@@ -701,7 +701,7 @@ func (this *ZookeeperCoordinator) isStateBarrierPassed(group string, stateHash s
 	return false, err
 }
 
-func (this *ZookeeperCoordinator) removeStateBarrier(group string, stateHash string, api string) error {
+func (this *ZookeeperCoordinator) RemoveStateBarrier(group string, stateHash string, api string) error {
 	var err error
 	backoffMultiplier := 1
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
@@ -1142,5 +1142,9 @@ func (mzk *mockZookeeperCoordinator) CommitOffset(group string, topicPartition *
 	return nil
 }
 func (this *mockZookeeperCoordinator) RemoveOldApiRequests(group string) error {
+	panic("Not implemented")
+}
+
+func (this *mockZookeeperCoordinator) RemoveStateBarrier(group string, stateHash string, api string) error {
 	panic("Not implemented")
 }
