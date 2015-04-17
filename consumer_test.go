@@ -588,6 +588,40 @@ func TestConsumeMultipleTopics(t *testing.T) {
     closeWithin(t, delayTimeout, consumer)
 }
 
+func TestNullMessages(t *testing.T) {
+    partitions := 1
+    topic := fmt.Sprintf("testNullMessages-%d", time.Now().Unix())
+
+    CreateMultiplePartitionsTopic(localZk, topic, partitions)
+    EnsureHasLeader(localZk, topic)
+
+    consumeMessages := 100
+    produceMessages1 := 50
+    produceMessages2 := 25
+    produceMessages3 := 25
+
+    Infof(topic, "Produce %d messages", produceMessages1)
+    produceN(t, produceMessages1, topic, localBroker)
+    Infof(topic, "Produce %d empty messages", produceMessages2)
+    produceNullN(t, produceMessages2, topic, localBroker)
+    Infof(topic, "Produce %d messages", produceMessages3)
+    produceN(t, produceMessages3, topic, localBroker)
+
+    delayTimeout := 10 * time.Second
+    consumeStatus := make(chan int)
+
+    config := testConsumerConfig()
+    config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+    consumer := NewConsumer(config)
+    go consumer.StartStatic(map[string]int{topic: 1})
+
+    if actual := <-consumeStatus; actual != consumeMessages {
+        t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+    }
+
+    closeWithin(t, delayTimeout, consumer)
+}
+
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset

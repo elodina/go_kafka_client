@@ -146,24 +146,50 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 }
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
+	gen := func(i int) *sarama.ProducerMessage {
+		return &sarama.ProducerMessage{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+	}
+	produceMessages(t, n, topic, brokerAddr, gen)
+}
+
+func produceNullN(t *testing.T, n int, topic string, brokerAddr string) {
+	gen := func(int) *sarama.ProducerMessage {
+		return &sarama.ProducerMessage{Topic: topic, Key: nil, Value: nil}
+	}
+	produceMessages(t, n, topic, brokerAddr, gen)
+}
+
+func produceMessages(t *testing.T, n int, topic string, brokerAddr string, gen func(int) *sarama.ProducerMessage) {
 	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 
-	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	producerConfig := sarama.NewProducerConfig()
+	producerConfig.AckSuccesses = true
+	producer, err := sarama.NewProducer(client, producerConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer producer.Close()
 	for i := 0; i < n; i++ {
-		producer.Input() <- &sarama.ProducerMessage{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+		producer.Input() <- gen(i)
 	}
-	select {
-	case e := <-producer.Errors():
-		t.Fatalf("Failed to produce message: %s", e)
-	case <-time.After(5 * time.Second):
+
+	successes := 0
+	for {
+		select {
+		case e := <-producer.Errors():
+			t.Fatalf("Failed to produce message: %s", e)
+		case <-producer.Successes():
+			{
+				successes++
+				if successes == n {
+					return
+				}
+			}
+		}
 	}
 }
 
