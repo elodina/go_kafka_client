@@ -220,7 +220,7 @@ func newConsumerFetcher(m *consumerFetcherManager, name string, allPartitionMap 
 		partitionMap:    make(map[TopicAndPartition]int64),
 		closeFinished:   make(chan bool),
 		fetchStopper:    make(chan bool),
-		askNext:         make(chan TopicAndPartition),
+		askNext:         make(chan TopicAndPartition, m.config.AskNextChannelSize),
 	}
 }
 
