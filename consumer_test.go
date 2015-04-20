@@ -21,6 +21,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+    "math/rand"
 )
 
 var numMessages = 1000
@@ -580,6 +581,34 @@ func TestConsumeMultipleTopics(t *testing.T) {
     produceN(t, produceMessages1, topic1, localBroker)
     Infof(topic2, "Produce %d message", produceMessages2)
     produceN(t, produceMessages2, topic2, localBroker)
+
+    if actual := <-consumeStatus; actual != consumeMessages {
+        t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+    }
+
+    closeWithin(t, delayTimeout, consumer)
+}
+
+func TestConsumeOnePartitionWithData(t *testing.T) {
+    Logger = NewDefaultLogger(DebugLevel)
+    partitions := 50
+    topic := fmt.Sprintf("testConsumeOnePartitionWithData-%d", time.Now().Unix())
+
+    CreateMultiplePartitionsTopic(localZk, topic, partitions)
+    EnsureHasLeader(localZk, topic)
+
+    consumeMessages := 1000
+    delayTimeout := 20 * time.Second
+    consumeTimeout := 60 * time.Second
+    consumeStatus := make(chan int)
+
+    Infof(topic, "Produce %d messages", consumeMessages)
+    produceNToTopicPartition(t, consumeMessages, topic, rand.Int() % partitions, localBroker)
+
+    config := testConsumerConfig()
+    config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+    consumer := NewConsumer(config)
+    go consumer.StartStatic(map[string]int{topic: 1})
 
     if actual := <-consumeStatus; actual != consumeMessages {
         t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
