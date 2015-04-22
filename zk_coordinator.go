@@ -169,12 +169,54 @@ func (this *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid 
 		return nil, err
 	}
 
+	Debugf("zk_coordinator#tryGetConsumerInfo", "consumerInfo = %+v", string(data))
+
 	consumerInfo := &ConsumerInfo{}
 	err = json.Unmarshal(data, consumerInfo)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return consumerInfo, err
 	}
 
+	var dataStr map[string]interface{}
+	err = json.Unmarshal(data, &dataStr)
+
+	switch version := dataStr["Version"].(type) {
+	case float64:
+		consumerInfo.Version = int16(version)
+	case int:
+		consumerInfo.Version = int16(version)
+	case string:
+		ver, _ := strconv.Atoi(version)
+		consumerInfo.Version = int16(ver)
+	default:
+		Debugf("zk_coordinator#tryGetConsumerInfo", "ERROR: Could not detect Version type from %v", dataStr)
+		return nil, errors.New(fmt.Sprintf("Could not detect Version type from %v", dataStr))
+	}
+
+	switch timestamp := dataStr["Timestamp"].(type) {
+	case int:
+		consumerInfo.Timestamp = int64(timestamp)
+	case float64:
+		consumerInfo.Timestamp = int64(timestamp)
+	case string:
+		tim, _ := strconv.Atoi(timestamp)
+		consumerInfo.Timestamp = int64(tim)
+	default:
+		Debugf("zk_coordinator#tryGetConsumerInfo", "ERROR: Could not detect Timestamp type from %v", dataStr)
+		return nil, errors.New(fmt.Sprintf("Could not detect Timestamp type from %v", dataStr))
+	}
+
+	switch subscriptions := dataStr["Subscription"].(type) {
+	case map[string]float64:
+		for topic, num := range subscriptions {
+			consumerInfo.Subscription[topic] = int(num)
+		}
+	default:
+		Debugf("zk_coordinator#tryGetConsumerInfo", "ERROR: Could not detect Subscription type from %v", dataStr)
+		return nil, errors.New(fmt.Sprintf("Could not detect Subscription type from %v", dataStr))
+	}
+
+	Debugf("zk_coordinator#tryGetConsumerInfo", "consumerInfo = %+v", consumerInfo)
 	return consumerInfo, nil
 }
 
