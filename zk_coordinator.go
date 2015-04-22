@@ -658,7 +658,9 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 						}
 					}
 					case <-time.After(timeout):{
-						memberJoinedWatcher <- nil
+						if !done {
+							memberJoinedWatcher <- nil
+						}
 						done = true
 					}
 					}
