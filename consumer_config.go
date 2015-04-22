@@ -124,6 +124,9 @@ type ConsumerConfig struct {
 	/* Backoff between fetch requests if no messages were fetched from a previous fetch. */
 	RequeueAskNextBackoff time.Duration
 
+	/* Buffer size for ask next channel. This value shouldn't be less than number of partitions per fetch routine. */
+	AskNextChannelSize int
+
 	/* Maximum fetch retries if no messages were fetched from a previous fetch */
 	FetchMaxRetries int
 
@@ -194,7 +197,8 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.FetchBatchTimeout = 5 * time.Second
 
 	config.FetchMaxRetries = 5
-	config.RequeueAskNextBackoff = 150 * time.Millisecond
+	config.RequeueAskNextBackoff = 5 * time.Second
+	config.AskNextChannelSize = 1000
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
 	config.FetchRequestBackoff = 100 * time.Millisecond
@@ -202,7 +206,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.Coordinator = NewZookeeperCoordinator(NewZookeeperConfig())
 	config.BlueGreenDeploymentEnabled = true
 	config.DeploymentTimeout = 0 * time.Second
-	config.BarrierTimeout = 5 * time.Second
+	config.BarrierTimeout = 30 * time.Second
 	config.LowLevelClient = NewSaramaClient(config)
 
 	config.KeyDecoder = &ByteDecoder{}

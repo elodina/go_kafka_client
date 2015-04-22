@@ -18,6 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	"github.com/Shopify/sarama"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -438,7 +439,7 @@ func TestConsumeFirstOffset(t *testing.T) {
 
 	CreateMultiplePartitionsTopic(localZk, topic, 1)
 	EnsureHasLeader(localZk, topic)
-	produce(t, []string{ "m1" }, topic, localBroker, sarama.CompressionNone)
+	produce(t, []string{"m1"}, topic, localBroker, sarama.CompressionNone)
 
 	config := testConsumerConfig()
 	config.NumWorkers = 1
@@ -451,7 +452,7 @@ func TestConsumeFirstOffset(t *testing.T) {
 		return NewSuccessfulResult(id)
 	}
 	consumer := NewConsumer(config)
-	go consumer.StartStatic(map[string]int{ topic: 1 })
+	go consumer.StartStatic(map[string]int{topic: 1})
 
 	select {
 	case <-successChan:
@@ -460,7 +461,7 @@ func TestConsumeFirstOffset(t *testing.T) {
 	}
 	closeWithin(t, 10*time.Second, consumer)
 
-	produce(t, []string{ "m2" }, topic, localBroker, sarama.CompressionNone)
+	produce(t, []string{"m2"}, topic, localBroker, sarama.CompressionNone)
 	config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
 		value := string(msg.Value)
 		assert(t, value, "m2")
@@ -468,44 +469,44 @@ func TestConsumeFirstOffset(t *testing.T) {
 		return NewSuccessfulResult(id)
 	}
 	consumer = NewConsumer(config)
-	go consumer.StartStatic(map[string]int{ topic: 1 })
+	go consumer.StartStatic(map[string]int{topic: 1})
 
 	select {
 	case <-successChan:
 	case <-time.After(consumeTimeout):
 		t.Errorf("Failed to consume %d messages within %s", numMessages, consumeTimeout)
 	}
-	closeWithin(t, 10*time.Second, consumer)	
+	closeWithin(t, 10*time.Second, consumer)
 }
 
 // Test consumer will properly start consuming a topic when it is created after starting the consumer but before it fails to fetch topic info
 func TestCreateTopicAfterStartConsuming(t *testing.T) {
-    partitions := 2
-    topic := fmt.Sprintf("testConsumeAfterRebalance-%d", time.Now().Unix())
+	partitions := 2
+	topic := fmt.Sprintf("testConsumeAfterRebalance-%d", time.Now().Unix())
 
-    consumeMessages := 10
-    delayTimeout := 10 * time.Second
-    consumeTimeout := 60 * time.Second
-    consumeStatus := make(chan int)
+	consumeMessages := 10
+	delayTimeout := 10 * time.Second
+	consumeTimeout := 60 * time.Second
+	consumeStatus := make(chan int)
 
-    config := testConsumerConfig()
-    config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
-    consumer := NewConsumer(config)
-    go consumer.StartStatic(map[string]int{topic: 2})
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 2})
 
-    time.Sleep(10 * time.Second)
+	time.Sleep(10 * time.Second)
 
-    CreateMultiplePartitionsTopic(localZk, topic, partitions)
-    EnsureHasLeader(localZk, topic)
+	CreateMultiplePartitionsTopic(localZk, topic, partitions)
+	EnsureHasLeader(localZk, topic)
 
-    Infof(topic, "Produce %d message", consumeMessages)
-    produceN(t, consumeMessages, topic, localBroker)
+	Infof(topic, "Produce %d message", consumeMessages)
+	produceN(t, consumeMessages, topic, localBroker)
 
-    if actual := <-consumeStatus; actual != consumeMessages {
-        t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
-    }
+	if actual := <-consumeStatus; actual != consumeMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+	}
 
-    closeWithin(t, delayTimeout, consumer)
+	closeWithin(t, delayTimeout, consumer)
 }
 
 func TestConsumeDistinctTopicsWithDistinctPartitions(t *testing.T) {
@@ -536,7 +537,7 @@ func TestConsumeDistinctTopicsWithDistinctPartitions(t *testing.T) {
 	Infof("distinct-topics-test", "Produced %d messages to each partition of topic %s", consumeMessages, topic2)
 
 	config := testConsumerConfig()
-	config.Strategy = newAllPartitionsTrackingStrategy(t, consumeMessages * (topic1Partitions + topic2Partitions), consumeTimeout, consumeStatus)
+	config.Strategy = newAllPartitionsTrackingStrategy(t, consumeMessages*(topic1Partitions+topic2Partitions), consumeTimeout, consumeStatus)
 	config.KeyDecoder = &Int32Decoder{}
 	consumer := NewConsumer(config)
 	go consumer.StartStatic(map[string]int{topic1: topic1Partitions, topic2: topic2Partitions})
@@ -554,38 +555,66 @@ func TestConsumeDistinctTopicsWithDistinctPartitions(t *testing.T) {
 }
 
 func TestConsumeMultipleTopics(t *testing.T) {
-    partitions1 := 16
-    partitions2 := 4
-    topic1 := fmt.Sprintf("testConsumeMultipleTopics-1-%d", time.Now().Unix())
-    topic2 := fmt.Sprintf("testConsumeMultipleTopics-2-%d", time.Now().Unix())
+	partitions1 := 16
+	partitions2 := 4
+	topic1 := fmt.Sprintf("testConsumeMultipleTopics-1-%d", time.Now().Unix())
+	topic2 := fmt.Sprintf("testConsumeMultipleTopics-2-%d", time.Now().Unix())
 
-    CreateMultiplePartitionsTopic(localZk, topic1, partitions1)
-    EnsureHasLeader(localZk, topic1)
-    CreateMultiplePartitionsTopic(localZk, topic2, partitions2)
-    EnsureHasLeader(localZk, topic2)
+	CreateMultiplePartitionsTopic(localZk, topic1, partitions1)
+	EnsureHasLeader(localZk, topic1)
+	CreateMultiplePartitionsTopic(localZk, topic2, partitions2)
+	EnsureHasLeader(localZk, topic2)
 
-    consumeMessages := 5000
-    produceMessages1 := 4000
-    produceMessages2 := 1000
-    delayTimeout := 10 * time.Second
-    consumeTimeout := 60 * time.Second
-    consumeStatus := make(chan int)
+	consumeMessages := 5000
+	produceMessages1 := 4000
+	produceMessages2 := 1000
+	delayTimeout := 10 * time.Second
+	consumeTimeout := 60 * time.Second
+	consumeStatus := make(chan int)
 
-    config := testConsumerConfig()
-    config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
-    consumer := NewConsumer(config)
-    go consumer.StartStatic(map[string]int{topic1: 2, topic2: 2})
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic1: 2, topic2: 2})
 
-    Infof(topic1, "Produce %d message", produceMessages1)
-    produceN(t, produceMessages1, topic1, localBroker)
-    Infof(topic2, "Produce %d message", produceMessages2)
-    produceN(t, produceMessages2, topic2, localBroker)
+	Infof(topic1, "Produce %d message", produceMessages1)
+	produceN(t, produceMessages1, topic1, localBroker)
+	Infof(topic2, "Produce %d message", produceMessages2)
+	produceN(t, produceMessages2, topic2, localBroker)
 
-    if actual := <-consumeStatus; actual != consumeMessages {
-        t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
-    }
+	if actual := <-consumeStatus; actual != consumeMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+	}
 
-    closeWithin(t, delayTimeout, consumer)
+	closeWithin(t, delayTimeout, consumer)
+}
+
+func TestConsumeOnePartitionWithData(t *testing.T) {
+	Logger = NewDefaultLogger(DebugLevel)
+	partitions := 50
+	topic := fmt.Sprintf("testConsumeOnePartitionWithData-%d", time.Now().Unix())
+
+	CreateMultiplePartitionsTopic(localZk, topic, partitions)
+	EnsureHasLeader(localZk, topic)
+
+	consumeMessages := 1000
+	delayTimeout := 20 * time.Second
+	consumeTimeout := 60 * time.Second
+	consumeStatus := make(chan int)
+
+	Infof(topic, "Produce %d messages", consumeMessages)
+	produceNToTopicPartition(t, consumeMessages, topic, rand.Int()%partitions, localBroker)
+
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 1})
+
+	if actual := <-consumeStatus; actual != consumeMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+	}
+
+	closeWithin(t, delayTimeout, consumer)
 }
 
 func testConsumerConfig() *ConsumerConfig {
@@ -658,36 +687,36 @@ func newPartitionTrackingStrategy(t *testing.T, expectedMessages int, timeout ti
 }
 
 func newAllPartitionsTrackingStrategy(t *testing.T, expectedMessages int, timeout time.Duration, notify chan map[string]map[int]int) WorkerStrategy {
-    allConsumedMessages := make(map[string]map[int]int)
-    var consumedMessagesLock sync.Mutex
-    consumeFinished := make(chan bool)
-    go func() {
-        select {
-        case <-consumeFinished:
-        case <-time.After(timeout):
-        }
-        inLock(&consumedMessagesLock, func() {
-            notify <- allConsumedMessages
-        })
-    }()
-    return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-        inLock(&consumedMessagesLock, func() {
-            if _, exists := allConsumedMessages[msg.Topic]; !exists {
-                allConsumedMessages[msg.Topic] = make(map[int]int)
-            }
-            allConsumedMessages[msg.Topic][int(msg.DecodedKey.(uint32))]++
-            total := 0
-            for _, partitionInfo := range allConsumedMessages {
-                for _, numMessages := range partitionInfo {
-                    total += numMessages
-                }
-            }
-            if total == expectedMessages {
-                consumeFinished <- true
-            }
-        })
-        return NewSuccessfulResult(id)
-    }
+	allConsumedMessages := make(map[string]map[int]int)
+	var consumedMessagesLock sync.Mutex
+	consumeFinished := make(chan bool)
+	go func() {
+		select {
+		case <-consumeFinished:
+		case <-time.After(timeout):
+		}
+		inLock(&consumedMessagesLock, func() {
+			notify <- allConsumedMessages
+		})
+	}()
+	return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
+		inLock(&consumedMessagesLock, func() {
+			if _, exists := allConsumedMessages[msg.Topic]; !exists {
+				allConsumedMessages[msg.Topic] = make(map[int]int)
+			}
+			allConsumedMessages[msg.Topic][int(msg.DecodedKey.(uint32))]++
+			total := 0
+			for _, partitionInfo := range allConsumedMessages {
+				for _, numMessages := range partitionInfo {
+					total += numMessages
+				}
+			}
+			if total == expectedMessages {
+				consumeFinished <- true
+			}
+		})
+		return NewSuccessfulResult(id)
+	}
 }
 
 func atomicIncrement(counter *int, lock *sync.Mutex) {
