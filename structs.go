@@ -71,14 +71,14 @@ func (a byId) Less(i, j int) bool { return a[i].Id < a[j].Id }
 
 //General information about Kafka consumer. Used to keep it in consumer coordinator.
 type ConsumerInfo struct {
-	Version      int16
-	Subscription map[string]int
-	Pattern      string
-	Timestamp    int64
+	Version      int16          `json:"version"`
+	Subscription map[string]int `json:"subscription"`
+	Pattern      string         `json:"pattern"`
+	Timestamp    string         `json:"timestamp"`
 }
 
 func (c *ConsumerInfo) String() string {
-	return fmt.Sprintf("{Version: %d, Subscription: %v, Pattern: %s, Timestamp: %d}",
+	return fmt.Sprintf("{Version: %d, Subscription: %v, Pattern: %s, Timestamp: %s}",
 		c.Version, c.Subscription, c.Pattern, c.Timestamp)
 }
 

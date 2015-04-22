@@ -101,7 +101,7 @@ func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid
 		Version:      int16(1),
 		Subscription: TopicCount.GetTopicsToNumStreamsMap(),
 		Pattern:      TopicCount.Pattern(),
-		Timestamp:    time.Now().Unix(),
+		Timestamp:    fmt.Sprintf("%d", time.Now().Unix()*1000),
 	})
 	if mappingError != nil {
 		return mappingError
