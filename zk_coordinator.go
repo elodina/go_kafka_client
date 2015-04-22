@@ -596,14 +596,13 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 	passed := false
 	for !passed {
 		ask := <-memberJoinedEvents
-		Debug(this, "Memeber joined")
 		passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
 		if err != nil && err != zk.ErrNoNode {
 			panic(err)
 		}
 
 		if ask == nil {
-			if !passed {
+			if !passed && err != zk.ErrNoNode {
 				err = this.RemoveStateBarrier(group, barrierName, api)
 				if err != nil {
 					Error(this, err.Error())
@@ -611,7 +610,14 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 			}
 			break
 		} else {
-			ask <- passed
+			if err != zk.ErrNoNode {
+				Debug(this, "Memeber joined")
+				ask <- passed
+			} else {
+				Debug(this, "Barrier failed")
+				ask <- true
+				break
+			}
 		}
 	}
 
@@ -690,7 +696,7 @@ func (this *ZookeeperCoordinator) isStateBarrierPassed(group string, stateHash s
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		children, _, err = this.zkConn.Children(path)
 		if err == zk.ErrNoNode {
-			return false, nil
+			return false, err
 		} else if err == nil {
 			return len(children) == expected, err
 		}

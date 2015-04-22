@@ -565,6 +565,7 @@ func (c *Consumer) rebalance() {
 		inLock(&c.rebalanceLock, func() {
 			success := false
 			var stateHash string
+			barrierTimeout := c.config.BarrierTimeout
 			Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
 			for i := 0; i <= int(c.config.RebalanceMaxRetries) && !success; i++ {
 				partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
@@ -592,7 +593,7 @@ func (c *Consumer) rebalance() {
 					}
 					barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
 						stateHash, barrierSize, string(Rebalance),
-						c.config.BarrierTimeout)
+						barrierTimeout)
 				}
 
 				if tryRebalance(c, context, partitionAssignor) {
@@ -605,6 +606,7 @@ func (c *Consumer) rebalance() {
 				if err != nil {
 					Warnf(c, "Failed to remove state barrier %s due to: %s", stateHash, err.Error())
 				}
+				barrierTimeout += c.config.BarrierTimeout
 			}
 			if !success && !c.isShuttingdown {
 				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
