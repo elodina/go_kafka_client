@@ -200,6 +200,9 @@ type ConsumerCoordinator interface {
 	/* Implements classic barrier synchronization primitive via service coordinator facilities */
 	AwaitOnStateBarrier(consumerId string, group string, stateHash string, barrierSize int, api string, timeout time.Duration) bool
 
+	/* Removes state barrier */
+	RemoveStateBarrier(group string, stateHash string, api string) error
+
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
 
