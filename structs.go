@@ -74,11 +74,11 @@ type ConsumerInfo struct {
 	Version      int16          `json:"version"`
 	Subscription map[string]int `json:"subscription"`
 	Pattern      string         `json:"pattern"`
-	Timestamp    string         `json:"timestamp"`
+	Timestamp    int64          `json:"timestamp,string"`
 }
 
 func (c *ConsumerInfo) String() string {
-	return fmt.Sprintf("{Version: %d, Subscription: %v, Pattern: %s, Timestamp: %s}",
+	return fmt.Sprintf("{Version: %d, Subscription: %v, Pattern: %s, Timestamp: %d}",
 		c.Version, c.Subscription, c.Pattern, c.Timestamp)
 }
 
