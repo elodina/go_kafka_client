@@ -39,6 +39,9 @@ const (
 
 	/* Logtypeid field value for LogLine indicating Critical log level */
 	CriticalLogTypeId int64 = 6
+
+	/* Logtypeid field value for LogLine indicating Metrics data */
+	MetricsLogTypeId int64 = 7
 )
 
 var logLevels = map[LogLevel]int64{

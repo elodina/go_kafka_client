@@ -43,6 +43,48 @@ func TestLogEmitter(t *testing.T) {
 	consumeStatus := make(chan int)
 	delayTimeout := 10 * time.Second
 
+	metricsConfig := NewKafkaMetricsEmitterConfig()
+	metricsProducerConfig := DefaultProducerConfig()
+	metricsProducerConfig.BrokerList = []string{localBroker}
+	metricsConfig.ProducerConfig = metricsProducerConfig
+	metricsConfig.ReportingInterval = 1 * time.Second
+	metricsConfig.SchemaRegistryUrl = schemaRepositoryUrl
+	metricsConfig.Topic = "kafka-metrics2"
+	EmitterMetrics = NewKafkaMetricsEmitter(metricsConfig)
+
+	config := testConsumerConfig()
+	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
+	consumer := NewConsumer(config)
+	go consumer.StartStatic(map[string]int{topic: 1})
+
+	if actual := <-consumeStatus; actual != consumeMessages {
+		t.Errorf("Failed to consume %d messages within %s. Actual messages = %d", consumeMessages, consumeTimeout, actual)
+	}
+
+	closeWithin(t, delayTimeout, consumer)
+}
+
+func TestMetricsEmitter(t *testing.T) {
+	partitions := 1
+	topic := fmt.Sprintf("testMetricsEmitter-%d", time.Now().Unix())
+
+	CreateMultiplePartitionsTopic(localZk, topic, partitions)
+	EnsureHasLeader(localZk, topic)
+
+	consumeMessages := 1
+	consumeStatus := make(chan int)
+	delayTimeout := 10 * time.Second
+
+	metricsConfig := NewKafkaMetricsEmitterConfig()
+	metricsProducerConfig := DefaultProducerConfig()
+	metricsProducerConfig.BrokerList = []string{localBroker}
+	metricsConfig.ProducerConfig = metricsProducerConfig
+	metricsConfig.ReportingInterval = 5 * time.Second
+	metricsConfig.SchemaRegistryUrl = schemaRepositoryUrl
+	metricsConfig.Topic = topic
+
+	EmitterMetrics = NewKafkaMetricsEmitter(metricsConfig)
+
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
 	consumer := NewConsumer(config)
