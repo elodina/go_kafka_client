@@ -33,7 +33,6 @@ type consumerFetcherManager struct {
 	updateInProgress               bool
 	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
-    defaultRequeueAskNextBackoff time.Duration
 
 	metrics *consumerMetrics
 	client  LowLevelClient
@@ -50,7 +49,6 @@ func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPart
 		partitionMap:                   make(map[TopicAndPartition]*partitionTopicInfo),
 		fetcherRoutineMap:              make(map[int]*consumerFetcherRoutine),
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
-        defaultRequeueAskNextBackoff: config.RequeueAskNextBackoff,
 		client:  config.LowLevelClient,
 		metrics: metrics,
 	}
@@ -278,9 +276,7 @@ func (f *consumerFetcherRoutine) start() {
 
 						if len(messages) == 0 {
 							go f.requeue(nextTopicPartition)
-						} else {
-                            f.manager.config.RequeueAskNextBackoff = f.manager.defaultRequeueAskNextBackoff
-                        }
+						}
 					}
 				})
 				time.Sleep(f.manager.config.FetchRequestBackoff)
@@ -297,19 +293,8 @@ func (f *consumerFetcherRoutine) start() {
 func (f *consumerFetcherRoutine) requeue(topicPartition TopicAndPartition) {
 	Debug(f, "Asknext received no messages, requeue request")
 	time.Sleep(f.manager.config.RequeueAskNextBackoff)
-    f.increaseRequeueBackoff()
 	f.askNext <- topicPartition
 	Debugf(f, "Requeued request %s", topicPartition)
-}
-
-func (f *consumerFetcherRoutine) increaseRequeueBackoff() {
-    if f.manager.config.RequeueAskNextBackoff < f.manager.config.RequeueAskNextMaxBackoff {
-        f.manager.config.RequeueAskNextBackoff = f.manager.config.RequeueAskNextBackoff * 2 + time.Millisecond
-
-        if f.manager.config.RequeueAskNextBackoff > f.manager.config.RequeueAskNextMaxBackoff {
-            f.manager.config.RequeueAskNextBackoff = f.manager.config.RequeueAskNextMaxBackoff
-        }
-    }
 }
 
 func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndPartition]int64) {

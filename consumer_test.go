@@ -591,7 +591,6 @@ func TestConsumeMultipleTopics(t *testing.T) {
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
 	config.AutoOffsetReset = SmallestOffset
-    config.RequeueAskNextBackoff = 100 * time.Millisecond
 	config.WorkerFailureCallback = func(_ *WorkerManager) FailedDecision {
 		return CommitOffsetAndContinue
 	}

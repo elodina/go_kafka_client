@@ -128,7 +128,7 @@ func (mb *messageBuffer) addBatch(messages []*Message) {
 					Trace(mb, "Asking for next batch")
 					break askNextLoop
 				}
-			case <-time.After(mb.Config.RequeueAskNextMaxBackoff):
+			case <-time.After(mb.Config.RequeueAskNextBackoff):
 			}
 		}
 	})
