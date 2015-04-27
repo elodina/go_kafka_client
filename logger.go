@@ -23,6 +23,9 @@ import (
 //Logger used by this client. Defaults to build-in logger with Info log level.
 var Logger KafkaLogger = NewDefaultLogger(InfoLevel)
 
+// LogEmitter used by this client. Defaults to empty emitter that ignores all incoming data.
+var EmitterLogs LogEmitter = NewEmptyEmitter()
+
 //Logger interface. Lets you plug-in your custom logging library instead of using built-in one.
 type KafkaLogger interface {
 	//Formats a given message according to given params to log with level Trace.
@@ -70,61 +73,73 @@ const (
 //Writes a given message with a given tag to log with level Trace.
 func Trace(tag interface{}, message interface{}) {
 	Logger.Trace(fmt.Sprintf("[%s] %s", tag, message))
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), TraceLogTypeId, fmt.Sprintf("%s", message), nil))
 }
 
 //Formats a given message according to given params with a given tag to log with level Trace.
 func Tracef(tag interface{}, message interface{}, params ...interface{}) {
 	Logger.Trace(fmt.Sprintf("[%s] %s", tag, message), params...)
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), TraceLogTypeId, fmt.Sprintf(fmt.Sprintf("%s", message), params...), nil))
 }
 
 //Writes a given message with a given tag to log with level Debug.
 func Debug(tag interface{}, message interface{}) {
 	Logger.Debug(fmt.Sprintf("[%s] %s", tag, message))
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), DebugLogTypeId, fmt.Sprintf("%s", message), nil))
 }
 
 //Formats a given message according to given params with a given tag to log with level Debug.
 func Debugf(tag interface{}, message interface{}, params ...interface{}) {
 	Logger.Debug(fmt.Sprintf("[%s] %s", tag, message), params...)
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), DebugLogTypeId, fmt.Sprintf(fmt.Sprintf("%s", message), params...), nil))
 }
 
 //Writes a given message with a given tag to log with level Info.
 func Info(tag interface{}, message interface{}) {
 	Logger.Info(fmt.Sprintf("[%s] %s", tag, message))
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), InfoLogTypeId, fmt.Sprintf("%s", message), nil))
 }
 
 //Formats a given message according to given params with a given tag to log with level Info.
 func Infof(tag interface{}, message interface{}, params ...interface{}) {
 	Logger.Info(fmt.Sprintf("[%s] %s", tag, message), params...)
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), InfoLogTypeId, fmt.Sprintf(fmt.Sprintf("%s", message), params...), nil))
 }
 
 //Writes a given message with a given tag to log with level Warn.
 func Warn(tag interface{}, message interface{}) {
 	Logger.Warn(fmt.Sprintf("[%s] %s", tag, message))
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), WarnLogTypeId, fmt.Sprintf("%s", message), nil))
 }
 
 //Formats a given message according to given params with a given tag to log with level Warn.
 func Warnf(tag interface{}, message interface{}, params ...interface{}) {
 	Logger.Warn(fmt.Sprintf("[%s] %s", tag, message), params...)
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), WarnLogTypeId, fmt.Sprintf(fmt.Sprintf("%s", message), params...), nil))
 }
 
 //Writes a given message with a given tag to log with level Error.
 func Error(tag interface{}, message interface{}) {
 	Logger.Error(fmt.Sprintf("[%s] %s", tag, message))
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), ErrorLogTypeId, fmt.Sprintf("%s", message), nil))
 }
 
 //Formats a given message according to given params with a given tag to log with level Error.
 func Errorf(tag interface{}, message interface{}, params ...interface{}) {
 	Logger.Error(fmt.Sprintf("[%s] %s", tag, message), params...)
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), ErrorLogTypeId, fmt.Sprintf(fmt.Sprintf("%s", message), params...), nil))
 }
 
 //Writes a given message with a given tag to log with level Critical.
 func Critical(tag interface{}, message interface{}) {
 	Logger.Critical(fmt.Sprintf("[%s] %s", tag, message))
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), CriticalLogTypeId, fmt.Sprintf("%s", message), nil))
 }
 
 //Formats a given message according to given params with a given tag to log with level Critical.
 func Criticalf(tag interface{}, message interface{}, params ...interface{}) {
 	Logger.Critical(fmt.Sprintf("[%s] %s", tag, message), params...)
+	EmitterLogs.Emit(newLogLine(fmt.Sprintf("%s", tag), CriticalLogTypeId, fmt.Sprintf(fmt.Sprintf("%s", message), params...), nil))
 }
 
 //Default implementation of KafkaLogger interface used in this client.
