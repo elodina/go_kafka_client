@@ -26,16 +26,21 @@ import (
 	"time"
 )
 
+// MetricsEmitter is an interface that handles structured metrics data.
 type MetricsEmitter interface {
-	//    SetRegistry(metrics.Registry)
+	// ReportingInterval returns an interval to report metrics.
 	ReportingInterval() time.Duration
+
+	// Emit sends a single metrics entry to some destination.
 	Emit([]byte)
-	//    Start()
 }
 
+// KafkaMetricsEmitterConfig provides multiple configuration entries for KafkaMetricsEmitter
 type KafkaMetricsEmitterConfig struct {
+	// Registry is a metrics registry to report.
 	Registry metrics.Registry
 
+	// ReportingInterval is an interval to report metrics.
 	ReportingInterval time.Duration
 
 	// Topic to emit logs to.
@@ -48,15 +53,20 @@ type KafkaMetricsEmitterConfig struct {
 	ProducerConfig *ProducerConfig
 }
 
+// NewKafkaMetricsEmitterConfig creates a new KafkaMetricsEmitterConfig with ReportingInterval set to 1 second.
 func NewKafkaMetricsEmitterConfig() *KafkaMetricsEmitterConfig {
-	return new(KafkaMetricsEmitterConfig)
+	return &KafkaMetricsEmitterConfig{
+		ReportingInterval: 1 * time.Second,
+	}
 }
 
+// KafkaMetricsEmitter implements MetricsEmitter and sends all metrics data to a Kafka topic encoded as Avro.
 type KafkaMetricsEmitter struct {
 	config   *KafkaMetricsEmitterConfig
 	producer Producer
 }
 
+// NewKafkaMetricsEmitter creates a new KafkaMetricsEmitter with a provided KafkaMetricsEmitterConfig.
 func NewKafkaMetricsEmitter(config *KafkaMetricsEmitterConfig) *KafkaMetricsEmitter {
 	config.ProducerConfig.ValueEncoder = NewKafkaAvroEncoder(config.SchemaRegistryUrl)
 	return &KafkaMetricsEmitter{
@@ -65,10 +75,12 @@ func NewKafkaMetricsEmitter(config *KafkaMetricsEmitterConfig) *KafkaMetricsEmit
 	}
 }
 
+// ReportingInterval returns an interval to report metrics.
 func (m *KafkaMetricsEmitter) ReportingInterval() time.Duration {
 	return m.config.ReportingInterval
 }
 
+// Emit sends a single metrics entry to a Kafka topic encoded as Avro.
 func (m *KafkaMetricsEmitter) Emit(bytes []byte) {
 	metrics := make(map[string]interface{})
 	if err := json.Unmarshal(bytes, &metrics); err != nil {
@@ -183,13 +195,18 @@ func (m *KafkaMetricsEmitter) fillRecord(record *avro.GenericRecord, schema *avr
 	}
 }
 
+// EmptyMetricsEmitter implements MetricsEmitter and ignores all incoming data. Used not to break anyone.
 type EmptyMetricsEmitter struct{}
 
+// NewEmptyMetricsEmitter creates a new EmptyMetricsEmitter.
 func NewEmptyMetricsEmitter() *EmptyMetricsEmitter {
 	return new(EmptyMetricsEmitter)
 }
 
+// Does nothing. Ignores given message.
 func (*EmptyMetricsEmitter) Emit([]byte) {}
+
+// Returns a reporting interval of 1 minute.
 func (*EmptyMetricsEmitter) ReportingInterval() time.Duration {
 	return time.Minute
 }
