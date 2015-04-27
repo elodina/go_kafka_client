@@ -62,7 +62,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 	Debugf(m, "TopicInfos = %s", topicInfos)
 	m.numStreams = numStreams
 
-	partitionAndOffsets := make(map[TopicAndPartition]int64)
+	partitionInfos := make(map[TopicAndPartition]*partitionTopicInfo)
 
 	m.updateInProgress = true
 	inWriteLock(&m.updateLock, func() {
@@ -75,7 +75,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 				continue
 			} else {
 				newPartitionMap[topicAndPartition] = providedInfo
-				partitionAndOffsets[topicAndPartition] = providedInfo.FetchedOffset
+				partitionInfos[topicAndPartition] = providedInfo
 			}
 		}
 
@@ -90,8 +90,6 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 		topicPartitionsToRemove := make([]TopicAndPartition, 0)
 		for tp := range m.partitionMap {
 			topicPartitionsToRemove = append(topicPartitionsToRemove, tp)
-			m.disconnectChannelsForPartition <- tp
-			delete(m.partitionMap, tp)
 		}
 		Debugf(m, "There are obsolete partitions %v", topicPartitionsToRemove)
 
@@ -101,13 +99,17 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 			fetcher.removePartitions(topicPartitionsToRemove)
 			Debugf(m, "Fetcher %s parition map after obsolete partitions removal", fetcher, fetcher.partitionMap)
 		}
+		for tp := range m.partitionMap {
+			m.disconnectChannelsForPartition <- tp
+			delete(m.partitionMap, tp)
+		}
 		m.shutdownIdleFetchers()
 
 		//updating partitions map with requested partitions
 		for k, v := range newPartitionMap {
 			m.partitionMap[k] = v
 		}
-		m.addFetcherForPartitions(partitionAndOffsets)
+		m.addFetcherForPartitions(partitionInfos)
 
 		m.updateInProgress = false
 		Debugf(m, "Applied new partition map %v", m.partitionMap)
@@ -117,33 +119,28 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 	m.updatedCond.Broadcast()
 }
 
-func (m *consumerFetcherManager) addFetcherForPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
-	Infof(m, "Adding fetcher for partitions %v", partitionAndOffsets)
-	partitionsPerFetcher := make(map[int]map[TopicAndPartition]int64)
-	for topicAndPartition, offset := range partitionAndOffsets {
+func (m *consumerFetcherManager) addFetcherForPartitions(partitionInfos map[TopicAndPartition]*partitionTopicInfo) {
+	Infof(m, "Adding fetcher for partitions %v", partitionInfos)
+	partitionsPerFetcher := make(map[int]map[TopicAndPartition]*partitionTopicInfo)
+	for topicAndPartition, info := range partitionInfos {
 		fetcherId := m.getFetcherId(topicAndPartition.Topic, topicAndPartition.Partition)
 		if partitionsPerFetcher[fetcherId] == nil {
-			partitionsPerFetcher[fetcherId] = make(map[TopicAndPartition]int64)
+			partitionsPerFetcher[fetcherId] = make(map[TopicAndPartition]*partitionTopicInfo)
 		}
-		partitionsPerFetcher[fetcherId][topicAndPartition] = offset
+		partitionsPerFetcher[fetcherId][topicAndPartition] = info
 	}
 
 	Debugf(m, "partitionsPerFetcher: %v", partitionsPerFetcher)
-	for fetcherId, partitionOffsets := range partitionsPerFetcher {
+	for fetcherId, partitionInfos := range partitionsPerFetcher {
 		if m.fetcherRoutineMap[fetcherId] == nil {
 			Debugf(m, "Starting new fetcher")
 			fetcherRoutine := newConsumerFetcher(m,
-				fmt.Sprintf("ConsumerFetcherRoutine-%s-%d", m.config.Consumerid, fetcherId),
-				m.partitionMap)
+				fmt.Sprintf("ConsumerFetcherRoutine-%s-%d", m.config.Consumerid, fetcherId))
 			m.fetcherRoutineMap[fetcherId] = fetcherRoutine
 			go fetcherRoutine.start()
 		}
 
-		partitionToOffsetMap := make(map[TopicAndPartition]int64)
-		for tp, offset := range partitionOffsets {
-			partitionToOffsetMap[tp] = offset
-		}
-		m.fetcherRoutineMap[fetcherId].addPartitions(partitionToOffsetMap)
+		m.fetcherRoutineMap[fetcherId].addPartitions(partitionInfos)
 	}
 }
 
@@ -200,9 +197,8 @@ func (m *consumerFetcherManager) close() <-chan bool {
 type consumerFetcherRoutine struct {
 	manager         *consumerFetcherManager
 	name            string
-	allPartitionMap map[TopicAndPartition]*partitionTopicInfo
-	partitionMap    map[TopicAndPartition]int64
-	lock            sync.Mutex
+	partitionMap    map[TopicAndPartition]*partitionTopicInfo
+	lock            sync.RWMutex
 	closeFinished   chan bool
 	fetchStopper    chan bool
 	askNext         chan TopicAndPartition
@@ -212,15 +208,14 @@ func (f *consumerFetcherRoutine) String() string {
 	return f.name
 }
 
-func newConsumerFetcher(m *consumerFetcherManager, name string, allPartitionMap map[TopicAndPartition]*partitionTopicInfo) *consumerFetcherRoutine {
+func newConsumerFetcher(m *consumerFetcherManager, name string) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
 		manager:         m,
 		name:            name,
-		allPartitionMap: allPartitionMap,
-		partitionMap:    make(map[TopicAndPartition]int64),
+		partitionMap:    make(map[TopicAndPartition]*partitionTopicInfo),
 		closeFinished:   make(chan bool),
 		fetchStopper:    make(chan bool),
-		askNext:         make(chan TopicAndPartition),
+		askNext:         make(chan TopicAndPartition, m.config.AskNextChannelSize),
 	}
 }
 
@@ -234,19 +229,15 @@ func (f *consumerFetcherRoutine) start() {
 			{
 				f.manager.metrics.FetchersIdleTimer().Update(time.Since(ts))
 				Debugf(f, "Received asknext for %s", &nextTopicPartition)
-				inLock(&f.lock, func() {
+				inReadLock(&f.lock, func() {
 					if !f.manager.shuttingDown {
 						Trace(f, "Next asked")
-						offset := InvalidOffset
 						Debugf(f, "Partition map: %v", f.partitionMap)
-						if existingOffset, exists := f.partitionMap[nextTopicPartition]; exists {
-							offset = existingOffset
-						}
-
-						if f.allPartitionMap[nextTopicPartition] == nil {
+						if _, exists := f.partitionMap[nextTopicPartition]; !exists {
 							Warnf(f, "Message buffer for partition %s has been terminated. Aborting processing task...", nextTopicPartition)
 							return
 						}
+						offset := f.partitionMap[nextTopicPartition].FetchedOffset
 
 						var messages []*Message
 						var err error
@@ -265,14 +256,9 @@ func (f *consumerFetcherRoutine) start() {
 							}
 						}
 
-						go f.processPartitionData(nextTopicPartition, messages)
-
-						if len(messages) == 0 {
-							go f.requeue(nextTopicPartition)
-						}
+						f.processPartitionData(nextTopicPartition, messages)
 					}
 				})
-				time.Sleep(f.manager.config.FetchRequestBackoff)
 			}
 		case <-f.fetchStopper:
 			{
@@ -283,26 +269,20 @@ func (f *consumerFetcherRoutine) start() {
 	}
 }
 
-func (f *consumerFetcherRoutine) requeue(topicPartition TopicAndPartition) {
-	Debug(f, "Asknext received no messages, requeue request")
-	time.Sleep(f.manager.config.RequeueAskNextBackoff)
-	f.askNext <- topicPartition
-	Debugf(f, "Requeued request %s", topicPartition)
-}
-
-func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndPartition]int64) {
-	Debugf(f, "Adding partitions: %v", partitionAndOffsets)
+func (f *consumerFetcherRoutine) addPartitions(partitionTopicInfos map[TopicAndPartition]*partitionTopicInfo) {
+	Debugf(f, "Adding partitions: %v", partitionTopicInfos)
 	newPartitions := make(map[TopicAndPartition]chan TopicAndPartition)
-	inLock(&f.lock, func() {
-		for topicAndPartition, offset := range partitionAndOffsets {
+	inWriteLock(&f.lock, func() {
+		for topicAndPartition, info := range partitionTopicInfos {
 			if _, contains := f.partitionMap[topicAndPartition]; !contains {
-				validOffset := offset + 1
-				if isOffsetInvalid(offset) {
+				f.partitionMap[topicAndPartition] = info
+				validOffset := info.FetchedOffset + 1
+				if isOffsetInvalid(info.FetchedOffset) {
 					f.handleOffsetOutOfRange(&topicAndPartition)
 				} else {
-					f.partitionMap[topicAndPartition] = validOffset
+					f.partitionMap[topicAndPartition].FetchedOffset = validOffset
 				}
-				f.manager.partitionMap[topicAndPartition].Buffer.start(f.askNext)
+				f.partitionMap[topicAndPartition].Buffer.start(f.askNext)
 				newPartitions[topicAndPartition] = f.askNext
 				Debugf(f, "Owner of %s", topicAndPartition)
 			}
@@ -330,19 +310,12 @@ func (f *consumerFetcherRoutine) addPartitions(partitionAndOffsets map[TopicAndP
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, messages []*Message) {
 	Trace(f, "Trying to acquire lock for partition processing")
-	inReadLock(&f.manager.updateLock, func() {
-		for f.manager.updateInProgress {
-			f.manager.updatedCond.Wait()
-		}
-		Tracef(f, "Processing partition data for %s", topicAndPartition)
-		if len(messages) > 0 {
-			f.partitionMap[topicAndPartition] = messages[len(messages)-1].Offset + 1
-			f.allPartitionMap[topicAndPartition].Buffer.addBatch(messages)
-			Debugf(f, "Sent partition data to %s", topicAndPartition)
-		} else {
-			Trace(f, "Got empty message. Ignoring...")
-		}
-	})
+	Tracef(f, "Processing partition data for %s", topicAndPartition)
+	if len(messages) > 0 {
+		f.partitionMap[topicAndPartition].FetchedOffset = messages[len(messages)-1].Offset + 1
+	}
+	go f.partitionMap[topicAndPartition].Buffer.addBatch(messages)
+	Debugf(f, "Sent partition data to %s", topicAndPartition)
 }
 
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) {
@@ -354,9 +327,9 @@ func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *Topic
 
     // Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
     // This just guarantees we dont get a nil pointer dereference here
-    if topicInfo, exists := f.allPartitionMap[*topicAndPartition]; exists {
+    if topicInfo, exists := f.partitionMap[*topicAndPartition]; exists {
         topicInfo.FetchedOffset = newOffset
-        f.partitionMap[*topicAndPartition] = newOffset
+        f.partitionMap[*topicAndPartition].FetchedOffset = newOffset
     }
 }
 
@@ -370,7 +343,7 @@ func (f *consumerFetcherRoutine) removeAllPartitions() {
 
 func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition) {
 	Debug(f, "Remove partitions")
-	inLock(&f.lock, func() {
+	inWriteLock(&f.lock, func() {
 		for _, topicAndPartition := range partitions {
 			delete(f.partitionMap, topicAndPartition)
 		}
