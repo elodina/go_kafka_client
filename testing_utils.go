@@ -167,6 +167,33 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 	}
 }
 
+func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, brokerAddr string) {
+	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	producerConfig := sarama.NewProducerConfig()
+	partitionerFactory := &SaramaPartitionerFactory{NewFixedPartitioner}
+	producerConfig.Partitioner = partitionerFactory.PartitionerConstructor
+	producer, err := sarama.NewProducer(client, producerConfig)
+	encoder := &Int32Encoder{}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	for i := 0; i < n; i++ {
+		key, _ := encoder.Encode(uint32(partition))
+		producer.Input() <- &sarama.ProducerMessage{Topic: topic, Key: sarama.ByteEncoder(key), Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+	}
+	select {
+	case e := <-producer.Errors():
+		t.Fatalf("Failed to produce message: %s", e)
+	case <-time.After(5 * time.Second):
+	}
+}
+
 func produce(t *testing.T, messages []string, topic string, brokerAddr string, compression sarama.CompressionCodec) {
 	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
 	if err != nil {

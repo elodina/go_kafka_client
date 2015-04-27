@@ -236,7 +236,6 @@ func (this *CachedSchemaRegistryClient) GetVersion(subject string, schema avro.S
 func (this *CachedSchemaRegistryClient) newDefaultRequest(method string, uri string, reader io.Reader) (*http.Request, error) {
 	url := fmt.Sprintf("%s%s", this.registryURL, uri)
 	request, err := http.NewRequest(method, url, reader)
-	println(url)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +250,6 @@ func (this *CachedSchemaRegistryClient) isOK(response *http.Response) bool {
 func (this *CachedSchemaRegistryClient) handleSuccess(response *http.Response, model interface{}) error {
 	responseBytes := make([]byte, response.ContentLength)
 	response.Body.Read(responseBytes)
-	println(string(responseBytes))
 	return json.Unmarshal(responseBytes, model)
 }
 

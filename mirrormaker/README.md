@@ -28,4 +28,15 @@ The tool uses a Kafka consumer to consume messages from the source cluster, and 
 
 `--queue.size` - number of messages that are buffered between the consumer and producer. *Defaults to 10000*.
 
-`--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.
+`--max.procs` - maximum number of CPUs that can be executing simultaneously. *Defaults to runtime.NumCPU()*.  
+
+`--timings.producer.config` - property file to configure embedded timings producer.  
+
+`--schema.registry.url` - Avro schema registry URL for requesting avro schemas.
+ 
+ **Docker usage:**
+ 
+ 1. Install Docker [https://docs.docker.com/installation/#installation](https://docs.docker.com/installation/#installation)
+ 2. `cd $GOPATH/src/github.com/stealthly/go_kafka_client`
+ 3. Build docker image: `docker build -t stealthly/go_kafka_mirrormaker --file Dockerfile.mirrormaker .`
+ 4. `docker run -v $(pwd)/mirrormaker:/mirrormaker stealthly/go_kafka_mirrormaker --consumer.config /mirrormaker/sourceCluster1Consumer.config --consumer.config /mirrormaker/sourceCluster2Consumer.config --num.streams 2 --producer.config /mirrormaker/targetClusterProducer.config --whitelist=".*"`

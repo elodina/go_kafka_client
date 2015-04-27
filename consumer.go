@@ -560,8 +560,9 @@ func (c *Consumer) rebalance() {
 		inLock(&c.rebalanceLock, func() {
 			success := false
 			var stateHash string
-			for i := 0; i <= int(c.config.RebalanceMaxRetries); i++ {
-				Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
+			barrierTimeout := c.config.BarrierTimeout
+			Infof(c, "rebalance triggered for %s\n", c.config.Consumerid)
+			for i := 0; i <= int(c.config.RebalanceMaxRetries) && !success; i++ {
 				partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 				var context *assignmentContext
 				var err error
@@ -581,17 +582,26 @@ func (c *Consumer) rebalance() {
 						return
 					}
 					c.releasePartitionOwnership(c.topicRegistry)
+					err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, fmt.Sprintf("%s-ack", stateHash), string(Rebalance))
+					if err != nil {
+						Warnf(c, "Failed to remove state barrier %s due to: %s", stateHash, err.Error())
+					}
 					barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
 						stateHash, barrierSize, string(Rebalance),
-						c.config.BarrierTimeout)
+						barrierTimeout)
 				}
 
 				if tryRebalance(c, context, partitionAssignor) {
 					success = true
-					break
 				} else {
 					time.Sleep(c.config.RebalanceBackoff)
 				}
+
+				err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, stateHash, string(Rebalance))
+				if err != nil {
+					Warnf(c, "Failed to remove state barrier %s due to: %s", stateHash, err.Error())
+				}
+				barrierTimeout += c.config.BarrierTimeout
 			}
 			if !success && !c.isShuttingdown {
 				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
@@ -618,7 +628,7 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		return false
 	}
 
-	currenttopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
+	currentTopicRegistry := make(map[string]map[int32]*partitionTopicInfo)
 
 	if c.isShuttingdown {
 		Warnf(c, "Aborting consumer '%s' rebalancing, since shutdown sequence started.", c.config.Consumerid)
@@ -627,13 +637,28 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		for _, topicPartition := range topicPartitions {
 			offset := offsets[*topicPartition]
 			threadId := partitionOwnershipDecision[*topicPartition]
-			c.addPartitionTopicInfo(currenttopicRegistry, topicPartition, offset, threadId)
+			c.addPartitionTopicInfo(currentTopicRegistry, topicPartition, offset, threadId)
 		}
 	}
 
 	if c.reflectPartitionOwnershipDecision(partitionOwnershipDecision) {
 		Info(c, "Partition ownership has been successfully reflected")
-		c.topicRegistry = currenttopicRegistry
+		barrierPassed := false
+		retriesLeft := 3
+		stateHash := context.hash()
+		barrierSize := len(context.Consumers)
+		for !barrierPassed && retriesLeft > 0 {
+			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
+			fmt.Sprintf("%s-ack", stateHash), barrierSize, string(Rebalance),
+			c.config.BarrierTimeout)
+			retriesLeft--
+		}
+
+		if !barrierPassed {
+			return false
+		}
+
+		c.topicRegistry = currentTopicRegistry
 		Infof(c, "Trying to reinitialize fetchers and workers")
 		c.initFetchersAndWorkers(context)
 		Infof(c, "Fetchers and workers have been successfully reinitialized")

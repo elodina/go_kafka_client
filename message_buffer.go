@@ -107,6 +107,7 @@ func (mb *messageBuffer) stop() {
 }
 
 func (mb *messageBuffer) addBatch(messages []*Message) {
+	Tracef(mb, "Adding batch of messages to message buffer %d", len(messages))
 	inLock(&mb.MessageLock, func() {
 		Trace(mb, "Trying to add messages to message buffer")
 		if mb.stopSending {
@@ -115,6 +116,7 @@ func (mb *messageBuffer) addBatch(messages []*Message) {
 		}
 
 		for _, message := range messages {
+			Tracef(mb, "Adding message to message buffer %v", message)
 			mb.add(message)
 		}
 
@@ -128,7 +130,7 @@ func (mb *messageBuffer) addBatch(messages []*Message) {
 					Trace(mb, "Asking for next batch")
 					break askNextLoop
 				}
-			case <-time.After(200 * time.Millisecond):
+			case <-time.After(mb.Config.RequeueAskNextBackoff):
 			}
 		}
 	})
