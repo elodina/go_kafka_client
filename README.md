@@ -43,3 +43,7 @@ After this is done you're ready to write some code!
 
 For email support https://groups.google.com/forum/#!forum/kafka-clients
 
+***Related docs:***
+
+1. [Offset Storage configuration](https://github.com/stealthly/go_kafka_client/blob/master/docs/offset_storage.md).
+2. [Log and metrics emitters](https://github.com/stealthly/go_kafka_client/blob/master/docs/emitters.md).

@@ -66,7 +66,12 @@ func (this *KafkaAvroEncoder) Encode(obj interface{}) ([]byte, error) {
 	buffer.Write(idSlice)
 
 	enc := avro.NewBinaryEncoder(buffer)
-	writer := avro.NewGenericDatumWriter()
+	var writer avro.DatumWriter
+	if _, ok := obj.(*avro.GenericRecord); ok {
+		writer = avro.NewGenericDatumWriter()
+	} else {
+		writer = avro.NewSpecificDatumWriter()
+	}
 	writer.SetSchema(schema)
 	writer.Write(obj, enc)
 
@@ -93,10 +98,10 @@ func (this *KafkaAvroEncoder) getSchema(obj interface{}) avro.Schema {
 		return this.primitiveSchemas["String"]
 	case []byte:
 		return this.primitiveSchemas["Bytes"]
-	case *avro.GenericRecord:
+	case avro.AvroRecord:
 		return t.Schema()
 	default:
-		panic("Unsupported Avro type. Supported types are nil, bool, int32, int64, float32, float64, string, []byte and *GenericRecord")
+		panic("Unsupported Avro type. Supported types are nil, bool, int32, int64, float32, float64, string, []byte and AvroRecord")
 	}
 }
 

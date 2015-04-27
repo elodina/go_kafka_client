@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,8 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 	if err != nil {
 		panic("Failed to load configuration file")
 	}
+	logLevel := rawConfig["log_level"]
+	setLogLevel(logLevel)
 	numConsumers, _ := strconv.Atoi(rawConfig["num_consumers"])
 	zkTimeout, _ := time.ParseDuration(rawConfig["zookeeper_timeout"])
 
@@ -101,12 +104,33 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 	config.QueuedMaxMessages = int32(queuedMaxMessages)
 	config.RefreshLeaderBackoff = refreshLeaderBackoff
 	config.Coordinator = kafkaClient.NewZookeeperCoordinator(zkConfig)
-	config.OffsetsStorage = rawConfig["offsets_storage"]
 	config.AutoOffsetReset = rawConfig["auto_offset_reset"]
 	config.OffsetsCommitMaxRetries = offsetsCommitMaxRetries
 	config.DeploymentTimeout = deploymentTimeout
+	config.OffsetCommitInterval = 10 * time.Second
 
 	return config, rawConfig["topic"], numConsumers, rawConfig["graphite_connect"], flushInterval
+}
+
+func setLogLevel(logLevel string) {
+	var level kafkaClient.LogLevel
+	switch strings.ToLower(logLevel) {
+		case "trace":
+		level = kafkaClient.TraceLevel
+		case "debug":
+		level = kafkaClient.DebugLevel
+		case "info":
+		level = kafkaClient.InfoLevel
+		case "warn":
+		level = kafkaClient.WarnLevel
+		case "error":
+		level = kafkaClient.ErrorLevel
+		case "critical":
+		level = kafkaClient.CriticalLevel
+		default:
+		level = kafkaClient.InfoLevel
+	}
+	kafkaClient.Logger = kafkaClient.NewDefaultLogger(level)
 }
 
 func main() {
@@ -162,7 +186,7 @@ func startNewConsumer(config kafkaClient.ConsumerConfig, topic string) *kafkaCli
 func GetStrategy(consumerId string) func(*kafkaClient.Worker, *kafkaClient.Message, kafkaClient.TaskId) kafkaClient.WorkerResult {
 	consumeRate := metrics.NewRegisteredMeter(fmt.Sprintf("%s-ConsumeRate", consumerId), metrics.DefaultRegistry)
 	return func(_ *kafkaClient.Worker, msg *kafkaClient.Message, id kafkaClient.TaskId) kafkaClient.WorkerResult {
-		kafkaClient.Infof("main", "Got a message: %s", string(msg.Value))
+		kafkaClient.Tracef("main", "Got a message: %s", string(msg.Value))
 		consumeRate.Mark(1)
 
 		return kafkaClient.NewSuccessfulResult(id)

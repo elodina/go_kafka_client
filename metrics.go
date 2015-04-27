@@ -16,12 +16,18 @@ limitations under the License. */
 package go_kafka_client
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	metrics "github.com/rcrowley/go-metrics"
+	"time"
 )
+
+var EmitterMetrics MetricsEmitter = NewEmptyMetricsEmitter()
 
 type consumerMetrics struct {
 	registry metrics.Registry
+	ticker   *time.Ticker
 
 	numFetchRoutinesCounter metrics.Counter
 	fetchersIdleTimer       metrics.Timer
@@ -47,6 +53,21 @@ func newConsumerMetrics(consumerName string) *consumerMetrics {
 	kafkaMetrics.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", consumerName), kafkaMetrics.registry)
+
+	kafkaMetrics.ticker = time.NewTicker(EmitterMetrics.ReportingInterval())
+
+	go func() {
+		for _ = range kafkaMetrics.ticker.C {
+			buffer := &bytes.Buffer{}
+			writer := bufio.NewWriter(buffer)
+			metrics.WriteJSONOnce(kafkaMetrics.registry, writer)
+			if err := writer.Flush(); err != nil {
+				panic(err)
+			}
+
+			EmitterMetrics.Emit(buffer.Bytes())
+		}
+	}()
 
 	return kafkaMetrics
 }
@@ -131,5 +152,6 @@ func (this *consumerMetrics) Stats() map[string]map[string]float64 {
 }
 
 func (this *consumerMetrics) Close() {
+	this.ticker.Stop()
 	this.registry.UnregisterAll()
 }

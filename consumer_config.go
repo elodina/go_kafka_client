@@ -64,9 +64,6 @@ type ConsumerConfig struct {
 	This way it does not commit all the offset history if the coordinator is slow, but only the highest offsets. */
 	OffsetCommitInterval time.Duration
 
-	/* Specify whether offsets should be committed to "zookeeper" (default) or "kafka". */
-	OffsetsStorage string
-
 	/* What to do if an offset is out of range.
 	SmallestOffset : automatically reset the offset to the smallest offset.
 	LargestOffset : automatically reset the offset to the largest offset.
@@ -124,6 +121,9 @@ type ConsumerConfig struct {
 	/* Backoff between fetch requests if no messages were fetched from a previous fetch. */
 	RequeueAskNextBackoff time.Duration
 
+	/* Buffer size for ask next channel. This value shouldn't be less than number of partitions per fetch routine. */
+	AskNextChannelSize int
+
 	/* Maximum fetch retries if no messages were fetched from a previous fetch */
 	FetchMaxRetries int
 
@@ -138,6 +138,9 @@ type ConsumerConfig struct {
 
 	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
 	Coordinator ConsumerCoordinator
+
+    /* OffsetStorage is used to store and retrieve consumer offsets. */
+    OffsetStorage OffsetStorage
 
 	/* Indicates whether the client supports blue-green deployment.
 	This config entry is needed because blue-green deployment won't work with RoundRobin partition assignment strategy.
@@ -178,7 +181,6 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.RefreshLeaderBackoff = 200 * time.Millisecond
 	config.OffsetsCommitMaxRetries = 5
 	config.OffsetCommitInterval = 3 * time.Second
-	config.OffsetsStorage = ZookeeperOffsetStorage
 
 	config.AutoOffsetReset = LargestOffset
 	config.Clientid = "go-client"
@@ -198,6 +200,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.FetchMaxRetries = 5
 	config.RequeueAskNextBackoff = 5 * time.Second
+	config.AskNextChannelSize = 1000
 	config.FetchTopicMetadataRetries = 3
 	config.FetchTopicMetadataBackoff = 1 * time.Second
 	config.FetchRequestBackoff = 10 * time.Millisecond
@@ -227,7 +230,6 @@ FetchWaitMaxMs: %d
 RebalanceBackoffMs: %d
 RefreshLeaderBackoff: %d
 OffsetsCommitMaxRetries: %d
-OffsetsStorage: %s
 AutoOffsetReset: %s
 ClientId: %s
 ConsumerId: %s
@@ -248,7 +250,7 @@ FetchBatchTimeout %v
 		c.FetchMessageMaxBytes, c.NumConsumerFetchers, c.QueuedMaxMessages, c.RebalanceMaxRetries,
 		c.FetchMinBytes, c.FetchWaitMaxMs,
 		c.RebalanceBackoff, c.RefreshLeaderBackoff,
-		c.OffsetsCommitMaxRetries, c.OffsetsStorage,
+		c.OffsetsCommitMaxRetries,
 		c.AutoOffsetReset, c.Clientid, c.Consumerid,
 		c.ExcludeInternalTopics, c.PartitionAssignmentStrategy, c.NumWorkers,
 		c.MaxWorkerRetries, c.WorkerRetryThreshold,
@@ -281,10 +283,6 @@ func (c *ConsumerConfig) Validate() error {
 
 	if c.OffsetsCommitMaxRetries < 0 {
 		return errors.New("OffsetsCommitMaxRetries cannot be less than 0")
-	}
-
-	if c.OffsetsStorage != ZookeeperOffsetStorage && c.OffsetsStorage != KafkaOffsetStorage {
-		return fmt.Errorf("OffsetsStorage must be either \"%s\" or \"%s\"", ZookeeperOffsetStorage, KafkaOffsetStorage)
 	}
 
 	if c.AutoOffsetReset != SmallestOffset && c.AutoOffsetReset != LargestOffset {
@@ -338,6 +336,15 @@ func (c *ConsumerConfig) Validate() error {
 	if c.Coordinator == nil {
 		return errors.New("Please provide a Coordinator")
 	}
+
+    if c.OffsetStorage == nil {
+        // This is for folks who already use this client
+        if zookeeper, ok := c.Coordinator.(*ZookeeperCoordinator); ok {
+            c.OffsetStorage = zookeeper
+        } else {
+            return errors.New("Please provide an OffsetStorage")
+        }
+    }
 
 	if c.BlueGreenDeploymentEnabled && c.PartitionAssignmentStrategy != RangeStrategy {
 		return errors.New("In order to use Blue-Green deployment Range partition assignment strategy should be used")
@@ -435,7 +442,6 @@ func ConsumerConfigFromFile(filename string) (*ConsumerConfig, error) {
 	if err := setDurationConfig(&config.OffsetCommitInterval, c["offset.commit.interval"]); err != nil {
 		return nil, err
 	}
-	setStringConfig(&config.OffsetsStorage, c["offsets.storage"])
 	setStringConfig(&config.AutoOffsetReset, c["auto.offset.reset"])
 	setBoolConfig(&config.ExcludeInternalTopics, c["exclude.internal.topics"])
 	setStringConfig(&config.PartitionAssignmentStrategy, c["partition.assignment.strategy"])

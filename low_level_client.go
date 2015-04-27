@@ -225,7 +225,7 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 	return messages
 }
 
-// SiestaClient implements LowLevelClient and uses github.com/stealthly/siesta as underlying implementation.
+// SiestaClient implements LowLevelClient and OffsetStorage and uses github.com/stealthly/siesta as underlying implementation.
 type SiestaClient struct {
 	config    *ConsumerConfig
 	connector siesta.Connector
@@ -321,6 +321,18 @@ func (this *SiestaClient) GetAvailableOffset(topic string, partition int32, offs
 		time = siesta.EarliestTime
 	}
 	return this.connector.GetAvailableOffset(topic, partition, time)
+}
+
+// Gets the offset for a given group, topic and partition.
+// May return an error if fails to retrieve the offset.
+func (this *SiestaClient) GetOffset(group string, topic string, partition int32) (int64, error) {
+    return this.connector.GetOffset(group, topic, partition)
+}
+
+// Commits the given offset for a given group, topic and partition.
+// May return an error if fails to commit the offset.
+func (this *SiestaClient) CommitOffset(group string, topic string, partition int32, offset int64) error {
+    return this.connector.CommitOffset(group, topic, partition, offset)
 }
 
 // Gracefully shuts down this client.

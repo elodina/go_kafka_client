@@ -185,10 +185,6 @@ type ConsumerCoordinator interface {
 	Returns a slice of BrokerInfo and error on failure. */
 	GetAllBrokers() ([]*BrokerInfo, error)
 
-	/* Gets the offset for a given TopicPartition and consumer group Group.
-	Returns offset on sucess, error otherwise. */
-	GetOffsetForTopicPartition(Group string, TopicPartition *TopicAndPartition) (int64, error)
-
 	/* Subscribes for any change that should trigger consumer rebalance on consumer group Group in this ConsumerCoordinator or trigger topic switch.
 	Returns a read-only channel of CoordinatorEvent that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
 	SubscribeForChanges(Group string) (<-chan CoordinatorEvent, error)
@@ -200,6 +196,9 @@ type ConsumerCoordinator interface {
 	/* Implements classic barrier synchronization primitive via service coordinator facilities */
 	AwaitOnStateBarrier(consumerId string, group string, stateHash string, barrierSize int, api string, timeout time.Duration) bool
 
+	/* Removes state barrier */
+	RemoveStateBarrier(group string, stateHash string, api string) error
+
 	/* Tells the ConsumerCoordinator to unsubscribe from events for the consumer it is associated with. */
 	Unsubscribe()
 
@@ -210,10 +209,6 @@ type ConsumerCoordinator interface {
 	/* Tells the ConsumerCoordinator to release partition ownership on topic Topic and partition Partition for consumer group Group.
 	Returns error if failed to released partition ownership. */
 	ReleasePartitionOwnership(Group string, Topic string, Partition int32) error
-
-	/* Tells the ConsumerCoordinator to commit offset Offset for topic and partition TopicPartition for consumer group Group.
-	Returns error if failed to commit offset. */
-	CommitOffset(Group string, TopicPartition *TopicAndPartition, Offset int64) error
 
 	/* Removes old api objects */
 	RemoveOldApiRequests(group string) error
@@ -229,6 +224,17 @@ const (
 	// A coordinator event that informs a consumer group of new deployed topics.
 	BlueGreenRequest CoordinatorEvent = "BlueGreenRequest"
 )
+
+// OffsetStorage is used to store and retrieve consumer offsets.
+type OffsetStorage interface {
+    // Gets the offset for a given group, topic and partition.
+    // May return an error if fails to retrieve the offset.
+    GetOffset(group string, topic string, partition int32) (int64, error)
+
+    // Commits the given offset for a given group, topic and partition.
+    // May return an error if fails to commit the offset.
+    CommitOffset(group string, topic string, partition int32, offset int64) error
+}
 
 // Represents a consumer state snapshot.
 type StateSnapshot struct {
