@@ -113,6 +113,7 @@ func TestWorkerManager(t *testing.T) {
 	config.Strategy = goodStrategy
 	mockZk := newMockZookeeperCoordinator()
 	config.Coordinator = mockZk
+    config.OffsetStorage = mockZk
 	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
 
 	metrics := newConsumerMetrics(wmid)

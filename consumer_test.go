@@ -672,7 +672,6 @@ func newPartitionTrackingStrategy(t *testing.T, expectedMessages int, timeout ti
 		})
 	}()
 	return func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-		fmt.Println(fmt.Sprintf("Got a message %v", msg.DecodedValue))
 		inLock(&consumedMessagesLock, func() {
 			if msg.Partition == trackPartition || trackPartition == -1 {
 				partitionConsumedMessages++

@@ -71,7 +71,7 @@ type ProducerConfig struct {
 	Partitioner           PartitionerConstructor
 	KeyEncoder            Encoder
 	ValueEncoder          Encoder
-	AckSuccesses			bool
+	AckSuccesses          bool
 
 	//Retries            int //TODO ??
 }

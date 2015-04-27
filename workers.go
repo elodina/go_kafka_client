@@ -185,7 +185,7 @@ func (wm *WorkerManager) commitOffset() {
 
 	success := false
 	for i := 0; i <= wm.config.OffsetsCommitMaxRetries; i++ {
-		err := wm.config.Coordinator.CommitOffset(wm.config.Groupid, &wm.topicPartition, largestOffset)
+		err := wm.config.OffsetStorage.CommitOffset(wm.config.Groupid, wm.topicPartition.Topic, wm.topicPartition.Partition, largestOffset)
 		if err == nil {
 			success = true
 			Tracef(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
