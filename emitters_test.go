@@ -43,15 +43,6 @@ func TestLogEmitter(t *testing.T) {
 	consumeStatus := make(chan int)
 	delayTimeout := 10 * time.Second
 
-	metricsConfig := NewKafkaMetricsEmitterConfig()
-	metricsProducerConfig := DefaultProducerConfig()
-	metricsProducerConfig.BrokerList = []string{localBroker}
-	metricsConfig.ProducerConfig = metricsProducerConfig
-	metricsConfig.ReportingInterval = 1 * time.Second
-	metricsConfig.SchemaRegistryUrl = schemaRepositoryUrl
-	metricsConfig.Topic = "kafka-metrics2"
-	EmitterMetrics = NewKafkaMetricsEmitter(metricsConfig)
-
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
 	consumer := NewConsumer(config)
