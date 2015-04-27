@@ -31,10 +31,9 @@ install_mesos() {
         service mesos-master start
     else
         apt-get -qy remove zookeeper
+        ln -s /lib/init/upstart-job /etc/init.d/mesos-slave
+        service mesos-slave start
     fi
-
-    ln -s /lib/init/upstart-job /etc/init.d/mesos-slave
-    service mesos-slave start
 }
 
 if [[ $1 != "master" && $1 != "slave" ]]; then
@@ -77,11 +76,22 @@ apt-get install -qy vim zip mc curl openjdk-7-jre scala git
 apt-get install -y linux-image-generic-lts-trusty
 wget -qO- https://get.docker.com/ | sh
 
+service docker stop
+docker -d --insecure-registry master:5000  1> docker.out 2> docker.err &
+
 install_mesos $mode
 
 if [[ "$mode" = "master" ]]; then
     wget http://downloads.mesosphere.com/marathon/v0.8.0/marathon-0.8.0.tgz -O /opt/marathon-0.8.0.tgz
     tar xzf /opt/marathon-0.8.0.tgz -C /opt
     cd /opt/marathon-0.8.0
-    ./bin/start --master localhost:8080 --zk zk://localhost:2181/marathon 1> marathon.out 2> marathon.err &
+    ./bin/start --master zk://master:2181/mesos --zk zk://master:2181/marathon --task_launch_timeout 300000 1> marathon.out 2> marathon.err &
+
+    docker run -d --net=host registry
+
+    cd /vagrant/consumers && docker build -t go_kafka_consumers .
+    apt-get install -y gawk
+    latest=`docker images | grep go_kafka_consumers | grep latest | gawk 'match($0, /latest[ \t]+?([[:alnum:]]+)/, arr) {print arr[1]}'`
+    docker tag ${latest} master:5000/go_kafka_consumers
+    docker push master:5000/go_kafka_consumers
 fi

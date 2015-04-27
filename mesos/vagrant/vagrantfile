@@ -15,7 +15,7 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-SLAVES=1
+SLAVES=2
 NET_PREFIX="192.168.3."
 # APT_CACHE="192.168.1.101"
 

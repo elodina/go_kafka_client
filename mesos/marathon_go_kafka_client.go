@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-    marathon_url := "http://192.168.3.5:8080"
+    marathon_url := "http://192.168.3.5:8000"
     config := marathon.NewDefaultConfig()
     config.URL = marathon_url
     config.LogOutput = os.Stdout
@@ -15,12 +15,13 @@ func main() {
         panic(fmt.Sprintf("Failed to create a client for marathon, error: %s", err))
     } else {
         application := marathon.NewDockerApplication()
-        application.Name("go-kafka-consumers")
-        application.CPU(0.1).Memory(1024).Storage(1024).Count(2)
+        application.Name("/go-kafka-consumers")
+        application.CPU(0.5).Memory(256).Storage(256).Count(1)
         application.AddEnv("ZOOKEEPER_CONNECT", "192.168.3.5:2181")
+        application.AddEnv("TOPIC", "testing1")
 
         // add the docker container
-        application.Container.Docker.Container("go_kafka_consumers")
+        application.Container.Docker.Container("localhost:5000/go_kafka_consumers:latest")
 
         if err := client.CreateApplication(application, true); err != nil {
             fmt.Printf("Failed to create application: %s, error: %s", application, err)
