@@ -195,13 +195,13 @@ func (m *consumerFetcherManager) close() <-chan bool {
 }
 
 type consumerFetcherRoutine struct {
-	manager         *consumerFetcherManager
-	name            string
-	partitionMap    map[TopicAndPartition]*partitionTopicInfo
-	lock            sync.RWMutex
-	closeFinished   chan bool
-	fetchStopper    chan bool
-	askNext         chan TopicAndPartition
+	manager       *consumerFetcherManager
+	name          string
+	partitionMap  map[TopicAndPartition]*partitionTopicInfo
+	lock          sync.RWMutex
+	closeFinished chan bool
+	fetchStopper  chan bool
+	askNext       chan TopicAndPartition
 }
 
 func (f *consumerFetcherRoutine) String() string {
@@ -210,12 +210,12 @@ func (f *consumerFetcherRoutine) String() string {
 
 func newConsumerFetcher(m *consumerFetcherManager, name string) *consumerFetcherRoutine {
 	return &consumerFetcherRoutine{
-		manager:         m,
-		name:            name,
-		partitionMap:    make(map[TopicAndPartition]*partitionTopicInfo),
-		closeFinished:   make(chan bool),
-		fetchStopper:    make(chan bool),
-		askNext:         make(chan TopicAndPartition, m.config.AskNextChannelSize),
+		manager:       m,
+		name:          name,
+		partitionMap:  make(map[TopicAndPartition]*partitionTopicInfo),
+		closeFinished: make(chan bool),
+		fetchStopper:  make(chan bool),
+		askNext:       make(chan TopicAndPartition, m.config.AskNextChannelSize),
 	}
 }
 
@@ -227,6 +227,7 @@ func (f *consumerFetcherRoutine) start() {
 		select {
 		case nextTopicPartition := <-f.askNext:
 			{
+				timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 				f.manager.metrics.FetchersIdleTimer().Update(time.Since(ts))
 				Debugf(f, "Received asknext for %s", &nextTopicPartition)
 				inReadLock(&f.lock, func() {
@@ -253,6 +254,12 @@ func (f *consumerFetcherRoutine) start() {
 								Warnf(f, "Got a fetch error: %s", err)
 								//TODO new backoff type?
 								time.Sleep(1 * time.Second)
+							}
+						}
+
+						if f.manager.config.Debug {
+							for _, message := range messages {
+								message.DecodedKey = append([]int64{timestamp}, message.DecodedKey.([]int64)...)
 							}
 						}
 
@@ -325,12 +332,12 @@ func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *Topic
 		return
 	}
 
-    // Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
-    // This just guarantees we dont get a nil pointer dereference here
-    if topicInfo, exists := f.partitionMap[*topicAndPartition]; exists {
-        topicInfo.FetchedOffset = newOffset
-        f.partitionMap[*topicAndPartition].FetchedOffset = newOffset
-    }
+	// Do not use a lock here just because it's faster and it will be checked afterwards if we should still fetch that TopicPartition
+	// This just guarantees we dont get a nil pointer dereference here
+	if topicInfo, exists := f.partitionMap[*topicAndPartition]; exists {
+		topicInfo.FetchedOffset = newOffset
+		f.partitionMap[*topicAndPartition].FetchedOffset = newOffset
+	}
 }
 
 func (f *consumerFetcherRoutine) removeAllPartitions() {
