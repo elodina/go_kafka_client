@@ -22,7 +22,7 @@ install_mesos() {
     echo "zk://master:2181/mesos" > /etc/mesos/zk
 
     ip=$(cat /etc/hosts | grep `hostname` | grep -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}")
-    echo $ip > "/etc/mesos-$mode/ip"
+    echo "0.0.0.0" > "/etc/mesos-$mode/ip"
     echo 'docker,mesos' > /etc/mesos-slave/containerizers
     echo '5mins' > /etc/mesos-slave/executor_registration_timeout
 
