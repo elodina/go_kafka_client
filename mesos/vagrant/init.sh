@@ -77,7 +77,7 @@ apt-get install -y linux-image-generic-lts-trusty
 wget -qO- https://get.docker.com/ | sh
 
 service docker stop
-docker -d --insecure-registry master:5000  1> docker.out 2> docker.err &
+docker -d --insecure-registry master:5000  1> ~/docker.out 2> ~/docker.err &
 
 install_mesos $mode
 
@@ -86,6 +86,13 @@ if [[ "$mode" = "master" ]]; then
     tar xzf /opt/marathon-0.8.0.tgz -C /opt
     cd /opt/marathon-0.8.0
     ./bin/start --master zk://master:2181/mesos --zk zk://master:2181/marathon --task_launch_timeout 300000 1> marathon.out 2> marathon.err &
+
+    git clone https://github.com/mesos/kafka /opt/mesos-kafka
+    cd /opt/mesos-kafka
+    ./gradlew jar
+    wget https://archive.apache.org/dist/kafka/0.8.1.1/kafka_2.9.2-0.8.1.1.tgz
+    export MESOS_NATIVE_JAVA_LIBRARY=/usr/local/lib/libmesos.so
+    ./kafka-mesos.sh scheduler 1> kafka-scheduler.out 2> kafka-scheduler.err &
 
     docker run -d --net=host registry
 
