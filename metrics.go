@@ -16,18 +16,14 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	metrics "github.com/rcrowley/go-metrics"
 	"time"
+    "io"
 )
 
-var EmitterMetrics MetricsEmitter = NewEmptyMetricsEmitter()
-
-type consumerMetrics struct {
+type ConsumerMetrics struct {
 	registry metrics.Registry
-	ticker   *time.Ticker
 
 	numFetchRoutinesCounter metrics.Counter
 	fetchersIdleTimer       metrics.Timer
@@ -40,8 +36,8 @@ type consumerMetrics struct {
 	wmsIdleTimer           metrics.Timer
 }
 
-func newConsumerMetrics(consumerName string) *consumerMetrics {
-	kafkaMetrics := &consumerMetrics{
+func newConsumerMetrics(consumerName string) *ConsumerMetrics {
+	kafkaMetrics := &ConsumerMetrics{
 		registry: metrics.NewRegistry(),
 	}
 
@@ -54,53 +50,38 @@ func newConsumerMetrics(consumerName string) *consumerMetrics {
 	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", consumerName), kafkaMetrics.registry)
 
-	kafkaMetrics.ticker = time.NewTicker(EmitterMetrics.ReportingInterval())
-
-	go func() {
-		for _ = range kafkaMetrics.ticker.C {
-			buffer := &bytes.Buffer{}
-			writer := bufio.NewWriter(buffer)
-			metrics.WriteJSONOnce(kafkaMetrics.registry, writer)
-			if err := writer.Flush(); err != nil {
-				panic(err)
-			}
-
-			EmitterMetrics.Emit(buffer.Bytes())
-		}
-	}()
-
 	return kafkaMetrics
 }
 
-func (this *consumerMetrics) FetchersIdleTimer() metrics.Timer {
+func (this *ConsumerMetrics) fetchersIdle() metrics.Timer {
 	return this.fetchersIdleTimer
 }
 
-func (this *consumerMetrics) FetchDurationTimer() metrics.Timer {
+func (this *ConsumerMetrics) fetchDuration() metrics.Timer {
 	return this.fetchDurationTimer
 }
 
-func (this *consumerMetrics) NumWorkerManagersGauge() metrics.Gauge {
+func (this *ConsumerMetrics) numWorkerManagers() metrics.Gauge {
 	return this.numWorkerManagersGauge
 }
 
-func (this *consumerMetrics) WMsIdleTimer() metrics.Timer {
+func (this *ConsumerMetrics) wMsIdle() metrics.Timer {
 	return this.wmsIdleTimer
 }
 
-func (this *consumerMetrics) WMsBatchDurationTimer() metrics.Timer {
+func (this *ConsumerMetrics) wMsBatchDuration() metrics.Timer {
 	return this.wmsBatchDurationTimer
 }
 
-func (this *consumerMetrics) PendingWMsTasksCounter() metrics.Counter {
+func (this *ConsumerMetrics) pendingWMsTasks() metrics.Counter {
 	return this.pendingWMsTasksCounter
 }
 
-func (this *consumerMetrics) ActiveWorkersCounter() metrics.Counter {
+func (this *ConsumerMetrics) activeWorkers() metrics.Counter {
 	return this.activeWorkersCounter
 }
 
-func (this *consumerMetrics) Stats() map[string]map[string]float64 {
+func (this *ConsumerMetrics) Stats() map[string]map[string]float64 {
 	metricsMap := make(map[string]map[string]float64)
 	this.registry.Each(func(name string, metric interface{}) {
 		metricsMap[name] = make(map[string]float64)
@@ -151,7 +132,10 @@ func (this *consumerMetrics) Stats() map[string]map[string]float64 {
 	return metricsMap
 }
 
-func (this *consumerMetrics) Close() {
-	this.ticker.Stop()
+func (this *ConsumerMetrics) WriteJSON(reportingInterval time.Duration, writer io.Writer) {
+    metrics.WriteJSON(this.registry, reportingInterval, writer)
+}
+
+func (this *ConsumerMetrics) close() {
 	this.registry.UnregisterAll()
 }

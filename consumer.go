@@ -54,7 +54,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 
-	metrics *consumerMetrics
+	metrics *ConsumerMetrics
 
 	lastSuccessfulRebalanceHash string
 }
@@ -281,7 +281,7 @@ func (c *Consumer) initializeWorkerManagers() {
 			}
 		}
 	})
-	c.metrics.NumWorkerManagersGauge().Update(int64(len(c.workerManagers)))
+	c.metrics.numWorkerManagers().Update(int64(len(c.workerManagers)))
 }
 
 // Tells the Consumer to close all existing connections and stop.
@@ -316,7 +316,7 @@ func (c *Consumer) Close() <-chan bool {
 		Info(c, "Disconnected from consumer coordinator")
 
 		Info(c, "Unregistering all metrics")
-		c.metrics.Close()
+		c.metrics.close()
 
 		c.closeFinished <- true
 	}()
@@ -791,6 +791,10 @@ func (c *Consumer) StateSnapshot() *StateSnapshot {
 		Metrics: metricsMap,
 		Offsets: offsetsMap,
 	}
+}
+
+func (c *Consumer) Metrics() *ConsumerMetrics {
+    return c.metrics
 }
 
 func isOffsetInvalid(offset int64) bool {
