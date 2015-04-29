@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/stealthly/siesta"
+	"time"
 )
 
 // LowLevelClient is a low-level Kafka client that manages broker connections, responsible to fetch metadata and is able
@@ -113,6 +114,12 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 						if len(data.MsgSet.Messages) > 0 {
 							this.filterPartitionData(data, offset)
 							messages = this.collectMessages(data, topic, partition)
+							if this.config.Debug {
+								timestamp := time.Now().UnixNano() / int64(time.Millisecond)
+								for _, message := range messages {
+									message.DecodedKey = []int64{timestamp}
+								}
+							}
 						} else {
 							Debugf(this, "No messages in %s:%d at offset %d", topic, partition, offset)
 						}
@@ -271,6 +278,7 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 
 	messages := make([]*Message, 0)
 
+	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 	collector := func(topic string, partition int32, offset int64, key []byte, value []byte) {
 		decodedKey, err := this.config.KeyDecoder.Decode(key)
 		if err != nil {
@@ -282,6 +290,11 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 			//TODO: what if we fail to decode the value: fail-fast or fail-safe strategy?
 			Error(this, err.Error())
 		}
+
+		if this.config.Debug {
+			decodedKey = []int64{timestamp}
+		}
+
 		messages = append(messages, &Message{
 			Key:          key,
 			Value:        value,
