@@ -66,19 +66,14 @@ func TestMetricsEmitter(t *testing.T) {
 	consumeStatus := make(chan int)
 	delayTimeout := 10 * time.Second
 
-	metricsConfig := NewKafkaMetricsEmitterConfig()
 	metricsProducerConfig := DefaultProducerConfig()
 	metricsProducerConfig.BrokerList = []string{localBroker}
-	metricsConfig.ProducerConfig = metricsProducerConfig
-	metricsConfig.ReportingInterval = 5 * time.Second
-	metricsConfig.SchemaRegistryUrl = schemaRepositoryUrl
-	metricsConfig.Topic = topic
-
-	EmitterMetrics = NewKafkaMetricsEmitter(metricsConfig)
+	reporter := NewCodahaleKafkaReporter(topic, schemaRepositoryUrl, metricsProducerConfig)
 
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)
 	consumer := NewConsumer(config)
+	go consumer.Metrics().WriteJSON(10*time.Second, reporter)
 	go consumer.StartStatic(map[string]int{topic: 1})
 
 	if actual := <-consumeStatus; actual != consumeMessages {

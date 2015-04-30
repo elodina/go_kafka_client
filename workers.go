@@ -43,11 +43,11 @@ type WorkerManager struct {
 	processingStop      chan bool
 	commitStop          chan bool
 
-	metrics *consumerMetrics
+	metrics *ConsumerMetrics
 }
 
 // Creates a new WorkerManager with given id using a given ConsumerConfig and responsible for managing given TopicAndPartition.
-func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, metrics *consumerMetrics) *WorkerManager {
+func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, metrics *ConsumerMetrics) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -59,22 +59,22 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	}
 
 	return &WorkerManager{
-		id:               id,
-		config:           config,
-		availableWorkers: availableWorkers,
-		workers:          workers,
-		inputChannel:     make(chan []*Message),
-		currentBatch:     make(map[TaskId]*Task),
-		batchOrder:       make([]TaskId, 0),
-		topicPartition:   topicPartition,
-		largestOffset:    InvalidOffset,
+		id:                  id,
+		config:              config,
+		availableWorkers:    availableWorkers,
+		workers:             workers,
+		inputChannel:        make(chan []*Message),
+		currentBatch:        make(map[TaskId]*Task),
+		batchOrder:          make([]TaskId, 0),
+		topicPartition:      topicPartition,
+		largestOffset:       InvalidOffset,
 		lastCommittedOffset: InvalidOffset,
-		failCounter:      NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
-		batchProcessed:   make(chan bool),
-		managerStop:      make(chan bool),
-		processingStop:   make(chan bool),
-		commitStop:       make(chan bool),
-		metrics:          metrics,
+		failCounter:         NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
+		batchProcessed:      make(chan bool),
+		managerStop:         make(chan bool),
+		processingStop:      make(chan bool),
+		commitStop:          make(chan bool),
+		metrics:             metrics,
 	}
 }
 
@@ -98,9 +98,9 @@ func (wm *WorkerManager) Start() {
 			select {
 			case batch := <-wm.inputChannel:
 				{
-					wm.metrics.WMsIdleTimer().Update(time.Since(startIdle))
+					wm.metrics.wMsIdle().Update(time.Since(startIdle))
 					Trace(wm, "WorkerManager got batch")
-					wm.metrics.WMsBatchDurationTimer().Time(func() {
+					wm.metrics.wMsBatchDuration().Time(func() {
 						wm.startBatch(batch)
 					})
 					Trace(wm, "WorkerManager got batch processed")
@@ -147,12 +147,12 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			wm.batchOrder = append(wm.batchOrder, id)
 			wm.currentBatch[id] = &Task{Msg: message}
 		}
-		wm.metrics.PendingWMsTasksCounter().Inc(int64(len(wm.currentBatch)))
+		wm.metrics.pendingWMsTasks().Inc(int64(len(wm.currentBatch)))
 		for _, id := range wm.batchOrder {
 			task := wm.currentBatch[id]
 			worker := <-wm.availableWorkers
-			wm.metrics.ActiveWorkersCounter().Inc(1)
-			wm.metrics.PendingWMsTasksCounter().Dec(1)
+			wm.metrics.activeWorkers().Inc(1)
+			wm.metrics.pendingWMsTasks().Dec(1)
 			worker.Start(task, wm.config.Strategy)
 		}
 
@@ -299,7 +299,7 @@ func (wm *WorkerManager) taskIsDone(result WorkerResult) {
 	Tracef(wm, "Task is done: %d", result.Id().Offset)
 	wm.UpdateLargestOffset(result.Id().Offset)
 	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
-	wm.metrics.ActiveWorkersCounter().Dec(1)
+	wm.metrics.activeWorkers().Dec(1)
 	delete(wm.currentBatch, result.Id())
 }
 

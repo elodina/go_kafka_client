@@ -18,83 +18,42 @@ package go_kafka_client
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rcrowley/go-metrics"
 	"github.com/stealthly/go-avro"
 	avroline "github.com/stealthly/go_kafka_client/avro"
 	"regexp"
 	"strings"
-	"time"
 )
 
-// MetricsEmitter is an interface that handles structured metrics data.
-type MetricsEmitter interface {
-	// ReportingInterval returns an interval to report metrics.
-	ReportingInterval() time.Duration
-
-	// Emit sends a single metrics entry to some destination.
-	Emit([]byte)
-}
-
-// KafkaMetricsEmitterConfig provides multiple configuration entries for KafkaMetricsEmitter
-type KafkaMetricsEmitterConfig struct {
-	// Registry is a metrics registry to report.
-	Registry metrics.Registry
-
-	// ReportingInterval is an interval to report metrics.
-	ReportingInterval time.Duration
-
-	// Topic to emit logs to.
-	Topic string
-
-	// Confluent Avro schema registry URL.
-	SchemaRegistryUrl string
-
-	// Producer config that will be used by this emitter. Note that ValueEncoder WILL BE replaced by KafkaAvroEncoder.
-	ProducerConfig *ProducerConfig
-}
-
-// NewKafkaMetricsEmitterConfig creates a new KafkaMetricsEmitterConfig with ReportingInterval set to 1 second.
-func NewKafkaMetricsEmitterConfig() *KafkaMetricsEmitterConfig {
-	return &KafkaMetricsEmitterConfig{
-		ReportingInterval: 1 * time.Second,
-	}
-}
-
-// KafkaMetricsEmitter implements MetricsEmitter and sends all metrics data to a Kafka topic encoded as Avro.
-type KafkaMetricsEmitter struct {
-	config   *KafkaMetricsEmitterConfig
+type CodahaleKafkaReporter struct {
+	topic    string
 	producer Producer
 }
 
-// NewKafkaMetricsEmitter creates a new KafkaMetricsEmitter with a provided KafkaMetricsEmitterConfig.
-func NewKafkaMetricsEmitter(config *KafkaMetricsEmitterConfig) *KafkaMetricsEmitter {
-	config.ProducerConfig.ValueEncoder = NewKafkaAvroEncoder(config.SchemaRegistryUrl)
-	return &KafkaMetricsEmitter{
-		config:   config,
-		producer: NewSaramaProducer(config.ProducerConfig),
+func NewCodahaleKafkaReporter(topic string, schemaRegistryUrl string, producerConfig *ProducerConfig) *CodahaleKafkaReporter {
+	producerConfig.ValueEncoder = NewKafkaAvroEncoder(schemaRegistryUrl)
+
+	return &CodahaleKafkaReporter{
+		topic:    topic,
+		producer: NewSaramaProducer(producerConfig),
 	}
 }
 
-// ReportingInterval returns an interval to report metrics.
-func (m *KafkaMetricsEmitter) ReportingInterval() time.Duration {
-	return m.config.ReportingInterval
-}
-
-// Emit sends a single metrics entry to a Kafka topic encoded as Avro.
-func (m *KafkaMetricsEmitter) Emit(bytes []byte) {
+func (c *CodahaleKafkaReporter) Write(bytes []byte) (n int, err error) {
 	metrics := make(map[string]interface{})
 	if err := json.Unmarshal(bytes, &metrics); err != nil {
-		panic(err)
+		return -1, err
 	}
 
-	schema, lookupNames := m.parseSchema(metrics)
+	schema, lookupNames := c.parseSchema(metrics)
 	record := avro.NewGenericRecord(schema)
-	m.fillRecord(record, schema.(*avro.RecordSchema), metrics, lookupNames)
+	c.fillRecord(record, schema.(*avro.RecordSchema), metrics, lookupNames)
 
-	m.producer.Input() <- &ProducerMessage{Topic: m.config.Topic, Value: record}
+	c.producer.Input() <- &ProducerMessage{Topic: c.topic, Value: record}
+
+	return 0, nil
 }
 
-func (m *KafkaMetricsEmitter) parseSchema(metrics map[string]interface{}) (avro.Schema, map[string]string) {
+func (c *CodahaleKafkaReporter) parseSchema(metrics map[string]interface{}) (avro.Schema, map[string]string) {
 	lookupNames := make(map[string]string)
 	schema := &avro.RecordSchema{
 		Name:      "Metrics",
@@ -102,14 +61,14 @@ func (m *KafkaMetricsEmitter) parseSchema(metrics map[string]interface{}) (avro.
 		Fields:    make([]*avro.SchemaField, 0),
 	}
 	for name, v := range metrics {
-		lookupName := m.getLookupName(name)
+		lookupName := c.getLookupName(name)
 		lookupNames[lookupName] = name
 
 		field := &avro.SchemaField{
 			Name:    lookupName,
 			Default: nil,
 			Type: &avro.UnionSchema{
-				Types: []avro.Schema{&avro.NullSchema{}, m.parseRecordField(name, v.(map[string]interface{}), lookupNames)},
+				Types: []avro.Schema{&avro.NullSchema{}, c.parseRecordField(name, v.(map[string]interface{}), lookupNames)},
 			},
 		}
 		schema.Fields = append(schema.Fields, field)
@@ -122,7 +81,7 @@ func (m *KafkaMetricsEmitter) parseSchema(metrics map[string]interface{}) (avro.
 	return schema, lookupNames
 }
 
-func (m *KafkaMetricsEmitter) getLookupName(name string) string {
+func (c *CodahaleKafkaReporter) getLookupName(name string) string {
 	lookupName := name
 	pattern := regexp.MustCompile("[0-9]+")
 	if pattern.MatchString(name) {
@@ -135,8 +94,8 @@ func (m *KafkaMetricsEmitter) getLookupName(name string) string {
 	return lookupName
 }
 
-func (m *KafkaMetricsEmitter) parseRecordField(name string, v map[string]interface{}, lookupNames map[string]string) *avro.RecordSchema {
-	lookupRecordName := m.getLookupName(name)
+func (c *CodahaleKafkaReporter) parseRecordField(name string, v map[string]interface{}, lookupNames map[string]string) *avro.RecordSchema {
+	lookupRecordName := c.getLookupName(name)
 	lookupNames[lookupRecordName] = name
 	record := &avro.RecordSchema{
 		Name:      lookupRecordName,
@@ -145,7 +104,7 @@ func (m *KafkaMetricsEmitter) parseRecordField(name string, v map[string]interfa
 	}
 
 	for name, value := range v {
-		lookupName := m.getLookupName(name)
+		lookupName := c.getLookupName(name)
 		lookupNames[lookupName] = name
 
 		var valueSchema avro.Schema
@@ -169,7 +128,7 @@ func (m *KafkaMetricsEmitter) parseRecordField(name string, v map[string]interfa
 	return record
 }
 
-func (m *KafkaMetricsEmitter) fillRecord(record *avro.GenericRecord, schema *avro.RecordSchema, metrics map[string]interface{}, lookupNames map[string]string) {
+func (c *CodahaleKafkaReporter) fillRecord(record *avro.GenericRecord, schema *avro.RecordSchema, metrics map[string]interface{}, lookupNames map[string]string) {
 	for _, field := range schema.Fields {
 		if field.Name == "logLine" {
 			//TODO probably something more?
@@ -183,7 +142,7 @@ func (m *KafkaMetricsEmitter) fillRecord(record *avro.GenericRecord, schema *avr
 			case *avro.RecordSchema:
 				{
 					fieldRecord := avro.NewGenericRecord(fieldSchema)
-					m.fillRecord(fieldRecord, fieldSchema, metrics[name].(map[string]interface{}), lookupNames)
+					c.fillRecord(fieldRecord, fieldSchema, metrics[name].(map[string]interface{}), lookupNames)
 					record.Set(field.Name, fieldRecord)
 				}
 			default:
@@ -193,20 +152,4 @@ func (m *KafkaMetricsEmitter) fillRecord(record *avro.GenericRecord, schema *avr
 			}
 		}
 	}
-}
-
-// EmptyMetricsEmitter implements MetricsEmitter and ignores all incoming data. Used not to break anyone.
-type EmptyMetricsEmitter struct{}
-
-// NewEmptyMetricsEmitter creates a new EmptyMetricsEmitter.
-func NewEmptyMetricsEmitter() *EmptyMetricsEmitter {
-	return new(EmptyMetricsEmitter)
-}
-
-// Does nothing. Ignores given message.
-func (*EmptyMetricsEmitter) Emit([]byte) {}
-
-// Returns a reporting interval of 1 minute.
-func (*EmptyMetricsEmitter) ReportingInterval() time.Duration {
-	return time.Minute
 }

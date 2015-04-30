@@ -34,7 +34,7 @@ type consumerFetcherManager struct {
 	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
 
-	metrics *consumerMetrics
+	metrics *ConsumerMetrics
 	client  LowLevelClient
 }
 
@@ -42,7 +42,7 @@ func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.Consumerid)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition, metrics *consumerMetrics) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition, metrics *ConsumerMetrics) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config:                         config,
 		closeFinished:                  make(chan bool),
@@ -228,7 +228,7 @@ func (f *consumerFetcherRoutine) start() {
 		case nextTopicPartition := <-f.askNext:
 			{
 				timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-				f.manager.metrics.FetchersIdleTimer().Update(time.Since(ts))
+				f.manager.metrics.fetchersIdle().Update(time.Since(ts))
 				Debugf(f, "Received asknext for %s", &nextTopicPartition)
 				inReadLock(&f.lock, func() {
 					if !f.manager.shuttingDown {
@@ -242,7 +242,7 @@ func (f *consumerFetcherRoutine) start() {
 
 						var messages []*Message
 						var err error
-						f.manager.metrics.FetchDurationTimer().Time(func() {
+						f.manager.metrics.fetchDuration().Time(func() {
 							messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset)
 						})
 

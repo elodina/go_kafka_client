@@ -54,7 +54,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 
-	metrics *consumerMetrics
+	metrics *ConsumerMetrics
 
 	lastSuccessfulRebalanceHash string
 }
@@ -281,7 +281,7 @@ func (c *Consumer) initializeWorkerManagers() {
 			}
 		}
 	})
-	c.metrics.NumWorkerManagersGauge().Update(int64(len(c.workerManagers)))
+	c.metrics.numWorkerManagers().Update(int64(len(c.workerManagers)))
 }
 
 // Tells the Consumer to close all existing connections and stop.
@@ -316,7 +316,7 @@ func (c *Consumer) Close() <-chan bool {
 		Info(c, "Disconnected from consumer coordinator")
 
 		Info(c, "Unregistering all metrics")
-		c.metrics.Close()
+		c.metrics.close()
 
 		c.closeFinished <- true
 	}()
@@ -649,8 +649,8 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		barrierSize := len(context.Consumers)
 		for !barrierPassed && retriesLeft > 0 {
 			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
-			fmt.Sprintf("%s-ack", stateHash), barrierSize, string(Rebalance),
-			c.config.BarrierTimeout)
+				fmt.Sprintf("%s-ack", stateHash), barrierSize, string(Rebalance),
+				c.config.BarrierTimeout)
 			retriesLeft--
 		}
 
@@ -696,14 +696,14 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 
 func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[TopicAndPartition]int64, error) {
 	offsets := make(map[TopicAndPartition]int64)
-    for _, topicPartition := range topicPartitions {
-        offset, err := c.config.OffsetStorage.GetOffset(c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
-        if err != nil {
-            return nil, err
-        } else {
-            offsets[*topicPartition] = offset
-        }
-    }
+	for _, topicPartition := range topicPartitions {
+		offset, err := c.config.OffsetStorage.GetOffset(c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
+		if err != nil {
+			return nil, err
+		} else {
+			offsets[*topicPartition] = offset
+		}
+	}
 
 	return offsets, nil
 }
@@ -791,6 +791,10 @@ func (c *Consumer) StateSnapshot() *StateSnapshot {
 		Metrics: metricsMap,
 		Offsets: offsetsMap,
 	}
+}
+
+func (c *Consumer) Metrics() *ConsumerMetrics {
+	return c.metrics
 }
 
 func isOffsetInvalid(offset int64) bool {
