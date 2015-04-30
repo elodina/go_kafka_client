@@ -59,22 +59,22 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	}
 
 	return &WorkerManager{
-		id:               id,
-		config:           config,
-		availableWorkers: availableWorkers,
-		workers:          workers,
-		inputChannel:     make(chan []*Message),
-		currentBatch:     make(map[TaskId]*Task),
-		batchOrder:       make([]TaskId, 0),
-		topicPartition:   topicPartition,
-		largestOffset:    InvalidOffset,
+		id:                  id,
+		config:              config,
+		availableWorkers:    availableWorkers,
+		workers:             workers,
+		inputChannel:        make(chan []*Message),
+		currentBatch:        make(map[TaskId]*Task),
+		batchOrder:          make([]TaskId, 0),
+		topicPartition:      topicPartition,
+		largestOffset:       InvalidOffset,
 		lastCommittedOffset: InvalidOffset,
-		failCounter:      NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
-		batchProcessed:   make(chan bool),
-		managerStop:      make(chan bool),
-		processingStop:   make(chan bool),
-		commitStop:       make(chan bool),
-		metrics:          metrics,
+		failCounter:         NewFailureCounter(config.WorkerRetryThreshold, config.WorkerThresholdTimeWindow),
+		batchProcessed:      make(chan bool),
+		managerStop:         make(chan bool),
+		processingStop:      make(chan bool),
+		commitStop:          make(chan bool),
+		metrics:             metrics,
 	}
 }
 

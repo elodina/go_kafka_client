@@ -18,8 +18,8 @@ package go_kafka_client
 import (
 	"fmt"
 	metrics "github.com/rcrowley/go-metrics"
+	"io"
 	"time"
-    "io"
 )
 
 type ConsumerMetrics struct {
@@ -133,7 +133,7 @@ func (this *ConsumerMetrics) Stats() map[string]map[string]float64 {
 }
 
 func (this *ConsumerMetrics) WriteJSON(reportingInterval time.Duration, writer io.Writer) {
-    metrics.WriteJSON(this.registry, reportingInterval, writer)
+	metrics.WriteJSON(this.registry, reportingInterval, writer)
 }
 
 func (this *ConsumerMetrics) close() {

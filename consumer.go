@@ -649,8 +649,8 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		barrierSize := len(context.Consumers)
 		for !barrierPassed && retriesLeft > 0 {
 			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
-			fmt.Sprintf("%s-ack", stateHash), barrierSize, string(Rebalance),
-			c.config.BarrierTimeout)
+				fmt.Sprintf("%s-ack", stateHash), barrierSize, string(Rebalance),
+				c.config.BarrierTimeout)
 			retriesLeft--
 		}
 
@@ -696,14 +696,14 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 
 func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[TopicAndPartition]int64, error) {
 	offsets := make(map[TopicAndPartition]int64)
-    for _, topicPartition := range topicPartitions {
-        offset, err := c.config.OffsetStorage.GetOffset(c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
-        if err != nil {
-            return nil, err
-        } else {
-            offsets[*topicPartition] = offset
-        }
-    }
+	for _, topicPartition := range topicPartitions {
+		offset, err := c.config.OffsetStorage.GetOffset(c.config.Groupid, topicPartition.Topic, topicPartition.Partition)
+		if err != nil {
+			return nil, err
+		} else {
+			offsets[*topicPartition] = offset
+		}
+	}
 
 	return offsets, nil
 }
@@ -794,7 +794,7 @@ func (c *Consumer) StateSnapshot() *StateSnapshot {
 }
 
 func (c *Consumer) Metrics() *ConsumerMetrics {
-    return c.metrics
+	return c.metrics
 }
 
 func isOffsetInvalid(offset int64) bool {
