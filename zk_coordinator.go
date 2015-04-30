@@ -1024,7 +1024,7 @@ func NewZookeeperConfig() *ZookeeperConfig {
 // ZookeeperConfigFromFile is a helper function that loads zookeeper configuration information from file.
 // The file accepts the following fields:
 //  zookeeper.connect
-//  zookeeper.kafka.Root
+//  zookeeper.kafka.root
 //  zookeeper.connection.timeout
 //  zookeeper.max.request.retries
 //  zookeeper.request.backoff
@@ -1038,7 +1038,7 @@ func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 
 	config := NewZookeeperConfig()
 	setStringSliceConfig(&config.ZookeeperConnect, z["zookeeper.connect"], ",")
-	setStringConfig(&config.Root, z["zookeeper.kafka.Root"])
+	setStringConfig(&config.Root, z["zookeeper.kafka.root"])
 
 	if err := setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]); err != nil {
 		return nil, err
