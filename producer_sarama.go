@@ -24,6 +24,9 @@ import (
 
 type SaramaProducer struct {
 	saramaProducer *sarama.Producer
+    input chan *ProducerMessage
+    successes chan *ProducerMessage
+    errors chan *FailedMessage
 	config         *ProducerConfig
 }
 
@@ -64,14 +67,23 @@ func NewSaramaProducer(conf *ProducerConfig) Producer {
 	if err != nil {
 		panic(err)
 	}
-	return &SaramaProducer{
+	saramaProducer := &SaramaProducer{
 		saramaProducer: producer,
 		config:         conf,
 	}
+    saramaProducer.initSuccesses()
+    saramaProducer.initErrors()
+    saramaProducer.initInput()
+
+    return saramaProducer
 }
 
 func (this *SaramaProducer) Errors() <-chan *FailedMessage {
-	errorChannel := make(chan *FailedMessage)
+    return this.errors
+}
+
+func (this *SaramaProducer) initErrors() {
+	this.errors = make(chan *FailedMessage, this.config.SendBufferSize)
 	go func() {
 		for saramaError := range this.saramaProducer.Errors() {
 			key, err := saramaError.Msg.Key.Encode()
@@ -89,15 +101,17 @@ func (this *SaramaProducer) Errors() <-chan *FailedMessage {
 				partition: saramaError.Msg.Partition(),
 				offset:    saramaError.Msg.Offset(),
 			}
-			errorChannel <- &FailedMessage{msg, saramaError.Err}
+			this.errors <- &FailedMessage{msg, saramaError.Err}
 		}
 	}()
-
-	return errorChannel
 }
 
 func (this *SaramaProducer) Successes() <-chan *ProducerMessage {
-	successChannel := make(chan *ProducerMessage)
+    return this.successes
+}
+
+func (this *SaramaProducer) initSuccesses() {
+	this.successes = make(chan *ProducerMessage, this.config.SendBufferSize)
 	go func() {
 		for saramaMessage := range this.saramaProducer.Successes() {
 			key, err := saramaMessage.Key.Encode()
@@ -115,17 +129,19 @@ func (this *SaramaProducer) Successes() <-chan *ProducerMessage {
 				partition: saramaMessage.Partition(),
 				offset:    saramaMessage.Offset(),
 			}
-			successChannel <- msg
+			this.successes <- msg
 		}
 	}()
-
-	return successChannel
 }
 
 func (this *SaramaProducer) Input() chan<- *ProducerMessage {
-	messageChannel := make(chan *ProducerMessage)
+    return this.input
+}
+
+func (this *SaramaProducer) initInput() {
+	this.input = make(chan *ProducerMessage, this.config.SendBufferSize)
 	go func() {
-		for message := range messageChannel {
+		for message := range this.input {
 			encodedKey, err := this.getKeyEncoder(message).Encode(message.Key)
 			if err != nil {
 				panic(err)
@@ -145,8 +161,6 @@ func (this *SaramaProducer) Input() chan<- *ProducerMessage {
 			this.saramaProducer.Input() <- saramaMessage
 		}
 	}()
-
-	return messageChannel
 }
 
 func (this *SaramaProducer) Close() error {

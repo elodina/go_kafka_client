@@ -590,7 +590,6 @@ func TestConsumeMultipleTopics(t *testing.T) {
 }
 
 func TestConsumeOnePartitionWithData(t *testing.T) {
-	Logger = NewDefaultLogger(DebugLevel)
 	partitions := 50
 	topic := fmt.Sprintf("testConsumeOnePartitionWithData-%d", time.Now().Unix())
 
