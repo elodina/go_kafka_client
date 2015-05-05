@@ -93,7 +93,7 @@ func testRegisterConsumer(t *testing.T) {
 		Version:      int16(1),
 		Subscription: subscription,
 		Pattern:      whiteListPattern,
-		Timestamp:    time.Now().Unix(),
+		Timestamp:    time.Now().Unix() * 1000,
 	}
 
 	topicCount := &WildcardTopicsToNumStreams{
