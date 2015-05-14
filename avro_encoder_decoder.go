@@ -149,3 +149,22 @@ func (this *KafkaAvroDecoder) Decode(bytes []byte) (interface{}, error) {
 		}
 	}
 }
+
+func (this *KafkaAvroDecoder) DecodeSpecific(bytes []byte, value interface{}) error {
+	if bytes == nil {
+		return nil
+	} else {
+		if bytes[0] != 0 {
+			return errors.New("Unknown magic byte!")
+		}
+		id := int32(binary.BigEndian.Uint32(bytes[1:]))
+		schema, err := this.schemaRegistry.GetByID(id)
+		if err != nil {
+			return err
+		}
+
+		reader := avro.NewSpecificDatumReader()
+		reader.SetSchema(schema)
+		return reader.Read(value, avro.NewBinaryDecoder(bytes[5:]))
+	}
+}
