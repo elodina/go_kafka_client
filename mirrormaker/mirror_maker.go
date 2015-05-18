@@ -48,6 +48,7 @@ var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffe
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 var schemaRegistryUrl = flag.String("schema.registry.url", "", "Avro schema registry URL for message encoding/decoding")
 var timingsProducerConfig = flag.String("timings.producer.config", "", "Path to producer configuration file for timings.")
+var transform = flag.Bool("transform", false, "Flag to transform all incoming data into LogLines and add metadata to them.")
 
 func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	flag.Var(&consumerConfig, "consumer.config", "Path to consumer configuration file.")
@@ -72,7 +73,12 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	}
 	if *timingsProducerConfig == "" && *schemaRegistryUrl == "" {
 		fmt.Println("--schema.registry.url parameter is required when --timings is used")
+        os.Exit(1)
 	}
+    if *transform && *schemaRegistryUrl == "" {
+        fmt.Println("--schema.registry.url parameter is required when --transform is used")
+        os.Exit(1)
+    }
 
 	config := kafka.NewMirrorMakerConfig()
 	config.Blacklist = *blacklist
@@ -85,6 +91,7 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	config.PreserveOrder = *preserveOrder
 	config.ProducerConfig = *producerConfig
 	config.TopicPrefix = *prefix
+    config.Transform = *transform
 	if *schemaRegistryUrl != "" {
 		config.KeyEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
 		config.ValueEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
