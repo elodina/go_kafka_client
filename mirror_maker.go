@@ -372,7 +372,11 @@ func (this *MirrorMaker) AddMetadata(record *avro.GenericRecord, topic string, p
         timings = record.Get("timings").([]interface{})
     }
 
-    timings = append(timings, consumed)
+    timing := avro.NewGenericRecord(nil)
+    timing.Set("key", "consumed")
+    timing.Set("value", consumed)
+
+    timings = append(timings, timing)
     record.Set("timings", timings)
 
     var tags map[string]interface{}
