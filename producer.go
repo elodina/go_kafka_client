@@ -43,13 +43,14 @@ type ProducerMessage struct {
 	Value        interface{}
 	KeyEncoder   Encoder
 	ValueEncoder Encoder
+	Metadata     interface{}
 
 	offset    int64
 	partition int32
 }
 
 type Partitioner interface {
-	Partition(key []byte, numPartitions int32) (int32, error)
+	Partition(message *ProducerMessage, numPartitions int32) (int32, error)
 	RequiresConsistency() bool
 }
 
@@ -157,6 +158,30 @@ func (this *ProducerConfig) Validate() error {
 	return nil
 }
 
+// Adapted from https://godoc.org/github.com/Shopify/sarama#NewManualPartitioner
+type manualPartitioner struct{}
+
+// NewManualPartitioner returns a Partitioner which uses the partition manually set in the provided
+// ProducerMessage's Partition field as the partition to produce to.
+func NewManualPartitioner() Partitioner {
+	return new(manualPartitioner)
+}
+
+func (p *manualPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
+	partition := message.Metadata.(int32)
+	if partition < 0 {
+		panic("Manual partition cannot be negative")
+	}
+	if partition >= numPartitions {
+		panic("Manaul parition cannot be larger than number of partitions")
+	}
+	return partition, nil
+}
+
+func (p *manualPartitioner) RequiresConsistency() bool {
+	return true
+}
+
 // Partitioner sends messages to partitions that correspond message keys
 type FixedPartitioner struct{}
 
@@ -164,10 +189,11 @@ func NewFixedPartitioner() Partitioner {
 	return &FixedPartitioner{}
 }
 
-func (this *FixedPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
-	if key == nil {
+func (this *FixedPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
+	if message.Key == nil {
 		panic("FixedPartitioner does not work without keys.")
 	}
+	key := message.Key.([]byte)
 	partition, err := binary.ReadUvarint(bytes.NewBuffer(key))
 	if err != nil {
 		return -1, err
@@ -191,7 +217,7 @@ func NewRandomPartitioner() Partitioner {
 	}
 }
 
-func (this *RandomPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
+func (this *RandomPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
 	return int32(this.generator.Intn(int(numPartitions))), nil
 }
 
@@ -208,7 +234,7 @@ func NewRoundRobinPartitioner() Partitioner {
 	return &RoundRobinPartitioner{}
 }
 
-func (this *RoundRobinPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
+func (this *RoundRobinPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
 	if this.partition >= numPartitions {
 		this.partition = 0
 	}
@@ -236,10 +262,11 @@ func NewHashPartitioner() Partitioner {
 	return p
 }
 
-func (this *HashPartitioner) Partition(key []byte, numPartitions int32) (int32, error) {
-	if key == nil {
-		return this.random.Partition(key, numPartitions)
+func (this *HashPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
+	if message.Key == nil {
+		return this.random.Partition(message, numPartitions)
 	}
+	key := message.Key.([]byte)
 
 	this.hasher.Reset()
 	_, err := this.hasher.Write(key)
@@ -262,7 +289,7 @@ type ConstantPartitioner struct {
 	Constant int32
 }
 
-func (p *ConstantPartitioner) Partition(key Encoder, numPartitions int32) (int32, error) {
+func (p *ConstantPartitioner) Partition(message *ProducerMessage, numPartitions int32) (int32, error) {
 	return p.Constant, nil
 }
 

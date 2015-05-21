@@ -219,7 +219,7 @@ func (this *MirrorMaker) startProducers() {
 			panic(err)
 		}
 		if this.config.PreservePartitions {
-			conf.Partitioner = NewFixedPartitioner
+			conf.Partitioner = NewManualPartitioner
 		} else {
 			conf.Partitioner = NewRandomPartitioner
 		}
@@ -235,7 +235,7 @@ func (this *MirrorMaker) startProducers() {
 			panic(err)
 		}
 		if this.config.PreservePartitions {
-			conf.Partitioner = NewFixedPartitioner
+			conf.Partitioner = NewManualPartitioner
 		} else {
 			conf.Partitioner = NewRandomPartitioner
 		}
@@ -259,7 +259,6 @@ func (this *MirrorMaker) startProducers() {
 }
 
 func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
-	partitionEncoder := &Int32Encoder{}
 	for msg := range this.messageChannels[channelIndex] {
 		if this.config.TimingsProducerConfig != "" {
 			preProduce := time.Now().UnixNano()
@@ -270,7 +269,8 @@ func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
 			}
 		}
 		if this.config.PreservePartitions {
-			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.DecodedValue, KeyEncoder: partitionEncoder}
+			sendmsg := &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.DecodedValue, Metadata: int32(msg.Partition)}
+			producer.Input() <- sendmsg
 		} else {
 			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.DecodedValue}
 		}

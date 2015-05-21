@@ -157,6 +157,7 @@ func (this *SaramaProducer) initInput() {
 				Topic: message.Topic,
 				Key:   key,
 				Value: value,
+				Metadata: message.Metadata,
 			}
 			this.saramaProducer.Input() <- saramaMessage
 		}
@@ -201,13 +202,14 @@ type SaramaPartitioner struct {
 	partitioner Partitioner
 }
 
-func (this *SaramaPartitioner) Partition(key sarama.Encoder, numPartitions int32) (int32, error) {
-	keyBytes, err := key.Encode()
-	if err != nil {
-		return -1, err
+func (this *SaramaPartitioner) Partition(message *sarama.ProducerMessage, numPartitions int32) (int32, error) {
+	mmMessage := &ProducerMessage {
+		Topic: message.Topic,
+		Key:   message.Key,
+		Value: message.Value,
+		Metadata: message.Metadata,
 	}
-
-	return this.partitioner.Partition(keyBytes, numPartitions)
+	return this.partitioner.Partition(mmMessage, numPartitions)
 }
 
 func (this *SaramaPartitioner) RequiresConsistency() bool {
