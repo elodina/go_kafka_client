@@ -29,8 +29,9 @@ Our offset management is based on a per batch basis with each highest offset fro
 1. Install Golang [http://golang.org/doc/install](http://golang.org/doc/install)
 2. Make sure env variables GOPATH and GOROOT exist and point to correct places
 3. Install GPM [https://github.com/pote/gpm](https://github.com/pote/gpm)
-4. `go get github.com/stealthly/go_kafka_client && cd $GOPATH/src/github.com/stealthly/go_kafka_client`
-5. `gpm install`
+4. `mkdir -p $GOPATH/src/github.com/stealthly && cd $GOPATH/src/github.com/stealthly`
+5. `git clone https://github.com/stealthly/go_kafka_client.git && cd go_kafka_client`
+6. `gpm install`
 
 *Optional (for all tests to work):*
 
