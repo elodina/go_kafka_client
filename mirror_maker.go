@@ -269,8 +269,7 @@ func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
 			}
 		}
 		if this.config.PreservePartitions {
-			sendmsg := &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.DecodedValue, Metadata: int32(msg.Partition)}
-			producer.Input() <- sendmsg
+			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.DecodedValue, Metadata: int32(msg.Partition)}
 		} else {
 			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.DecodedValue}
 		}
