@@ -8,3 +8,4 @@ github.com/aybabtme/tailf d14324237929cb81857080f417ada24417ca49d1
 github.com/golang/protobuf/proto
 github.com/stealthly/siesta
 github.com/stealthly/go-avro
+github.com/gambol99/go-marathon
