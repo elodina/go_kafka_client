@@ -66,7 +66,7 @@ type SyslogProducer struct {
 	incoming      chan *SyslogMessage
 	closeChannels []chan bool
 
-	producers []*sarama.Producer
+	producers []sarama.AsyncProducer
 }
 
 func NewSyslogProducer(config *SyslogProducerConfig) *SyslogProducer {
@@ -169,36 +169,37 @@ func (this *SyslogProducer) scan(connection net.Conn) {
 }
 
 func (this *SyslogProducer) startProducers() {
+	brokerList := strings.Split(this.config.BrokerList, ",")
+	conf := this.config.ProducerConfig
+	config := sarama.NewConfig()
+	config.ClientID = conf.Clientid
+	config.ChannelBufferSize = conf.SendBufferSize
+	switch strings.ToLower(conf.CompressionCodec) {
+		case "none":
+		config.Producer.Compression = sarama.CompressionNone
+		case "gzip":
+		config.Producer.Compression = sarama.CompressionGZIP
+		case "snappy":
+		config.Producer.Compression = sarama.CompressionSnappy
+	}
+	config.Producer.Flush.Bytes = conf.FlushByteCount
+	config.Producer.Flush.Frequency = conf.FlushTimeout
+	config.Producer.Flush.Messages = conf.BatchSize
+	config.Producer.Flush.MaxMessages = conf.MaxMessagesPerRequest
+	config.Producer.MaxMessageBytes = conf.MaxMessageBytes
+	config.Producer.Partitioner = sarama.NewRandomPartitioner
+	config.Producer.RequiredAcks = sarama.RequiredAcks(conf.Acks)
+	config.Producer.Retry.Backoff = conf.RetryBackoff
+	config.Producer.Timeout = conf.Timeout
+
 	for i := 0; i < this.config.NumProducers; i++ {
-		conf := this.config.ProducerConfig
-		brokerList := strings.Split(this.config.BrokerList, ",")
-		client, err := sarama.NewClient(conf.Clientid, brokerList, sarama.NewClientConfig())
+		client, err := sarama.NewClient(brokerList, config)
 		if err != nil {
 			panic(err)
 		}
 
-		config := sarama.NewProducerConfig()
-		config.ChannelBufferSize = conf.SendBufferSize
-		switch strings.ToLower(conf.CompressionCodec) {
-		case "none":
-			config.Compression = sarama.CompressionNone
-		case "gzip":
-			config.Compression = sarama.CompressionGZIP
-		case "snappy":
-			config.Compression = sarama.CompressionSnappy
-		}
-		config.FlushByteCount = conf.FlushByteCount
-		config.FlushFrequency = conf.FlushTimeout
-		config.FlushMsgCount = conf.BatchSize
-		config.MaxMessageBytes = conf.MaxMessageBytes
-		config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
-		config.Partitioner = sarama.NewRandomPartitioner
-		config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
-		config.RetryBackoff = conf.RetryBackoff
-		config.Timeout = conf.Timeout
-
 		Tracef(this, "Starting new producer with config: %#v", config)
-		producer, err := sarama.NewProducer(client, config)
+		producer, err := sarama.NewAsyncProducerFromClient(client)
 		if err != nil {
 			panic(err)
 		}
@@ -207,7 +208,7 @@ func (this *SyslogProducer) startProducers() {
 	}
 }
 
-func (this *SyslogProducer) produceRoutine(producer *sarama.Producer) {
+func (this *SyslogProducer) produceRoutine(producer sarama.AsyncProducer) {
 	for msg := range this.incoming {
 		Tracef(this, "Got message: %s", msg)
 		producer.Input() <- this.config.Transformer(msg, this.config.Topic)

@@ -25,6 +25,7 @@ import (
   "flag"
   "log"
   "os"
+    "time"
 )
 
 func main() {
@@ -46,15 +47,16 @@ func main() {
 	}
 	defer follower.Close()
 
-	clientConfig := sarama.NewClientConfig()
-	client, err := sarama.NewClient(*clientId, strings.Split(*brokerList, ","), clientConfig)
+	clientConfig := sarama.NewConfig()
+	clientConfig.ClientID = *clientId
+    clientConfig.Producer.Timeout = 10 * time.Second
+	client, err := sarama.NewClient(strings.Split(*brokerList, ","), clientConfig)
 	if err != nil {
 		panic(err)
 	}
 	defer client.Close()
 
-	producerConfig := sarama.NewProducerConfig()
-	producer, err := sarama.NewProducer(client, producerConfig)
+	producer, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		panic(err)
 	}

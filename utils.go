@@ -19,7 +19,6 @@ import (
 	"container/ring"
 	crand "crypto/rand"
 	"fmt"
-	"github.com/Shopify/sarama"
 	"github.com/jimlawless/cfg"
 	"hash/fnv"
 	"math/rand"
@@ -223,14 +222,6 @@ func uuid() string {
 	b := make([]byte, 16)
 	crand.Read(b)
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
-}
-
-func newSaramaBrokerConfig(config *ConsumerConfig) *sarama.BrokerConfig {
-	brokerConfig := sarama.NewBrokerConfig()
-	brokerConfig.DialTimeout = config.SocketTimeout
-	brokerConfig.ReadTimeout = config.SocketTimeout
-	brokerConfig.WriteTimeout = config.SocketTimeout
-	return brokerConfig
 }
 
 type barrier struct {
