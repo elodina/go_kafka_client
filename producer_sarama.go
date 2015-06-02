@@ -23,7 +23,7 @@ import (
 )
 
 type SaramaProducer struct {
-	saramaProducer *sarama.Producer
+	saramaProducer sarama.AsyncProducer
     input chan *ProducerMessage
     successes chan *ProducerMessage
     errors chan *FailedMessage
@@ -35,35 +35,34 @@ func NewSaramaProducer(conf *ProducerConfig) Producer {
 		panic(err)
 	}
 
-	client, err := sarama.NewClient(conf.Clientid, conf.BrokerList, sarama.NewClientConfig())
+	config := sarama.NewConfig()
+	config.ClientID = conf.Clientid
+	config.ChannelBufferSize = conf.SendBufferSize
+	switch strings.ToLower(conf.CompressionCodec) {
+	case "none":
+		config.Producer.Compression = sarama.CompressionNone
+	case "gzip":
+		config.Producer.Compression = sarama.CompressionGZIP
+	case "snappy":
+		config.Producer.Compression = sarama.CompressionSnappy
+	}
+	config.Producer.Flush.Bytes = conf.MaxMessageBytes
+	config.Producer.Flush.Frequency = conf.FlushTimeout
+	config.Producer.Flush.Messages = conf.BatchSize
+	config.Producer.Flush.MaxMessages = conf.MaxMessagesPerRequest
+	config.Producer.RequiredAcks = sarama.RequiredAcks(conf.Acks)
+	config.Producer.Retry.Backoff = conf.RetryBackoff
+	config.Producer.Timeout = conf.Timeout
+	config.Producer.Return.Successes = conf.AckSuccesses
+
+	partitionerFactory := &SaramaPartitionerFactory{conf.Partitioner}
+	config.Producer.Partitioner = partitionerFactory.PartitionerConstructor
+	client, err := sarama.NewClient(conf.BrokerList, config)
 	if err != nil {
 		panic(err)
 	}
 
-	config := sarama.NewProducerConfig()
-	config.ChannelBufferSize = conf.SendBufferSize
-	switch strings.ToLower(conf.CompressionCodec) {
-	case "none":
-		config.Compression = sarama.CompressionNone
-	case "gzip":
-		config.Compression = sarama.CompressionGZIP
-	case "snappy":
-		config.Compression = sarama.CompressionSnappy
-	}
-	config.FlushByteCount = conf.FlushByteCount
-	config.FlushFrequency = conf.FlushTimeout
-	config.FlushMsgCount = conf.BatchSize
-	config.MaxMessageBytes = conf.MaxMessageBytes
-	config.MaxMessagesPerReq = conf.MaxMessagesPerRequest
-	config.RequiredAcks = sarama.RequiredAcks(conf.Acks)
-	config.RetryBackoff = conf.RetryBackoff
-	config.Timeout = conf.Timeout
-	config.AckSuccesses = conf.AckSuccesses
-
-	partitionerFactory := &SaramaPartitionerFactory{conf.Partitioner}
-	config.Partitioner = partitionerFactory.PartitionerConstructor
-
-	producer, err := sarama.NewProducer(client, config)
+	producer, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		panic(err)
 	}
@@ -98,8 +97,8 @@ func (this *SaramaProducer) initErrors() {
 				Topic:     saramaError.Msg.Topic,
 				Key:       key,
 				Value:     value,
-				partition: saramaError.Msg.Partition(),
-				offset:    saramaError.Msg.Offset(),
+				partition: saramaError.Msg.Partition,
+				offset:    saramaError.Msg.Offset,
 			}
 			this.errors <- &FailedMessage{msg, saramaError.Err}
 		}
@@ -126,8 +125,8 @@ func (this *SaramaProducer) initSuccesses() {
 				Topic:     saramaMessage.Topic,
 				Key:       key,
 				Value:     value,
-				partition: saramaMessage.Partition(),
-				offset:    saramaMessage.Offset(),
+				partition: saramaMessage.Partition,
+				offset:    saramaMessage.Offset,
 			}
 			this.successes <- msg
 		}
@@ -191,7 +190,7 @@ type SaramaPartitionerFactory struct {
 	partitioner PartitionerConstructor
 }
 
-func (this *SaramaPartitionerFactory) PartitionerConstructor() sarama.Partitioner {
+func (this *SaramaPartitionerFactory) PartitionerConstructor(topic string) sarama.Partitioner {
 	return &SaramaPartitioner{
 		partitioner: this.partitioner(),
 	}
@@ -201,8 +200,8 @@ type SaramaPartitioner struct {
 	partitioner Partitioner
 }
 
-func (this *SaramaPartitioner) Partition(key sarama.Encoder, numPartitions int32) (int32, error) {
-	keyBytes, err := key.Encode()
+func (this *SaramaPartitioner) Partition(message *sarama.ProducerMessage, numPartitions int32) (int32, error) {
+	keyBytes, err := message.Key.Encode()
 	if err != nil {
 		return -1, err
 	}

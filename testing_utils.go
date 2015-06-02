@@ -146,13 +146,15 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 }
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
-	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	clientConfig := sarama.NewConfig()
+    clientConfig.Producer.Timeout = 10 * time.Second
+	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 
-	producer, err := sarama.NewProducer(client, sarama.NewProducerConfig())
+	producer, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,16 +170,16 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 }
 
 func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, brokerAddr string) {
-	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	clientConfig := sarama.NewConfig()
+	partitionerFactory := &SaramaPartitionerFactory{NewFixedPartitioner}
+	clientConfig.Producer.Partitioner = partitionerFactory.PartitionerConstructor
+    clientConfig.Producer.Timeout = 10 * time.Second
+	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
-
-	producerConfig := sarama.NewProducerConfig()
-	partitionerFactory := &SaramaPartitionerFactory{NewFixedPartitioner}
-	producerConfig.Partitioner = partitionerFactory.PartitionerConstructor
-	producer, err := sarama.NewProducer(client, producerConfig)
+	producer, err := sarama.NewAsyncProducerFromClient(client)
 	encoder := &Int32Encoder{}
 	if err != nil {
 		t.Fatal(err)
@@ -195,15 +197,16 @@ func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, 
 }
 
 func produce(t *testing.T, messages []string, topic string, brokerAddr string, compression sarama.CompressionCodec) {
-	client, err := sarama.NewClient("test-client", []string{brokerAddr}, sarama.NewClientConfig())
+	clientConfig := sarama.NewConfig()
+	clientConfig.Producer.Compression = compression
+    clientConfig.Producer.Timeout = 10 * time.Second
+	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 
-	producerConfig := sarama.NewProducerConfig()
-	producerConfig.Compression = compression
-	producer, err := sarama.NewProducer(client, producerConfig)
+	producer, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		t.Fatal(err)
 	}

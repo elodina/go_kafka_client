@@ -50,7 +50,7 @@ type LowLevelClient interface {
 // SaramaClient implements LowLevelClient and uses github.com/Shopify/sarama as underlying implementation.
 type SaramaClient struct {
 	config *ConsumerConfig
-	client *sarama.Client
+	client sarama.Client
 }
 
 // Creates a new SaramaClient using a given ConsumerConfig.
@@ -73,7 +73,7 @@ func (this *SaramaClient) Initialize() error {
 		return err
 	}
 
-	client, err := sarama.NewClient(this.config.Clientid, bootstrapBrokers, nil)
+	client, err := sarama.NewClient(bootstrapBrokers, nil)
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func (this *SaramaClient) Initialize() error {
 func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]*Message, error) {
 	leader, err := this.client.Leader(topic, partition)
 	if err != nil {
-		this.client.RefreshTopicMetadata(topic)
+		this.client.RefreshMetadata(topic)
 		return nil, err
 	}
 
@@ -97,9 +97,9 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 	Debugf(this, "Adding block: topic=%s, partition=%d, offset=%d, fetchsize=%d", topic, partition, offset, this.config.FetchMessageMaxBytes)
 	fetchRequest.AddBlock(topic, partition, offset, this.config.FetchMessageMaxBytes)
 
-	response, err := leader.Fetch(this.config.Clientid, fetchRequest)
+	response, err := leader.Fetch(fetchRequest)
 	if err != nil {
-		this.client.RefreshTopicMetadata(topic)
+		this.client.RefreshMetadata(topic)
 		return nil, err
 	}
 
@@ -126,7 +126,7 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 					}
 				default:
 					{
-						this.client.RefreshTopicMetadata(topic)
+						this.client.RefreshMetadata(topic)
 						return nil, data.Err
 					}
 				}
@@ -144,9 +144,9 @@ func (this *SaramaClient) IsOffsetOutOfRange(err error) bool {
 
 // This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
 func (this *SaramaClient) GetAvailableOffset(topic string, partition int32, offsetTime string) (int64, error) {
-	time := sarama.LatestOffsets
+	time := sarama.OffsetNewest
 	if offsetTime == "smallest" {
-		time = sarama.EarliestOffset
+		time = sarama.OffsetOldest
 	}
 	offset, err := this.client.GetOffset(topic, partition, time)
 	if err != nil {
