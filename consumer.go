@@ -62,13 +62,13 @@ type Consumer struct {
 /* NewConsumer creates a new Consumer with a given configuration. Creating a Consumer does not start fetching immediately. */
 func NewConsumer(config *ConsumerConfig) *Consumer {
 	consumer, err := NewSlaveConsumer(config)
-	if err := nil {
+	if err != nil {
 		panic(err)
 	}
 	return consumer
 }
 
-func NewSlaveConsumer(config *ConsumerConfig) *Consumer, error {
+func NewSlaveConsumer(config *ConsumerConfig) (*Consumer, error) {
 	if err := config.Validate(); err != nil {
 		panic(err)
 	}
