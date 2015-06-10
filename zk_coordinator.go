@@ -640,8 +640,8 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 		memberJoinedWatcher := make(chan chan bool)
 
 		barrierPath := fmt.Sprintf("%s/%s", path, consumerId)
-		deadline := time.Now().Add(time)
-		err = this.createOrUpdatePathParentMayNotExistFailSafe(barrierPath, make([]byte(string(deadline.Unix())), 0))
+		deadline := time.Now().Add(timeout)
+		err = this.createOrUpdatePathParentMayNotExistFailSafe(barrierPath, []byte(strconv.FormatInt(deadline.Unix(), 10)))
 		if err != nil && err != zk.ErrNodeExists {
 			continue
 		} else {
@@ -691,7 +691,6 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 		}
 
 		Warnf(this, "Failed to join state barrier %s, retrying...", path)
-		time.Sleep(this.config.RequestBackoff * (i + 1))
 	}
 
 	Errorf(this, "Failed to join state barrier %s after %d retries", path, this.config.MaxRequestRetries)
