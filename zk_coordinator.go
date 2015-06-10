@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
+	"bytes"
+	"encoding/binary"
 	"github.com/samuel/go-zookeeper/zk"
-    "bytes"
-    "encoding/binary"
 )
 
 var (
@@ -639,20 +639,20 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 		_, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(path)
 		memberJoinedWatcher := make(chan chan bool)
 
-        barrierPath := fmt.Sprintf("%s/%s", path, consumerId)
-        deadline := time.Now().Add(time)
+		barrierPath := fmt.Sprintf("%s/%s", path, consumerId)
+		deadline := time.Now().Add(time)
 		err = this.createOrUpdatePathParentMayNotExistFailSafe(barrierPath, make([]byte(string(deadline.Unix())), 0))
 		if err != nil && err != zk.ErrNodeExists {
 			continue
 		} else {
-            barrierNode, _, err := this.zkConn.Get(barrierPath)
-            if (err != nil) {
-                continue
-            }
-            buffer := bytes.NewBuffer(barrierNode)
-            deadlineInt, err := binary.ReadVarint(buffer)
-            deadline = time.Unix(deadlineInt, 0)
-        }
+			barrierNode, _, err := this.zkConn.Get(barrierPath)
+			if err != nil {
+				continue
+			}
+			buffer := bytes.NewBuffer(barrierNode)
+			deadlineInt, err := binary.ReadVarint(buffer)
+			deadline = time.Unix(deadlineInt, 0)
+		}
 
 		if err == nil {
 			go func() {
