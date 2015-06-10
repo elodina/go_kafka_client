@@ -639,6 +639,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
                 }
                 deadlineInt, _ := strconv.ParseInt(string(data), 10, 0)
                 deadline = time.Unix(deadlineInt, 0)
+                Infof(this, "Barrier already exists with deadline set to %v. Joining...", deadline)
             } else {
 			    continue
             }
