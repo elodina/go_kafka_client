@@ -25,8 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"bytes"
-	"encoding/binary"
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -628,30 +626,30 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 
 func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group string, stateHash string, api string, timeout time.Duration) (<-chan chan bool, error) {
 	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
+    deadline := time.Now().Add(timeout)
 	var err error
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		Infof(this, "Joining state barrier %s", path)
-		_, err = this.zkConn.Create(path, make([]byte, 0), 0, zk.WorldACL(zk.PermAll))
-		if err != nil && err != zk.ErrNodeExists {
-			continue
+		_, err = this.zkConn.Create(path, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+            if err == zk.ErrNodeExists {
+                data, _, err := this.zkConn.Get(path)
+                if err != nil {
+                    continue
+                }
+                deadlineInt, _ := strconv.ParseInt(string(data), 10, 0)
+                deadline = time.Unix(deadlineInt, 0)
+            } else {
+			    continue
+            }
 		}
 
 		_, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(path)
 		memberJoinedWatcher := make(chan chan bool)
 
-		barrierPath := fmt.Sprintf("%s/%s", path, consumerId)
-		deadline := time.Now().Add(timeout)
-		err = this.createOrUpdatePathParentMayNotExistFailSafe(barrierPath, []byte(strconv.FormatInt(deadline.Unix(), 10)))
+		err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
 		if err != nil && err != zk.ErrNodeExists {
 			continue
-		} else {
-			barrierNode, _, err := this.zkConn.Get(barrierPath)
-			if err != nil {
-				continue
-			}
-			buffer := bytes.NewBuffer(barrierNode)
-			deadlineInt, err := binary.ReadVarint(buffer)
-			deadline = time.Unix(deadlineInt, 0)
 		}
 
 		if err == nil {
