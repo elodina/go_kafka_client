@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
+    "bytes"
+    "encoding/binary"
 )
 
 var (
@@ -627,7 +629,6 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group string, stateHash string, api string, timeout time.Duration) (<-chan chan bool, error) {
 	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
 	var err error
-	backoffMultiplier := 1
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		Infof(this, "Joining state barrier %s", path)
 		_, err = this.zkConn.Create(path, make([]byte, 0), 0, zk.WorldACL(zk.PermAll))
@@ -638,10 +639,20 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 		_, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(path)
 		memberJoinedWatcher := make(chan chan bool)
 
-		err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
+        barrierPath := fmt.Sprintf("%s/%s", path, consumerId)
+        deadline := time.Now().Add(time)
+		err = this.createOrUpdatePathParentMayNotExistFailSafe(barrierPath, make([]byte(string(deadline.Unix())), 0))
 		if err != nil && err != zk.ErrNodeExists {
 			continue
-		}
+		} else {
+            barrierNode, _, err := this.zkConn.Get(barrierPath)
+            if (err != nil) {
+                continue
+            }
+            buffer := bytes.NewBuffer(barrierNode)
+            deadlineInt, err := binary.ReadVarint(buffer)
+            deadline = time.Unix(deadlineInt, 0)
+        }
 
 		if err == nil {
 			go func() {
@@ -664,7 +675,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 								}
 							}
 						}
-					case <-time.After(timeout):
+					case <-time.After(deadline.Sub(time.Now())):
 						{
 							if !done {
 								memberJoinedWatcher <- nil
@@ -680,8 +691,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 		}
 
 		Warnf(this, "Failed to join state barrier %s, retrying...", path)
-		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
-		backoffMultiplier++
+		time.Sleep(this.config.RequestBackoff * (i + 1))
 	}
 
 	Errorf(this, "Failed to join state barrier %s after %d retries", path, this.config.MaxRequestRetries)
