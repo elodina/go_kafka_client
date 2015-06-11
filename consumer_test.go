@@ -341,11 +341,11 @@ func TestBlueGreenDeployment(t *testing.T) {
 	blue := BlueGreenDeployment{activeTopic, "static", blueGroup}
 	green := BlueGreenDeployment{inactiveTopic, "static", greenGroup}
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	coordinator.RequestBlueGreenDeployment(blue, green)
 
-	time.Sleep(60 * time.Second)
+	time.Sleep(120 * time.Second)
 
 	//All Blue consumers should switch to Green group and change topic to inactive
 	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
