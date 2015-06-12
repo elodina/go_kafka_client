@@ -626,13 +626,23 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 
 func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group string, stateHash string, api string, timeout time.Duration) (<-chan chan bool, error) {
 	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
+    deadline := time.Now().Add(timeout)
 	var err error
-	backoffMultiplier := 1
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		Infof(this, "Joining state barrier %s", path)
-		_, err = this.zkConn.Create(path, make([]byte, 0), 0, zk.WorldACL(zk.PermAll))
-		if err != nil && err != zk.ErrNodeExists {
-			continue
+		_, err = this.zkConn.Create(path, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+            if err == zk.ErrNodeExists {
+                data, _, err := this.zkConn.Get(path)
+                if err != nil {
+                    continue
+                }
+                deadlineInt, _ := strconv.ParseInt(string(data), 10, 0)
+                deadline = time.Unix(deadlineInt, 0)
+                Infof(this, "Barrier already exists with deadline set to %v. Joining...", deadline)
+            } else {
+			    continue
+            }
 		}
 
 		_, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(path)
@@ -645,31 +655,28 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 
 		if err == nil {
 			go func() {
-				done := false
 				for {
+					barrierTimeout := deadline.Sub(time.Now())
 					select {
 					case e, ok := <-zkMemberJoinedWatcher:
 						{
 							Debugf(this, "Member joined channel %v", e)
-							if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected && !done {
+							if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
 								ask := make(chan bool)
 								memberJoinedWatcher <- ask
-								done = <-ask
-							} else {
-								if done {
+								if <-ask {
 									return
-								} else {
-									_, _, zkMemberJoinedWatcher, err = this.zkConn.ChildrenW(path)
-									Debugf(this, "Trying to renew watcher at %s", path)
 								}
+							} else {
+								_, _, zkMemberJoinedWatcher, err = this.zkConn.ChildrenW(path)
+								Debugf(this, "Trying to renew watcher at %s", path)
 							}
 						}
-					case <-time.After(timeout):
+					case <-time.After(barrierTimeout):
 						{
-							if !done {
-								memberJoinedWatcher <- nil
-							}
-							done = true
+							Infof(this, "Barrier timed out after %v", barrierTimeout)
+							memberJoinedWatcher <- nil
+							return
 						}
 					}
 				}
@@ -680,8 +687,6 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 		}
 
 		Warnf(this, "Failed to join state barrier %s, retrying...", path)
-		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
-		backoffMultiplier++
 	}
 
 	Errorf(this, "Failed to join state barrier %s after %d retries", path, this.config.MaxRequestRetries)

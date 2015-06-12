@@ -35,6 +35,7 @@ before_install:
 - export SCALA_VERSION=2.10.4
 - export REGISTRY_URL=http://packages.confluent.io/archive/$REGISTRY_VERSION/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tar.gz
 - export REGISTRY_HOME=/tmp/confluent-$REGISTRY_VERSION
+- export GOMAXPROCS=1
 - wget -q $KAFKA_URL -O /tmp/$KAFKA_RELEASE.tgz
 - tar xfz /tmp/$KAFKA_RELEASE.tgz -C /tmp
 - wget -q $ZK_URL -O /tmp/$ZK_RELEASE.tar.gz
