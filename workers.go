@@ -334,8 +334,18 @@ func (w *Worker) String() string {
 func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 	task.Callee = w
 	go func() {
+		shouldStop := false
 		resultChannel := make(chan WorkerResult)
-		go func() { resultChannel <- strategy(w, task.Msg, task.Id()) }()
+		go func() {
+			result := strategy(w, task.Msg, task.Id())
+			for !shouldStop {
+				select {
+				case resultChannel <- result:
+					return
+				case <-time.After(5 * time.Second):
+				}
+			}
+		}()
 		select {
 		case result := <-resultChannel:
 			{
@@ -343,6 +353,7 @@ func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 			}
 		case <-time.After(w.TaskTimeout):
 			{
+				shouldStop = true
 				w.OutputChannel <- &TimedOutResult{task.Id()}
 			}
 		}
