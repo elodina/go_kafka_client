@@ -61,6 +61,14 @@ type Consumer struct {
 
 /* NewConsumer creates a new Consumer with a given configuration. Creating a Consumer does not start fetching immediately. */
 func NewConsumer(config *ConsumerConfig) *Consumer {
+	consumer, err := NewSlaveConsumer(config)
+	if err != nil {
+		panic(err)
+	}
+	return consumer
+}
+
+func NewSlaveConsumer(config *ConsumerConfig) (*Consumer, error) {
 	if err := config.Validate(); err != nil {
 		panic(err)
 	}
@@ -79,15 +87,15 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	}
 
 	if err := c.config.Coordinator.Connect(); err != nil {
-		panic(err)
+		return nil, err
 	}
 	if err := c.config.LowLevelClient.Initialize(); err != nil {
-		panic(err)
+		return nil, err
 	}
 	c.metrics = newConsumerMetrics(c.String())
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
 
-	return c
+	return c, nil
 }
 
 func (c *Consumer) String() string {
