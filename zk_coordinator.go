@@ -655,31 +655,28 @@ func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group stri
 
 		if err == nil {
 			go func() {
-				done := false
 				for {
+					barrierTimeout := deadline.Sub(time.Now())
 					select {
 					case e, ok := <-zkMemberJoinedWatcher:
 						{
 							Debugf(this, "Member joined channel %v", e)
-							if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected && !done {
+							if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
 								ask := make(chan bool)
 								memberJoinedWatcher <- ask
-								done = <-ask
-							} else {
-								if done {
+								if <-ask {
 									return
-								} else {
-									_, _, zkMemberJoinedWatcher, err = this.zkConn.ChildrenW(path)
-									Debugf(this, "Trying to renew watcher at %s", path)
 								}
+							} else {
+								_, _, zkMemberJoinedWatcher, err = this.zkConn.ChildrenW(path)
+								Debugf(this, "Trying to renew watcher at %s", path)
 							}
 						}
-					case <-time.After(deadline.Sub(time.Now())):
+					case <-time.After(barrierTimeout):
 						{
-							if !done {
-								memberJoinedWatcher <- nil
-							}
-							done = true
+							Infof(this, "Barrier timed out after %v", barrierTimeout)
+							memberJoinedWatcher <- nil
+							return
 						}
 					}
 				}
