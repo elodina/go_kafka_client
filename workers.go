@@ -42,12 +42,14 @@ type WorkerManager struct {
 	managerStop         chan bool
 	processingStop      chan bool
 	commitStop          chan bool
+	closeConsumer       chan bool
+	shutdownDecision    *FailedDecision
 
 	metrics *ConsumerMetrics
 }
 
 // Creates a new WorkerManager with given id using a given ConsumerConfig and responsible for managing given TopicAndPartition.
-func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, metrics *ConsumerMetrics) *WorkerManager {
+func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAndPartition, metrics *ConsumerMetrics, closeConsumer chan bool) *WorkerManager {
 	workers := make([]*Worker, config.NumWorkers)
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
@@ -75,6 +77,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		processingStop:      make(chan bool),
 		commitStop:          make(chan bool),
 		metrics:             metrics,
+		closeConsumer:       closeConsumer,
 	}
 }
 
@@ -151,9 +154,14 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 		for _, id := range wm.batchOrder {
 			task := wm.currentBatch[id]
 			worker := <-wm.availableWorkers
-			wm.metrics.activeWorkers().Inc(1)
-			wm.metrics.pendingWMsTasks().Dec(1)
-			worker.Start(task, wm.config.Strategy)
+
+			if wm.shutdownDecision == nil {
+				wm.metrics.activeWorkers().Inc(1)
+				wm.metrics.pendingWMsTasks().Dec(1)
+				worker.Start(task, wm.config.Strategy)
+			} else {
+				return
+			}
 		}
 
 		<-wm.batchProcessed
@@ -224,9 +232,14 @@ func (wm *WorkerManager) processBatch() {
 					stopRedirecting <- true
 				}()
 
+				if wm.shutdownDecision != nil && *wm.shutdownDecision == DoNotCommitOffsetAndStop {
+					wm.taskIsDone(result)
+					continue
+				}
+
 				task := wm.currentBatch[result.Id()]
 				if result.Success() {
-					wm.taskIsDone(result)
+					wm.taskSucceeded(result)
 				} else {
 					if _, ok := result.(*TimedOutResult); ok {
 						task.Callee.OutputChannel = make(chan WorkerResult)
@@ -246,21 +259,23 @@ func (wm *WorkerManager) processBatch() {
 						switch decision {
 						case CommitOffsetAndContinue:
 							{
-								wm.taskIsDone(result)
+								wm.taskSucceeded(result)
 							}
 						case DoNotCommitOffsetAndContinue:
 							{
-								wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
-								delete(wm.currentBatch, result.Id())
+								wm.taskIsDone(result)
 							}
 						case CommitOffsetAndStop:
 							{
-								wm.taskIsDone(result)
-								wm.stopBatch()
+								wm.taskSucceeded(result)
+								wm.triggerShutdownIfRequired(&decision)
 							}
 						case DoNotCommitOffsetAndStop:
 							{
-								wm.stopBatch()
+								Debug(wm, "Setting task as done")
+								wm.taskIsDone(result)
+								Debug(wm, "Triggering shutdown")
+								wm.triggerShutdownIfRequired(&decision)
 							}
 						}
 					} else {
@@ -288,6 +303,15 @@ func (wm *WorkerManager) processBatch() {
 	}
 }
 
+func (wm *WorkerManager) triggerShutdownIfRequired(decision *FailedDecision) {
+	if wm.shutdownDecision == nil {
+		wm.shutdownDecision = decision
+		go func() {
+			wm.closeConsumer <- true
+		}()
+	}
+}
+
 func (wm *WorkerManager) stopBatch() {
 	wm.currentBatch = make(map[TaskId]*Task)
 	for _, worker := range wm.workers {
@@ -295,11 +319,15 @@ func (wm *WorkerManager) stopBatch() {
 	}
 }
 
-func (wm *WorkerManager) taskIsDone(result WorkerResult) {
+func (wm *WorkerManager) taskSucceeded(result WorkerResult) {
 	Tracef(wm, "Task is done: %d", result.Id().Offset)
 	wm.UpdateLargestOffset(result.Id().Offset)
-	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
+	wm.taskIsDone(result)
 	wm.metrics.activeWorkers().Dec(1)
+}
+
+func (wm *WorkerManager) taskIsDone(result WorkerResult) {
+	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
 	delete(wm.currentBatch, result.Id())
 }
 

@@ -53,6 +53,7 @@ type Consumer struct {
 	workerManagers                 map[TopicAndPartition]*WorkerManager
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
+	close                          chan bool
 
 	metrics *ConsumerMetrics
 
@@ -76,6 +77,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		disconnectChannelsForPartition: make(chan TopicAndPartition),
 		workerManagers:                 make(map[TopicAndPartition]*WorkerManager),
 		stopStreams:                    make(chan bool),
+		close:                          make(chan bool),
 	}
 
 	if err := c.config.Coordinator.Connect(); err != nil {
@@ -86,6 +88,13 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	}
 	c.metrics = newConsumerMetrics(c.String())
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+
+	go func() {
+		<-c.close
+		if !c.isShuttingdown {
+			c.Close()
+		}
+	}()
 
 	return c
 }
@@ -274,7 +283,7 @@ func (c *Consumer) initializeWorkerManagers() {
 				topicPartition := TopicAndPartition{topic, partition}
 				workerManager, exists := c.workerManagers[topicPartition]
 				if !exists {
-					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.metrics)
+					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.metrics, c.close)
 					c.workerManagers[topicPartition] = workerManager
 					go workerManager.Start()
 				}
@@ -290,6 +299,12 @@ func (c *Consumer) Close() <-chan bool {
 	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true
 	go func() {
+		select {
+		case c.close <- true:
+		default:
+		}
+
+		Info(c, "Unsubscribing...")
 		if c.shouldUnsubscribe {
 			c.unsubscribeFromChanges()
 		}
@@ -317,8 +332,10 @@ func (c *Consumer) Close() <-chan bool {
 
 		Info(c, "Unregistering all metrics")
 		c.metrics.close()
+		Info(c, "Unregistered all metrics")
 
 		c.closeFinished <- true
+		Info(c, "Sent close finished")
 	}()
 	return c.closeFinished
 }
@@ -434,6 +451,13 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.config.LowLevelClient.Initialize()
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
 	c.metrics = newConsumerMetrics(c.String())
+
+	go func() {
+		<-c.close
+		if !c.isShuttingdown {
+			c.Close()
+		}
+	}()
 
 	go c.startStreams()
 
