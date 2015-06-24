@@ -327,7 +327,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 	var context *assignmentContext
 	//Waiting for everybody in group to acknowledge the request, then closing
 	inLock(&c.rebalanceLock, func() {
-		Infof(c, "Starting blue-green procedure for: %s", blueGreenRequest)
+		Infof("Starting blue-green procedure for: %s", blueGreenRequest)
 		var err error
 		var stateHash string
 		barrierPassed := false
@@ -351,12 +351,9 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 			panic(fmt.Sprintf("Failed to connect to Coordinator: %s", err))
 		}
 
-		// Waiting for target group to leave the group
+		//Waiting for target group to leave the group
 		amountOfConsumersInTargetGroup := -1
-		// If the current owner of a partition isn't BG aware it will never give up it's ownership
-		// gracefully.  In that case try a best effort of 30 retries, but then take it over anyway.
-		maxRetries := 30 // Don't want to wait in this loop indefinitely.
-		for retries := 0; retries < maxRetries && amountOfConsumersInTargetGroup != 0; retries++ {
+		for amountOfConsumersInTargetGroup != 0 {
 			consumersInTargetGroup, err := c.config.Coordinator.GetConsumersInGroup(blueGreenRequest.Group)
 			if err != nil {
 				panic(fmt.Sprintf("Failed to perform blue-green procedure due to: %s", err))
