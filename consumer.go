@@ -84,7 +84,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.LowLevelClient.Initialize(); err != nil {
 		panic(err)
 	}
-	c.metrics = newConsumerMetrics(c.String())
+	c.metrics = newConsumerMetrics(c.String(), config.MetricsPrefix)
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
 
 	return c
@@ -433,7 +433,7 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
 	c.config.LowLevelClient.Initialize()
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
-	c.metrics = newConsumerMetrics(c.String())
+	c.metrics = newConsumerMetrics(c.String(), c.config.MetricsPrefix)
 
 	go c.startStreams()
 

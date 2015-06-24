@@ -19,6 +19,7 @@ import (
 	"fmt"
 	metrics "github.com/rcrowley/go-metrics"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -32,23 +33,31 @@ type ConsumerMetrics struct {
 	numWorkerManagersGauge metrics.Gauge
 	activeWorkersCounter   metrics.Counter
 	pendingWMsTasksCounter metrics.Counter
+	taskTimeoutCounter     metrics.Counter
 	wmsBatchDurationTimer  metrics.Timer
 	wmsIdleTimer           metrics.Timer
 }
 
-func newConsumerMetrics(consumerName string) *ConsumerMetrics {
+func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	kafkaMetrics := &ConsumerMetrics{
-		registry: metrics.NewRegistry(),
+		registry: metrics.DefaultRegistry,
 	}
 
-	kafkaMetrics.fetchersIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchersIdleTime-%s", consumerName), kafkaMetrics.registry)
-	kafkaMetrics.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("FetchDuration-%s", consumerName), kafkaMetrics.registry)
+	// Ensure prefix ends with a dot (.) so it plays nice with statsd/graphite
+	prefix = strings.Trim(prefix, " ") 
+	if prefix != "" && prefix[len(prefix)-1:] != "." {
+		prefix += "."
+	}
 
-	kafkaMetrics.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("NumWorkerManagers-%s", consumerName), kafkaMetrics.registry)
-	kafkaMetrics.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsActiveWorkers-%s", consumerName), kafkaMetrics.registry)
-	kafkaMetrics.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("WMsPendingTasks-%s", consumerName), kafkaMetrics.registry)
-	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsBatchDuration-%s", consumerName), kafkaMetrics.registry)
-	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("WMsIdleTime-%s", consumerName), kafkaMetrics.registry)
+	kafkaMetrics.fetchersIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sFetchersIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sFetchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
+
+	kafkaMetrics.numWorkerManagersGauge = metrics.NewRegisteredGauge(fmt.Sprintf("%sNumWorkerManagers-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sWMsActiveWorkers-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sWMsPendingTasks-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.taskTimeoutCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sTaskTimeouts-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsBatchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
 
 	return kafkaMetrics
 }
@@ -75,6 +84,10 @@ func (this *ConsumerMetrics) wMsBatchDuration() metrics.Timer {
 
 func (this *ConsumerMetrics) pendingWMsTasks() metrics.Counter {
 	return this.pendingWMsTasksCounter
+}
+
+func (this *ConsumerMetrics) taskTimeouts() metrics.Counter {
+	return this.taskTimeoutCounter
 }
 
 func (this *ConsumerMetrics) activeWorkers() metrics.Counter {

@@ -229,6 +229,7 @@ func (wm *WorkerManager) processBatch() {
 					wm.taskIsDone(result)
 				} else {
 					if _, ok := result.(*TimedOutResult); ok {
+						wm.metrics.taskTimeouts().Inc(1)
 						task.Callee.OutputChannel = make(chan WorkerResult)
 					}
 
