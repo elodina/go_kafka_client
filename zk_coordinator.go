@@ -1139,9 +1139,6 @@ func (mzk *mockZookeeperCoordinator) GetOffset(group string, topic string, parti
 func (mzk *mockZookeeperCoordinator) SubscribeForChanges(group string) (<-chan CoordinatorEvent, error) {
 	panic("Not implemented")
 }
-func (mzk *mockZookeeperCoordinator) RequestBlueGreenDeployment(blue BlueGreenDeployment, green BlueGreenDeployment) error {
-	panic("Not implemented")
-}
 func (mzk *mockZookeeperCoordinator) GetBlueGreenRequest(Group string) (map[string]*BlueGreenDeployment, error) {
 	panic("Not implemented")
 }

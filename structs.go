@@ -189,9 +189,6 @@ type ConsumerCoordinator interface {
 	Returns a read-only channel of CoordinatorEvent that will get values on any significant coordinator event (e.g. new consumer appeared, new broker appeared etc.) and error if failed to subscribe. */
 	SubscribeForChanges(Group string) (<-chan CoordinatorEvent, error)
 
-	/* Requests that a blue/green deployment be done.*/
-	RequestBlueGreenDeployment(blue BlueGreenDeployment, green BlueGreenDeployment) error
-
 	/* Gets all deployed topics for consume group Group from consumer coordinator.
 	Returns a map where keys are notification ids and values are DeployedTopics. May also return an error (e.g. if failed to reach coordinator). */
 	GetBlueGreenRequest(Group string) (map[string]*BlueGreenDeployment, error)
