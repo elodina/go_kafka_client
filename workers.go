@@ -245,7 +245,7 @@ func (wm *WorkerManager) processBatch() {
 						task.Callee.OutputChannel = make(chan WorkerResult)
 					}
 
-					Warnf(wm, "Worker task %s has failed", result.Id())
+					Debugf(wm, "Worker task %s has failed", result.Id())
 					task.Retries++
 					if task.Retries > wm.config.MaxWorkerRetries {
 						Errorf(wm, "Worker task %s has failed after %d retries", result.Id(), wm.config.MaxWorkerRetries)
@@ -279,7 +279,7 @@ func (wm *WorkerManager) processBatch() {
 							}
 						}
 					} else {
-						Warnf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
+						Debugf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
 						time.Sleep(wm.config.WorkerBackoff)
 						go task.Callee.Start(task, wm.config.Strategy)
 					}
