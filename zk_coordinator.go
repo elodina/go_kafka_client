@@ -122,11 +122,13 @@ func (this *ZookeeperCoordinator) tryRegisterConsumer(Consumerid string, Groupid
 		var stat *zk.Stat
 		_, stat, err = this.zkConn.Get(pathToConsumer)
 		if err != nil {
-			return fmt.Errorf("%v; path: %s", err, pathToConsumer)
+			Debugf(this, "%v; path: %s", err, pathToConsumer)
+			return err
 		}
 		_, err = this.zkConn.Set(pathToConsumer, data, stat.Version)
 		if err != nil {
-			return fmt.Errorf("%v; path: %s", err, pathToConsumer)
+			Debugf(this, "%v; path: %s", err, pathToConsumer)
+			return err
 		}
 	}
 
@@ -170,7 +172,8 @@ func (this *ZookeeperCoordinator) tryGetConsumerInfo(Consumerid string, Groupid 
 	zkPath := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir, Consumerid)
 	data, _, err := this.zkConn.Get(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 
 	type consumerInfoTmp struct {
@@ -275,7 +278,8 @@ func (this *ZookeeperCoordinator) tryGetConsumersInGroup(Groupid string) (consum
 	zkPath := newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir
 	consumers, _, err = this.zkConn.Children(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 	return
 }
@@ -303,7 +307,8 @@ func (this *ZookeeperCoordinator) tryGetAllTopics() (topics []string, err error)
 	zkPath := this.rootedPath(brokerTopicsPath)
 	topics, _, err = this.zkConn.Children(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 	return
 }
@@ -364,7 +369,8 @@ func (this *ZookeeperCoordinator) tryGetAllBrokers() ([]*BrokerInfo, error) {
 	zkPath := this.rootedPath(brokerIdsPath)
 	brokerIds, _, err := this.zkConn.Children(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 	brokers := make([]*BrokerInfo, len(brokerIds))
 	for i, brokerId := range brokerIds {
@@ -407,7 +413,8 @@ func (this *ZookeeperCoordinator) tryGetOffsetForTopicPartition(Groupid string, 
 		if err == zk.ErrNoNode {
 			return InvalidOffset, nil
 		} else {
-			return InvalidOffset, fmt.Errorf("%v; path: %s", err, zkPath)
+			Debugf(this, "%v; path: %s", err, zkPath)
+			return InvalidOffset, err
 		}
 	}
 
@@ -747,7 +754,8 @@ func (this *ZookeeperCoordinator) isStateBarrierPassed(group string, stateHash s
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		children, _, err = this.zkConn.Children(path)
 		if err == zk.ErrNoNode {
-			return false, fmt.Errorf("%v; path: %s", err, path)
+			Debugf(this, "%v; path: %s", err, path)
+			return false, err
 		} else if err == nil {
 			return len(children) == expected, err
 		}
@@ -786,7 +794,8 @@ func (this *ZookeeperCoordinator) tryRemoveStateBarrier(group string, stateHash 
 func (this *ZookeeperCoordinator) deleteNode(path string) error {
 	children, _, err := this.zkConn.Children(path)
 	if err != nil {
-		return fmt.Errorf("%v; path: %s", err, path)
+		Debugf(this, "%v; path: %s", err, path)
+		return err
 	}
 	for _, child := range children {
 		err := this.deleteNode(fmt.Sprintf("%s/%s", path, child))
@@ -797,7 +806,8 @@ func (this *ZookeeperCoordinator) deleteNode(path string) error {
 
 	_, stat, err := this.zkConn.Get(path)
 	if err != nil {
-		return fmt.Errorf("%v; path: %s", path)
+		Debugf(this, "%v; path: %s", err, path)
+		return err
 	}
 	return this.zkConn.Delete(path, stat.Version)
 }
@@ -908,7 +918,8 @@ func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Eve
 	zkPath := this.rootedPath(brokerIdsPath)
 	_, _, watcher, err := this.zkConn.ChildrenW(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 
 	return watcher, nil
@@ -919,7 +930,8 @@ func (this *ZookeeperCoordinator) getConsumersInGroupWatcher(group string) (<-ch
 	zkPath := newZKGroupDirs(this.config.Root, group).ConsumerRegistryDir
 	_, _, watcher, err := this.zkConn.ChildrenW(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 
 	return watcher, nil
@@ -930,7 +942,8 @@ func (this *ZookeeperCoordinator) getBlueGreenWatcher(group string) (<-chan zk.E
 	zkPath := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, BlueGreenDeploymentAPI)
 	_, _, watcher, err := this.zkConn.ChildrenW(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 
 	return watcher, nil
@@ -940,7 +953,8 @@ func (this *ZookeeperCoordinator) getTopicsWatcher() (watcher <-chan zk.Event, e
 	zkPath := this.rootedPath(brokerTopicsPath)
 	_, _, watcher, err = this.zkConn.ChildrenW(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 	return
 }
@@ -950,7 +964,8 @@ func (this *ZookeeperCoordinator) getBrokerInfo(brokerId int32) (*BrokerInfo, er
 	pathToBroker := fmt.Sprintf("%s/%d", this.rootedPath(brokerIdsPath), brokerId)
 	data, _, zkError := this.zkConn.Get(pathToBroker)
 	if zkError != nil {
-		return nil, fmt.Errorf("%v; path: %s", zkError, pathToBroker)
+		Debugf(this, "%v; path: %s", zkError, pathToBroker)
+		return nil, zkError
 	}
 
 	broker := &BrokerInfo{}
@@ -984,7 +999,8 @@ func (this *ZookeeperCoordinator) getTopicInfo(topic string) (*TopicInfo, error)
 	zkPath := fmt.Sprintf("%s/%s", this.rootedPath(brokerTopicsPath), topic)
 	data, _, err := this.zkConn.Get(zkPath)
 	if err != nil {
-		return nil, fmt.Errorf("%v; path: %s", err, zkPath)
+		Debugf(this, "%v; path: %s", err, zkPath)
+		return nil, err
 	}
 	topicInfo := &TopicInfo{}
 	err = json.Unmarshal(data, topicInfo)
@@ -1045,7 +1061,7 @@ func (this *ZookeeperCoordinator) updateRecord(pathToCreate string, dataToWrite 
 	_, stat, _ := this.zkConn.Get(pathToCreate)
 	_, err := this.zkConn.Set(pathToCreate, dataToWrite, stat.Version)
 	if err != nil {
-		return fmt.Errorf("%v; path: %s", err, pathToCreate)
+		return err
 	}
 	return nil
 }
