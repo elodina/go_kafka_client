@@ -588,132 +588,96 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 
 func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, barrierName string,
 	barrierSize int, api string, timeout time.Duration) bool {
-	memberJoinedEvents, err := this.joinStateBarrier(consumerId, group, barrierName, api, timeout)
-	if err != nil {
-		panic(err)
-	}
+	barrierPath := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, barrierName)
 
-	passed := false
-	for !passed {
-		ask := <-memberJoinedEvents
-		passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
-		if err != nil && err != zk.ErrNoNode {
-			panic(err)
-		}
-
-		if ask == nil {
-			if !passed && err != zk.ErrNoNode {
-				err = this.RemoveStateBarrier(group, barrierName, api)
-				if err != nil {
-					Error(this, err.Error())
-				}
-			}
+	var barrierExpiration time.Time
+	var err error
+	// Block and wait for this to consumerId to join the state barrier
+	if barrierExpiration, err = this.joinStateBarrier(barrierPath, consumerId, timeout); err == nil {
+		// Now that we've joined the barrier wait to verify all consumers have reached consensus.
+		membershipDoneChan := make(chan error)
+		stopChan := make(chan struct{})
+		barrierTimeout := barrierExpiration.Sub(time.Now())
+		go this.waitForMembersToJoin(barrierPath, barrierSize, membershipDoneChan, stopChan)
+		select {
+		case err = <- membershipDoneChan:
+			// break the select
 			break
-		} else {
-			if err != zk.ErrNoNode {
-				Debug(this, "Memeber joined")
-				ask <- passed
+		case <- time.After(barrierTimeout):
+			stopChan <- struct{}{}
+			err = fmt.Errorf("Timedout waiting for consensus on barrier path %s", barrierPath)
+		}
+	}
+
+	if err != nil {
+		// Encountered an error waiting for consensus... Fail it
+		Errorf(this, "Failed awaiting on state barrier %s [%v]", barrierName, err)
+		return false
+	}
+
+	Infof(this, "Successfully awaited on state barrier %s", barrierName)
+	return true
+}
+
+func (this *ZookeeperCoordinator) joinStateBarrier(barrierPath, consumerId string, timeout time.Duration) (time.Time, error) {
+	deadline := time.Now().Add(timeout)
+	var err error
+	Infof(this, "Joining state barrier %s", barrierPath)
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		// Attempt to create the barrier path, with a shared deadline
+		_, err = this.zkConn.Create(barrierPath, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+			if err != zk.ErrNodeExists{
+				continue
+			}
+			// If the barrier path already exists, read it's value
+			if data, _, err := this.zkConn.Get(barrierPath); err == nil {
+				deadlineInt, _ := strconv.ParseInt(string(data), 10, 64)
+				deadline = time.Unix(deadlineInt, 0)
+				Infof(this, "Barrier already exists with deadline set to %v. Joining...", deadline)
 			} else {
-				Debug(this, "Barrier failed")
-				ask <- true
-				break
+				continue
+			}
+		}
+		// Register our consumerId as a child node on the barrierPath. This should notify other consumers we have joined.
+		if err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", barrierPath, consumerId), make([]byte, 0)); err == nil || err == zk.ErrNodeExists {
+			Infof(this, "Successfully joined state barrier %s", barrierPath)
+			return deadline, nil
+		}
+		Warnf(this, "Failed to join state barrier %s, retrying...", barrierPath)
+	}
+	return time.Now(), fmt.Errorf("Failed to join state barrier %s after %d retries", barrierPath, this.config.MaxRequestRetries)
+}
+
+func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expected int, doneChan chan <- error, stopChan <- chan struct{}) {
+	// Make sure we clean up the channel.
+	defer close(doneChan)
+
+	for {
+		select {
+		// Using a priority select to provide precedence to the stop chan
+		case <-stopChan:
+			return
+		default:
+			children, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(barrierPath)
+			if err != nil && err == zk.ErrNoNode {
+				doneChan <- fmt.Errorf("%v; path: %s", err, barrierPath)
+				return
+			} else if len(children) == expected {
+				doneChan <- nil
+				// don't leave the zkMemberJoinedWatcher chan out there with no one to receive the message it produces later as it would cause a block.
+				go func(blackhole <-chan zk.Event) {
+					<- blackhole
+				}(zkMemberJoinedWatcher)
+				return
+			}
+			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
+			select {
+			case <-zkMemberJoinedWatcher:
+				continue
 			}
 		}
 	}
-
-	return passed
-}
-
-func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group string, stateHash string, api string, timeout time.Duration) (<-chan chan bool, error) {
-	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
-    deadline := time.Now().Add(timeout)
-	var err error
-	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		Infof(this, "Joining state barrier %s", path)
-		_, err = this.zkConn.Create(path, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
-		if err != nil {
-            if err == zk.ErrNodeExists {
-                data, _, err := this.zkConn.Get(path)
-                if err != nil {
-                    continue
-                }
-                deadlineInt, _ := strconv.ParseInt(string(data), 10, 0)
-                deadline = time.Unix(deadlineInt, 0)
-                Infof(this, "Barrier already exists with deadline set to %v. Joining...", deadline)
-            } else {
-			    continue
-            }
-		}
-
-		_, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(path)
-		memberJoinedWatcher := make(chan chan bool)
-
-		err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
-		if err != nil && err != zk.ErrNodeExists {
-			continue
-		}
-
-		if err == nil {
-			go func() {
-				for {
-					barrierTimeout := deadline.Sub(time.Now())
-					select {
-					case e, ok := <-zkMemberJoinedWatcher:
-						{
-							Debugf(this, "Member joined channel %v", e)
-							if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
-								ask := make(chan bool)
-								memberJoinedWatcher <- ask
-								if <-ask {
-									return
-								}
-							} else {
-								_, _, zkMemberJoinedWatcher, err = this.zkConn.ChildrenW(path)
-								Debugf(this, "Trying to renew watcher at %s", path)
-							}
-						}
-					case <-time.After(barrierTimeout):
-						{
-							Infof(this, "Barrier timed out after %v", barrierTimeout)
-							memberJoinedWatcher <- nil
-							return
-						}
-					}
-				}
-			}()
-
-			Infof(this, "Successfully joined state barrier %s", path)
-			return memberJoinedWatcher, err
-		}
-
-		Warnf(this, "Failed to join state barrier %s, retrying...", path)
-	}
-
-	Errorf(this, "Failed to join state barrier %s after %d retries", path, this.config.MaxRequestRetries)
-
-	return nil, err
-}
-
-func (this *ZookeeperCoordinator) isStateBarrierPassed(group string, stateHash string, api string, expected int) (bool, error) {
-	Debugf(this, "Trying to assert rebalance state for group %s and hash %s with %d", group, stateHash, expected)
-	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
-	var children []string
-	var err error
-	backoffMultiplier := 1
-	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		children, _, err = this.zkConn.Children(path)
-		if err == zk.ErrNoNode {
-			return false, err
-		} else if err == nil {
-			return len(children) == expected, err
-		}
-		Warnf(this, "Failed to assert rebalance state %s, retrying...", path)
-		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
-		backoffMultiplier++
-	}
-	Errorf(this, "Failed to assert rebalance state %s after %d retries", path, this.config.MaxRequestRetries)
-
-	return false, err
 }
 
 func (this *ZookeeperCoordinator) RemoveStateBarrier(group string, stateHash string, api string) error {
