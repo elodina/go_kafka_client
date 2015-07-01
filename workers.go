@@ -199,7 +199,7 @@ func (wm *WorkerManager) commitOffset() {
 			Tracef(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
 			break
 		} else {
-			Warnf(wm, "Failed to commit offset %d for %s. Retrying...", largestOffset, &wm.topicPartition)
+			Warnf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
 		}
 	}
 
@@ -242,6 +242,7 @@ func (wm *WorkerManager) processBatch() {
 					wm.taskSucceeded(result)
 				} else {
 					if _, ok := result.(*TimedOutResult); ok {
+						wm.metrics.taskTimeouts().Inc(1)
 						task.Callee.OutputChannel = make(chan WorkerResult)
 					}
 

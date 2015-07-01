@@ -116,7 +116,7 @@ func TestWorkerManager(t *testing.T) {
 	config.OffsetStorage = mockZk
 	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
 
-	metrics := newConsumerMetrics(wmid)
+	metrics := newConsumerMetrics(wmid, "")
 	closeConsumer := make(chan bool)
 	manager := NewWorkerManager(wmid, config, topicPartition, metrics, closeConsumer)
 
