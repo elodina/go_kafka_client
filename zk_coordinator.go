@@ -724,6 +724,8 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 			}
 			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
 			select {
+			case <-stopChan:
+				return
 			case <-zkMemberJoinedWatcher:
 				continue
 			}
