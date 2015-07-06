@@ -653,6 +653,10 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 	// Make sure we clean up the channel.
 	defer close(doneChan)
 
+	blackholeFunc := func(blackhole <-chan zk.Event) {
+		<-blackhole
+	}
+	
 	for {
 		select {
 		// Using a priority select to provide precedence to the stop chan
@@ -666,14 +670,13 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 			} else if len(children) == expected {
 				doneChan <- nil
 				// don't leave the zkMemberJoinedWatcher chan out there with no one to receive the message it produces later as it would cause a block.
-				go func(blackhole <-chan zk.Event) {
-					<- blackhole
-				}(zkMemberJoinedWatcher)
+				go blackholeFunc(zkMemberJoinedWatcher)
 				return
 			}
 			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
 			select {
 			case <-stopChan:
+				go blackholeFunc(zkMemberJoinedWatcher) 
 				return
 			case <-zkMemberJoinedWatcher:
 				continue
