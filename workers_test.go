@@ -185,9 +185,9 @@ func benchmarkWorkerManager(b *testing.B, numWorkers int, msgsPerBatch int, slee
 	manager := NewWorkerManager(wmid, config, topicPartition, metrics, closeConsumer)
 
 	go manager.Start()
-	batch := make([]*Message, msgsPerBatch)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		batch := make([]*Message, msgsPerBatch)
 		for j := range batch {
 			batch[j] = &Message{Offset: int64(i*msgsPerBatch + j)}
 		}
@@ -195,10 +195,6 @@ func benchmarkWorkerManager(b *testing.B, numWorkers int, msgsPerBatch int, slee
 	}
 	<-manager.Stop()
 
-	// verify correctness
-	if mockZk.commitHistory[topicPartition] != int64(b.N*msgsPerBatch-1) {
-		b.Errorf("Worker manager commit - have=%d want=%d", mockZk.commitHistory[topicPartition], int64(b.N*msgsPerBatch-1))
-	}
 }
 
 func BenchmarkWorkerManager_1worker_1msg_10us(b *testing.B) {
