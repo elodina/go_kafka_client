@@ -30,7 +30,7 @@ type WorkerManager struct {
 	config              *ConsumerConfig
 	workers             []*Worker
 	availableWorkers    chan *Worker
-	currentBatch        map[TaskId]*Task //TODO inspect for race conditions
+	currentBatch        *taskBatch
 	batchOrder          []TaskId
 	inputChannel        chan []*Message
 	topicPartition      TopicAndPartition
@@ -66,7 +66,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		availableWorkers:    availableWorkers,
 		workers:             workers,
 		inputChannel:        make(chan []*Message),
-		currentBatch:        make(map[TaskId]*Task),
+		currentBatch:        newTaskBatch(),
 		batchOrder:          make([]TaskId, 0),
 		topicPartition:      topicPartition,
 		largestOffset:       InvalidOffset,
@@ -148,11 +148,11 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			topicPartition := TopicAndPartition{message.Topic, message.Partition}
 			id := TaskId{topicPartition, message.Offset}
 			wm.batchOrder = append(wm.batchOrder, id)
-			wm.currentBatch[id] = &Task{Msg: message}
+			wm.currentBatch.add(id, &Task{Msg: message})
 		}
-		wm.metrics.pendingWMsTasks().Inc(int64(len(wm.currentBatch)))
+		wm.metrics.pendingWMsTasks().Inc(int64(wm.currentBatch.numOutstanding()))
 		for _, id := range wm.batchOrder {
-			task := wm.currentBatch[id]
+			task := wm.currentBatch.get(id)
 			worker := <-wm.availableWorkers
 
 			if wm.shutdownDecision == nil {
@@ -213,7 +213,7 @@ func (wm *WorkerManager) commitOffset() {
 
 // Asks this WorkerManager whether the current batch is fully processed. Returns true if so, false otherwise.
 func (wm *WorkerManager) IsBatchProcessed() bool {
-	return len(wm.currentBatch) == 0
+	return wm.currentBatch.done()
 }
 
 func (wm *WorkerManager) processBatch() {
@@ -237,10 +237,10 @@ func (wm *WorkerManager) processBatch() {
 					continue
 				}
 
-				task := wm.currentBatch[result.Id()]
 				if result.Success() {
 					wm.taskSucceeded(result)
 				} else {
+					task := wm.currentBatch.get(result.Id())
 					if _, ok := result.(*TimedOutResult); ok {
 						wm.metrics.taskTimeouts().Inc(1)
 						task.Callee.OutputChannel = make(chan WorkerResult)
@@ -313,13 +313,6 @@ func (wm *WorkerManager) triggerShutdownIfRequired(decision *FailedDecision) {
 	}
 }
 
-func (wm *WorkerManager) stopBatch() {
-	wm.currentBatch = make(map[TaskId]*Task)
-	for _, worker := range wm.workers {
-		worker.OutputChannel = make(chan WorkerResult)
-	}
-}
-
 func (wm *WorkerManager) taskSucceeded(result WorkerResult) {
 	Tracef(wm, "Task is done: %d", result.Id().Offset)
 	wm.UpdateLargestOffset(result.Id().Offset)
@@ -328,8 +321,8 @@ func (wm *WorkerManager) taskSucceeded(result WorkerResult) {
 }
 
 func (wm *WorkerManager) taskIsDone(result WorkerResult) {
-	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
-	delete(wm.currentBatch, result.Id())
+	wm.availableWorkers <- wm.currentBatch.get(result.Id()).Callee
+	wm.currentBatch.markDone(result.Id())
 }
 
 // Gets the highest offset that has been processed by this WorkerManager.
@@ -569,3 +562,40 @@ const (
 	// Tells the worker manager not to commit offset and stop processing the current batch.
 	DoNotCommitOffsetAndStop
 )
+
+// taskBatch represents a batch of tasks which must be processed by workers
+type taskBatch struct {
+	tasks  map[TaskId]*Task
+	nTasks *int64
+	nDone  *int64
+}
+
+func newTaskBatch() *taskBatch {
+	var t, d int64 = 0, 0
+	return &taskBatch{
+		tasks:  make(map[TaskId]*Task),
+		nTasks: &t,
+		nDone:  &d,
+	}
+}
+
+func (b *taskBatch) add(id TaskId, task *Task) {
+	b.tasks[id] = task
+	atomic.AddInt64(b.nTasks, 1)
+}
+
+func (b *taskBatch) get(id TaskId) *Task {
+	return b.tasks[id]
+}
+
+func (b *taskBatch) markDone(id TaskId) {
+	atomic.AddInt64(b.nDone, 1)
+}
+
+func (b *taskBatch) numOutstanding() int {
+	return int(atomic.LoadInt64(b.nTasks) - atomic.LoadInt64(b.nDone))
+}
+
+func (b *taskBatch) done() bool {
+	return b.numOutstanding() == 0
+}

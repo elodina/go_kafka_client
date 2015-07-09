@@ -17,10 +17,11 @@ package go_kafka_client
 
 import (
 	"fmt"
-	metrics "github.com/rcrowley/go-metrics"
 	"io"
 	"strings"
 	"time"
+
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 type ConsumerMetrics struct {
@@ -44,7 +45,7 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	}
 
 	// Ensure prefix ends with a dot (.) so it plays nice with statsd/graphite
-	prefix = strings.Trim(prefix, " ") 
+	prefix = strings.Trim(prefix, " ")
 	if prefix != "" && prefix[len(prefix)-1:] != "." {
 		prefix += "."
 	}
