@@ -27,6 +27,13 @@ var slowStrategy = func(_ *Worker, _ *Message, id TaskId) WorkerResult {
 	return NewSuccessfulResult(id)
 }
 
+func sleepStrategy(sleepfor time.Duration) func(_ *Worker, _ *Message, id TaskId) WorkerResult {
+	return func(_ *Worker, _ *Message, id TaskId) WorkerResult {
+		time.Sleep(sleepfor)
+		return NewSuccessfulResult(id)
+	}
+}
+
 func TestFailureCounter(t *testing.T) {
 	threshold := int32(5)
 	failTimeWindow := 2 * time.Second
@@ -163,11 +170,11 @@ func checkAllWorkersAvailable(t *testing.T, wm *WorkerManager) {
 	}
 }
 
-func benchmarkWorkerManager(b *testing.B, numWorkers int, msgsPerBatch int) {
+func benchmarkWorkerManager(b *testing.B, numWorkers int, msgsPerBatch int, sleepFor time.Duration) {
 	wmid := "test-WM"
 	config := DefaultConsumerConfig()
 	config.NumWorkers = numWorkers
-	config.Strategy = goodStrategy
+	config.Strategy = sleepStrategy(sleepFor)
 	mockZk := newMockZookeeperCoordinator()
 	config.Coordinator = mockZk
 	config.OffsetStorage = mockZk
@@ -178,50 +185,126 @@ func benchmarkWorkerManager(b *testing.B, numWorkers int, msgsPerBatch int) {
 	manager := NewWorkerManager(wmid, config, topicPartition, metrics, closeConsumer)
 
 	go manager.Start()
-
 	batch := make([]*Message, msgsPerBatch)
-	for i := range batch {
-		batch[i] = &Message{Offset: int64(i)}
-	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		for j := range batch {
+			batch[j] = &Message{Offset: int64(i*msgsPerBatch + j)}
+		}
 		manager.inputChannel <- batch
 	}
 	<-manager.Stop()
+
+	// verify correctness
+	if mockZk.commitHistory[topicPartition] != int64(b.N*msgsPerBatch-1) {
+		b.Errorf("Worker manager commit - have=%d want=%d", mockZk.commitHistory[topicPartition], int64(b.N*msgsPerBatch-1))
+	}
 }
 
-func BenchmarkWorkerManager_SmallWorkerPoolSmallBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 2, 6)
+func BenchmarkWorkerManager_1worker_1msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 1, 10*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_MediumWorkerPoolSmallBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 30, 6)
+func BenchmarkWorkerManager_1worker_1msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 1, 100*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_LargeWorkerPoolSmallBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 100, 6)
+func BenchmarkWorkerManager_1worker_1msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 1, 1000*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_SmallWorkerPoolMediumBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 2, 100)
+func BenchmarkWorkerManager_1worker_10msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 10, 10*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_MediumWorkerPoolMediumBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 30, 100)
+func BenchmarkWorkerManager_1worker_10msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 10, 100*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_LargeWorkerPoolMediumBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 100, 100)
+func BenchmarkWorkerManager_1worker_10msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 10, 1000*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_SmallWorkerPoolLargeBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 2, 1000)
+func BenchmarkWorkerManager_1worker_100msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 10, 10*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_MediumWorkerPoolLargeBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 30, 1000)
+func BenchmarkWorkerManager_1worker_100msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 10, 100*time.Microsecond)
 }
 
-func BenchmarkWorkerManager_LargeWorkerPoolLargeBatch(b *testing.B) {
-	benchmarkWorkerManager(b, 100, 1000)
+func BenchmarkWorkerManager_1worker_100msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 1, 10, 1000*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_1msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 1, 10*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_1msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 1, 100*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_1msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 1, 1000*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_10msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 10, 10*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_10msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 10, 100*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_10msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 10, 1000*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_100msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 10, 10*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_100msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 10, 100*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_5worker_100msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 5, 10, 1000*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_1msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 1, 10*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_1msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 1, 100*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_1msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 1, 1000*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_10msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 10, 10*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_10msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 10, 100*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_10msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 10, 1000*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_100msg_10us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 10, 10*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_100msg_100us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 10, 100*time.Microsecond)
+}
+
+func BenchmarkWorkerManager_25worker_100msg_1000us(b *testing.B) {
+	benchmarkWorkerManager(b, 25, 10, 1000*time.Microsecond)
 }
