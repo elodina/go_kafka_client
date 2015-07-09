@@ -162,3 +162,66 @@ func checkAllWorkersAvailable(t *testing.T, wm *WorkerManager) {
 	case <-time.After(1 * time.Second):
 	}
 }
+
+func benchmarkWorkerManager(b *testing.B, numWorkers int, msgsPerBatch int) {
+	wmid := "test-WM"
+	config := DefaultConsumerConfig()
+	config.NumWorkers = numWorkers
+	config.Strategy = goodStrategy
+	mockZk := newMockZookeeperCoordinator()
+	config.Coordinator = mockZk
+	config.OffsetStorage = mockZk
+	topicPartition := TopicAndPartition{"fakeTopic", int32(0)}
+
+	metrics := newConsumerMetrics(wmid, "")
+	closeConsumer := make(chan bool)
+	manager := NewWorkerManager(wmid, config, topicPartition, metrics, closeConsumer)
+
+	go manager.Start()
+
+	batch := make([]*Message, msgsPerBatch)
+	for i := range batch {
+		batch[i] = &Message{Offset: int64(i)}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		manager.inputChannel <- batch
+	}
+	<-manager.Stop()
+}
+
+func BenchmarkWorkerManager_SmallWorkerPoolSmallBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 2, 6)
+}
+
+func BenchmarkWorkerManager_MediumWorkerPoolSmallBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 30, 6)
+}
+
+func BenchmarkWorkerManager_LargeWorkerPoolSmallBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 100, 6)
+}
+
+func BenchmarkWorkerManager_SmallWorkerPoolMediumBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 2, 100)
+}
+
+func BenchmarkWorkerManager_MediumWorkerPoolMediumBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 30, 100)
+}
+
+func BenchmarkWorkerManager_LargeWorkerPoolMediumBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 100, 100)
+}
+
+func BenchmarkWorkerManager_SmallWorkerPoolLargeBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 2, 1000)
+}
+
+func BenchmarkWorkerManager_MediumWorkerPoolLargeBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 30, 1000)
+}
+
+func BenchmarkWorkerManager_LargeWorkerPoolLargeBatch(b *testing.B) {
+	benchmarkWorkerManager(b, 100, 1000)
+}
