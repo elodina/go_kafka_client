@@ -224,6 +224,9 @@ const (
 	// A regular coordinator event that should normally trigger consumer rebalance.
 	Regular CoordinatorEvent = "Regular"
 
+	// Coordinator event that should trigger consumer re-registrer
+	Reinitialize CoordinatorEvent = "Reinitialize"
+
 	// A coordinator event that informs a consumer group of new deployed topics.
 	BlueGreenRequest CoordinatorEvent = "BlueGreenRequest"
 )

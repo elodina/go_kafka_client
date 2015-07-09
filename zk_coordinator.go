@@ -40,6 +40,8 @@ type ZookeeperCoordinator struct {
 	config      *ZookeeperConfig
 	zkConn      *zk.Conn
 	unsubscribe chan bool
+	closed bool
+	watches map[string]chan CoordinatorEvent
 }
 
 func (this *ZookeeperCoordinator) String() string {
@@ -52,31 +54,60 @@ func NewZookeeperCoordinator(Config *ZookeeperConfig) *ZookeeperCoordinator {
 	return &ZookeeperCoordinator{
 		config:      Config,
 		unsubscribe: make(chan bool),
+		watches: make(map[string]chan CoordinatorEvent),
 	}
 }
 
 /* Establish connection to this ConsumerCoordinator. Returns an error if fails to connect, nil otherwise. */
 func (this *ZookeeperCoordinator) Connect() (err error) {
+	var connectionEvents <-chan zk.Event
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		this.zkConn, err = this.tryConnect()
+		this.zkConn, connectionEvents, err = this.tryConnect()
 		if err == nil {
+			go this.listenConnectionEvents(connectionEvents)
 			return
 		}
 		Tracef(this, "Zookeeper connect failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff)
 	}
+
 	return
 }
 
-func (this *ZookeeperCoordinator) tryConnect() (zkConn *zk.Conn, err error) {
+func (this *ZookeeperCoordinator) tryConnect() (zkConn *zk.Conn, connectionEvents <-chan zk.Event, err error) {
 	Infof(this, "Connecting to ZK at %s\n", this.config.ZookeeperConnect)
-	zkConn, _, err = zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperTimeout)
+	zkConn, connectionEvents, err = zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperTimeout)
 	return
 }
 
 func (this *ZookeeperCoordinator) Disconnect() {
 	Infof(this, "Closing connection to ZK at %s\n", this.config.ZookeeperConnect)
+	this.closed = true
 	this.zkConn.Close()
+}
+
+func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan zk.Event) {
+	for event := range connectionEvents {
+		if (this.closed) {
+			return
+		}
+
+		if (event.State == zk.StateExpired && event.Type == zk.EventSession) {
+			err := this.Connect()
+			if (err != nil) {
+				panic(err)
+			}
+			for groupId, watch := range this.watches {
+				_, err := this.SubscribeForChanges(groupId)
+				if (err != nil) {
+					panic(err)
+				}
+				watch <- Reinitialize
+			}
+
+			return
+		}
+	}
 }
 
 /* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Groupid in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
@@ -443,7 +474,15 @@ func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (events <-
 }
 
 func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
-	changes := make(chan CoordinatorEvent)
+	var changes chan CoordinatorEvent
+	if _, ok := this.watches[Groupid]; !ok {
+		changes = make(chan CoordinatorEvent)
+		this.watches[Groupid] = changes
+	} else {
+		changes = this.watches[Groupid]
+	}
+
+
 	Infof(this, "Subscribing for changes for %s", Groupid)
 
 	consumersWatcher, err := this.getConsumersInGroupWatcher(Groupid)
