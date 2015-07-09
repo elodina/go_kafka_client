@@ -54,6 +54,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
+	topicCount                     TopicsToNumStreams
 
 	metrics *ConsumerMetrics
 
@@ -86,7 +87,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.LowLevelClient.Initialize(); err != nil {
 		panic(err)
 	}
-	c.metrics = newConsumerMetrics(c.String())
+	c.metrics = newConsumerMetrics(c.String(), config.MetricsPrefix)
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
 
 	go func() {
@@ -123,12 +124,12 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 		topicsToNumStreamsMap[topic] = c.config.NumConsumerFetchers
 	}
 
-	topicCount := &StaticTopicsToNumStreams{
+	c.topicCount = &StaticTopicsToNumStreams{
 		ConsumerId:            c.config.Consumerid,
 		TopicsToNumStreamsMap: topicsToNumStreamsMap,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
 	allTopics, err := c.config.Coordinator.GetAllTopics()
 	if err != nil {
 		panic(err)
@@ -140,7 +141,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 
 	time.Sleep(c.config.DeploymentTimeout)
 
-	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, allTopics, brokers, topicCount, topicPartitionMap)
+	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, allTopics, brokers, c.topicCount, topicPartitionMap)
 	partitionOwnershipDecision := newPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
 	topicPartitions := make([]*TopicAndPartition, 0)
@@ -238,12 +239,12 @@ func (c *Consumer) disconnectChannels(stopRedirects map[TopicAndPartition]chan b
 }
 
 func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
-	topicCount := &StaticTopicsToNumStreams{
+	c.topicCount = &StaticTopicsToNumStreams{
 		ConsumerId:            c.config.Consumerid,
 		TopicsToNumStreamsMap: topicCountMap,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
 
 	time.Sleep(c.config.DeploymentTimeout)
 
@@ -251,7 +252,7 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 }
 
 func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) {
-	topicCount := &WildcardTopicsToNumStreams{
+	c.topicCount = &WildcardTopicsToNumStreams{
 		Coordinator:           c.config.Coordinator,
 		ConsumerId:            c.config.Consumerid,
 		TopicFilter:           topicFilter,
@@ -259,7 +260,7 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 		ExcludeInternalTopics: c.config.ExcludeInternalTopics,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
 
 	time.Sleep(c.config.DeploymentTimeout)
 
@@ -394,10 +395,9 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		c.config.Coordinator.RemoveOldApiRequests(blueGreenRequest.Group)
 
 		//Generating new topicCount
-		var topicCount TopicsToNumStreams
 		switch blueGreenRequest.Pattern {
 		case blackListPattern:
-			topicCount = &WildcardTopicsToNumStreams{
+			c.topicCount = &WildcardTopicsToNumStreams{
 				Coordinator:           c.config.Coordinator,
 				ConsumerId:            c.config.Consumerid,
 				TopicFilter:           NewBlackList(blueGreenRequest.Topics),
@@ -405,7 +405,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 				ExcludeInternalTopics: c.config.ExcludeInternalTopics,
 			}
 		case whiteListPattern:
-			topicCount = &WildcardTopicsToNumStreams{
+			c.topicCount = &WildcardTopicsToNumStreams{
 				Coordinator:           c.config.Coordinator,
 				ConsumerId:            c.config.Consumerid,
 				TopicFilter:           NewWhiteList(blueGreenRequest.Topics),
@@ -418,7 +418,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 				for _, topic := range strings.Split(blueGreenRequest.Topics, ",") {
 					topicMap[topic] = c.config.NumConsumerFetchers
 				}
-				topicCount = &StaticTopicsToNumStreams{
+				c.topicCount = &StaticTopicsToNumStreams{
 					ConsumerId:            c.config.Consumerid,
 					TopicsToNumStreamsMap: topicMap,
 				}
@@ -426,7 +426,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		}
 
 		//Getting the partitions for specified topics
-		myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
+		myTopicThreadIds := c.topicCount.GetConsumerThreadIdsPerTopic()
 		topics := make([]string, 0)
 		for topic, _ := range myTopicThreadIds {
 			topics = append(topics, topic)
@@ -438,7 +438,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 
 		//Creating assignment context with new parameters
 		newContext := newStaticAssignmentContext(blueGreenRequest.Group, c.config.Consumerid, context.Consumers,
-			context.AllTopics, context.Brokers, topicCount, topicPartitionMap)
+			context.AllTopics, context.Brokers, c.topicCount, topicPartitionMap)
 		c.config.Groupid = blueGreenRequest.Group
 
 		//Resume consuming
@@ -453,7 +453,7 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
 	c.config.LowLevelClient.Initialize()
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
-	c.metrics = newConsumerMetrics(c.String())
+	c.metrics = newConsumerMetrics(c.String(), c.config.MetricsPrefix)
 
 	go func() {
 		<-c.close
@@ -563,6 +563,11 @@ func (c *Consumer) subscribeForChanges(group string) {
 								go c.handleBlueGreenRequest(requestId, request)
 								break
 							}
+						}
+					} else if eventType == Reinitialize {
+						err := c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
+						if err != nil {
+							panic(err)
 						}
 					} else {
 						go c.rebalance()
@@ -701,8 +706,9 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 	switch topicCount := assignmentContext.MyTopicToNumStreams.(type) {
 	case *StaticTopicsToNumStreams:
 		{
+			c.topicCount = topicCount
 			var numStreams int
-			for _, v := range topicCount.GetConsumerThreadIdsPerTopic() {
+			for _, v := range c.topicCount.GetConsumerThreadIdsPerTopic() {
 				numStreams = len(v)
 				break
 			}
@@ -711,6 +717,7 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 		}
 	case *WildcardTopicsToNumStreams:
 		{
+			c.topicCount = topicCount
 			c.updateFetcher(topicCount.NumStreams)
 		}
 	}

@@ -109,10 +109,10 @@ func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 		logLineSchema = readLoglineSchema()
 	}
 	return &MirrorMaker{
-		config:      config,
+		config:        config,
 		logLineSchema: logLineSchema,
-		evolutioned: newSchemaSet(),
-		errors:      make(chan *FailedMessage),
+		evolutioned:   newSchemaSet(),
+		errors:        make(chan *FailedMessage),
 	}
 }
 
