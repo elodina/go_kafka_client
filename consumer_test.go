@@ -345,7 +345,7 @@ func TestBlueGreenDeployment(t *testing.T) {
 
 	coordinator.RequestBlueGreenDeployment(blue, green)
 
-	time.Sleep(120 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	//All Blue consumers should switch to Green group and change topic to inactive
 	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
@@ -374,6 +374,8 @@ func TestBlueGreenDeployment(t *testing.T) {
 	//At this stage Blue group became Green group
 	//and Green group became Blue group
 
+	time.Sleep(10 * time.Second)
+
 	//Producing messages to both topics
 	produceMessages := 10
 	Infof(activeTopic, "Produce %d message", produceMessages)
@@ -382,7 +384,7 @@ func TestBlueGreenDeployment(t *testing.T) {
 	Infof(inactiveTopic, "Produce %d message", produceMessages)
 	go produceN(t, produceMessages, inactiveTopic, localBroker)
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	//Green group consumes from inactive topic
 	assert(t, processedInactiveMessages, produceMessages)
