@@ -54,7 +54,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
-	topicCount					   TopicsToNumStreams
+	topicCount                     TopicsToNumStreams
 
 	metrics *ConsumerMetrics
 

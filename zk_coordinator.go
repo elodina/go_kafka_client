@@ -40,8 +40,8 @@ type ZookeeperCoordinator struct {
 	config      *ZookeeperConfig
 	zkConn      *zk.Conn
 	unsubscribe chan bool
-	closed bool
-	watches map[string]chan CoordinatorEvent
+	closed      bool
+	watches     map[string]chan CoordinatorEvent
 }
 
 func (this *ZookeeperCoordinator) String() string {
@@ -54,7 +54,7 @@ func NewZookeeperCoordinator(Config *ZookeeperConfig) *ZookeeperCoordinator {
 	return &ZookeeperCoordinator{
 		config:      Config,
 		unsubscribe: make(chan bool),
-		watches: make(map[string]chan CoordinatorEvent),
+		watches:     make(map[string]chan CoordinatorEvent),
 	}
 }
 
@@ -88,18 +88,18 @@ func (this *ZookeeperCoordinator) Disconnect() {
 
 func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan zk.Event) {
 	for event := range connectionEvents {
-		if (this.closed) {
+		if this.closed {
 			return
 		}
 
-		if (event.State == zk.StateExpired && event.Type == zk.EventSession) {
+		if event.State == zk.StateExpired && event.Type == zk.EventSession {
 			err := this.Connect()
-			if (err != nil) {
+			if err != nil {
 				panic(err)
 			}
 			for groupId, watch := range this.watches {
 				_, err := this.SubscribeForChanges(groupId)
-				if (err != nil) {
+				if err != nil {
 					panic(err)
 				}
 				watch <- Reinitialize
@@ -481,7 +481,6 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 	} else {
 		changes = this.watches[Groupid]
 	}
-
 
 	Infof(this, "Subscribing for changes for %s", Groupid)
 

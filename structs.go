@@ -233,13 +233,13 @@ const (
 
 // OffsetStorage is used to store and retrieve consumer offsets.
 type OffsetStorage interface {
-    // Gets the offset for a given group, topic and partition.
-    // May return an error if fails to retrieve the offset.
-    GetOffset(group string, topic string, partition int32) (int64, error)
+	// Gets the offset for a given group, topic and partition.
+	// May return an error if fails to retrieve the offset.
+	GetOffset(group string, topic string, partition int32) (int64, error)
 
-    // Commits the given offset for a given group, topic and partition.
-    // May return an error if fails to commit the offset.
-    CommitOffset(group string, topic string, partition int32, offset int64) error
+	// Commits the given offset for a given group, topic and partition.
+	// May return an error if fails to commit the offset.
+	CommitOffset(group string, topic string, partition int32, offset int64) error
 }
 
 // Represents a consumer state snapshot.
