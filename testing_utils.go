@@ -147,7 +147,7 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 	clientConfig := sarama.NewConfig()
-    clientConfig.Producer.Timeout = 10 * time.Second
+	clientConfig.Producer.Timeout = 10 * time.Second
 	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +173,7 @@ func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, 
 	clientConfig := sarama.NewConfig()
 	partitionerFactory := &SaramaPartitionerFactory{NewFixedPartitioner}
 	clientConfig.Producer.Partitioner = partitionerFactory.PartitionerConstructor
-    clientConfig.Producer.Timeout = 10 * time.Second
+	clientConfig.Producer.Timeout = 10 * time.Second
 	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +199,7 @@ func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, 
 func produce(t *testing.T, messages []string, topic string, brokerAddr string, compression sarama.CompressionCodec) {
 	clientConfig := sarama.NewConfig()
 	clientConfig.Producer.Compression = compression
-    clientConfig.Producer.Timeout = 10 * time.Second
+	clientConfig.Producer.Timeout = 10 * time.Second
 	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
 	if err != nil {
 		t.Fatal(err)

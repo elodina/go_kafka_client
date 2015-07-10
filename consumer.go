@@ -54,9 +54,9 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
-	bgInProgress					bool
-	bgInProgressLock				sync.Mutex
-	bgInProgressCond				*sync.Cond
+	bgInProgress                   bool
+	bgInProgressLock               sync.Mutex
+	bgInProgressCond               *sync.Cond
 
 	metrics *ConsumerMetrics
 

@@ -326,13 +326,13 @@ func (this *SiestaClient) GetAvailableOffset(topic string, partition int32, offs
 // Gets the offset for a given group, topic and partition.
 // May return an error if fails to retrieve the offset.
 func (this *SiestaClient) GetOffset(group string, topic string, partition int32) (int64, error) {
-    return this.connector.GetOffset(group, topic, partition)
+	return this.connector.GetOffset(group, topic, partition)
 }
 
 // Commits the given offset for a given group, topic and partition.
 // May return an error if fails to commit the offset.
 func (this *SiestaClient) CommitOffset(group string, topic string, partition int32, offset int64) error {
-    return this.connector.CommitOffset(group, topic, partition, offset)
+	return this.connector.CommitOffset(group, topic, partition, offset)
 }
 
 // Gracefully shuts down this client.
