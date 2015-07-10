@@ -186,13 +186,20 @@ func (c *Consumer) startStreams() {
 				Debug(c, "Stop streams")
 				c.disconnectChannels(stopRedirects)
 
+				exit := false
 				inLock(&c.bgInProgressLock, func() {
-					for c.bgInProgress {
-						c.bgInProgressCond.Wait()
+					if c.bgInProgress {
+						for c.bgInProgress {
+							c.bgInProgressCond.Wait()
+						}
+					} else {
+						exit = true
 					}
 				})
 
-				return
+				if exit {
+					return
+				}
 			}
 		case tp := <-c.disconnectChannelsForPartition:
 			{
