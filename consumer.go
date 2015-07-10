@@ -53,6 +53,7 @@ type Consumer struct {
 	workerManagers                 map[TopicAndPartition]*WorkerManager
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
+	close                          chan bool
 
 	metrics *ConsumerMetrics
 
@@ -76,6 +77,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		disconnectChannelsForPartition: make(chan TopicAndPartition),
 		workerManagers:                 make(map[TopicAndPartition]*WorkerManager),
 		stopStreams:                    make(chan bool),
+		close:                          make(chan bool),
 	}
 
 	if err := c.config.Coordinator.Connect(); err != nil {
@@ -84,8 +86,15 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 	if err := c.config.LowLevelClient.Initialize(); err != nil {
 		panic(err)
 	}
-	c.metrics = newConsumerMetrics(c.String())
+	c.metrics = newConsumerMetrics(c.String(), config.MetricsPrefix)
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+
+	go func() {
+		<-c.close
+		if !c.isShuttingdown {
+			c.Close()
+		}
+	}()
 
 	return c
 }
@@ -274,7 +283,7 @@ func (c *Consumer) initializeWorkerManagers() {
 				topicPartition := TopicAndPartition{topic, partition}
 				workerManager, exists := c.workerManagers[topicPartition]
 				if !exists {
-					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.metrics)
+					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.metrics, c.close)
 					c.workerManagers[topicPartition] = workerManager
 					go workerManager.Start()
 				}
@@ -290,6 +299,12 @@ func (c *Consumer) Close() <-chan bool {
 	Info(c, "Consumer closing started...")
 	c.isShuttingdown = true
 	go func() {
+		select {
+		case c.close <- true:
+		default:
+		}
+
+		Info(c, "Unsubscribing...")
 		if c.shouldUnsubscribe {
 			c.unsubscribeFromChanges()
 		}
@@ -317,8 +332,10 @@ func (c *Consumer) Close() <-chan bool {
 
 		Info(c, "Unregistering all metrics")
 		c.metrics.close()
+		Info(c, "Unregistered all metrics")
 
 		c.closeFinished <- true
+		Info(c, "Sent close finished")
 	}()
 	return c.closeFinished
 }
@@ -327,7 +344,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 	var context *assignmentContext
 	//Waiting for everybody in group to acknowledge the request, then closing
 	inLock(&c.rebalanceLock, func() {
-		Infof("Starting blue-green procedure for: %s", blueGreenRequest)
+		Infof(c, "Starting blue-green procedure for: %s", blueGreenRequest)
 		var err error
 		var stateHash string
 		barrierPassed := false
@@ -351,9 +368,12 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 			panic(fmt.Sprintf("Failed to connect to Coordinator: %s", err))
 		}
 
-		//Waiting for target group to leave the group
+		// Waiting for target group to leave the group
 		amountOfConsumersInTargetGroup := -1
-		for amountOfConsumersInTargetGroup != 0 {
+		// If the current owner of a partition isn't BG aware it will never give up it's ownership
+		// gracefully.  In that case try a best effort of 30 retries, but then take it over anyway.
+		maxRetries := 30 // Don't want to wait in this loop indefinitely.
+		for retries := 0; retries < maxRetries && amountOfConsumersInTargetGroup != 0; retries++ {
 			consumersInTargetGroup, err := c.config.Coordinator.GetConsumersInGroup(blueGreenRequest.Group)
 			if err != nil {
 				panic(fmt.Sprintf("Failed to perform blue-green procedure due to: %s", err))
@@ -433,7 +453,14 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
 	c.config.LowLevelClient.Initialize()
 	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
-	c.metrics = newConsumerMetrics(c.String())
+	c.metrics = newConsumerMetrics(c.String(), c.config.MetricsPrefix)
+
+	go func() {
+		<-c.close
+		if !c.isShuttingdown {
+			c.Close()
+		}
+	}()
 
 	go c.startStreams()
 
@@ -567,7 +594,8 @@ func (c *Consumer) rebalance() {
 				var context *assignmentContext
 				var err error
 				barrierPassed := false
-				for !barrierPassed {
+				timeLimit := time.Now().Add(3*time.Minute)
+				for !barrierPassed && time.Now().Before(timeLimit) {
 					context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
 						c.config.ExcludeInternalTopics, c.config.Coordinator)
 					if err != nil {
@@ -589,6 +617,9 @@ func (c *Consumer) rebalance() {
 					barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
 						stateHash, barrierSize, string(Rebalance),
 						barrierTimeout)
+				}
+				if !barrierPassed {
+					panic("Could not reach consensus on state barrier.")
 				}
 
 				if tryRebalance(c, context, partitionAssignor) {

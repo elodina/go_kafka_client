@@ -164,6 +164,9 @@ type ConsumerConfig struct {
 
 	/* Flag for debug mode */
 	Debug bool
+
+	/* Metrics Prefix if the client wants to organize the way metric names are emitted. (optional) */
+	MetricsPrefix string
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.

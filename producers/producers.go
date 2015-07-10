@@ -18,7 +18,7 @@
 package main
 
 import (
-    "code.google.com/p/go-uuid/uuid"
+    uuid "github.com/satori/go.uuid"
     "fmt"
     "github.com/Shopify/sarama"
     metrics "github.com/rcrowley/go-metrics"
@@ -89,21 +89,22 @@ func main() {
     saramaError := make(chan *sarama.ProducerError)
     saramaSuccess := make(chan *sarama.ProducerMessage)
 
+    clientConfig := sarama.NewConfig()
+    clientConfig.ClientID = uuid.NewV1().String()
+    clientConfig.Producer.Flush.Messages = flushMsgCount
+    clientConfig.Producer.Flush.Frequency = flushFrequency
+    clientConfig.Producer.Flush.MaxMessages = maxMessagesPerReq
+    clientConfig.Producer.Return.Successes = true
+    clientConfig.Producer.RequiredAcks = sarama.NoResponse //WaitForAll
+    clientConfig.Producer.Timeout = 1000 * time.Millisecond
+    client, err := sarama.NewClient([]string{brokerConnect}, clientConfig)
     for i := 0; i < producerCount; i++ {
-        client, err := sarama.NewClient(uuid.New(), []string{brokerConnect}, sarama.NewClientConfig())
         if err != nil {
             panic(err)
         }
-
-        config := sarama.NewProducerConfig()
-        config.FlushMsgCount = flushMsgCount
-        config.FlushFrequency = flushFrequency
-        config.AckSuccesses = true
-        config.RequiredAcks = sarama.NoResponse //WaitForAll
-        config.MaxMessagesPerReq = maxMessagesPerReq
-        config.Timeout = 1000 * time.Millisecond
+        
         //		config.Compression = 2
-        producer, err := sarama.NewProducer(client, config)
+        producer, err := sarama.NewAsyncProducerFromClient(client)
         go func() {
             if err != nil {
                 panic(err)
