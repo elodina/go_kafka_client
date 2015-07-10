@@ -24,9 +24,9 @@ import (
 
 type SaramaProducer struct {
 	saramaProducer sarama.AsyncProducer
-    input chan *ProducerMessage
-    successes chan *ProducerMessage
-    errors chan *FailedMessage
+	input          chan *ProducerMessage
+	successes      chan *ProducerMessage
+	errors         chan *FailedMessage
 	config         *ProducerConfig
 }
 
@@ -70,15 +70,15 @@ func NewSaramaProducer(conf *ProducerConfig) Producer {
 		saramaProducer: producer,
 		config:         conf,
 	}
-    saramaProducer.initSuccesses()
-    saramaProducer.initErrors()
-    saramaProducer.initInput()
+	saramaProducer.initSuccesses()
+	saramaProducer.initErrors()
+	saramaProducer.initInput()
 
-    return saramaProducer
+	return saramaProducer
 }
 
 func (this *SaramaProducer) Errors() <-chan *FailedMessage {
-    return this.errors
+	return this.errors
 }
 
 func (this *SaramaProducer) initErrors() {
@@ -106,7 +106,7 @@ func (this *SaramaProducer) initErrors() {
 }
 
 func (this *SaramaProducer) Successes() <-chan *ProducerMessage {
-    return this.successes
+	return this.successes
 }
 
 func (this *SaramaProducer) initSuccesses() {
@@ -134,7 +134,7 @@ func (this *SaramaProducer) initSuccesses() {
 }
 
 func (this *SaramaProducer) Input() chan<- *ProducerMessage {
-    return this.input
+	return this.input
 }
 
 func (this *SaramaProducer) initInput() {
