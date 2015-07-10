@@ -328,11 +328,13 @@ func TestBlueGreenDeployment(t *testing.T) {
 	greenGroupConsumers := []*Consumer{createConsumerForGroup(greenGroup, activeStrategy), createConsumerForGroup(greenGroup, activeStrategy)}
 
 	for _, consumer := range blueGroupConsumers {
+		consumer.config.BarrierTimeout = 10 * time.Second
 		go consumer.StartStatic(map[string]int{
 			activeTopic: 1,
 		})
 	}
 	for _, consumer := range greenGroupConsumers {
+		consumer.config.BarrierTimeout = 10 * time.Second
 		go consumer.StartStatic(map[string]int{
 			inactiveTopic: 1,
 		})
@@ -345,7 +347,7 @@ func TestBlueGreenDeployment(t *testing.T) {
 
 	coordinator.RequestBlueGreenDeployment(blue, green)
 
-	time.Sleep(60 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	//All Blue consumers should switch to Green group and change topic to inactive
 	greenConsumerIds, _ := coordinator.GetConsumersInGroup(greenGroup)
@@ -373,8 +375,6 @@ func TestBlueGreenDeployment(t *testing.T) {
 
 	//At this stage Blue group became Green group
 	//and Green group became Blue group
-
-	time.Sleep(10 * time.Second)
 
 	//Producing messages to both topics
 	produceMessages := 10
