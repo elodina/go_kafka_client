@@ -54,6 +54,9 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
+	bgInProgress                   bool
+	bgInProgressLock               sync.Mutex
+	bgInProgressCond               *sync.Cond
 
 	metrics *ConsumerMetrics
 
@@ -79,6 +82,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		stopStreams:                    make(chan bool),
 		close:                          make(chan bool),
 	}
+	c.bgInProgressCond = sync.NewCond(&c.bgInProgressLock)
 
 	if err := c.config.Coordinator.Connect(); err != nil {
 		panic(err)
@@ -181,7 +185,21 @@ func (c *Consumer) startStreams() {
 			{
 				Debug(c, "Stop streams")
 				c.disconnectChannels(stopRedirects)
-				return
+
+				exit := false
+				inLock(&c.bgInProgressLock, func() {
+					if c.bgInProgress {
+						for c.bgInProgress {
+							c.bgInProgressCond.Wait()
+						}
+					} else {
+						exit = true
+					}
+				})
+
+				if exit {
+					return
+				}
 			}
 		case tp := <-c.disconnectChannelsForPartition:
 			{
@@ -361,6 +379,9 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 				barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
 		}
 
+		inLock(&c.bgInProgressLock, func() {
+			c.bgInProgress = true
+		})
 		<-c.Close()
 
 		err = c.config.Coordinator.Connect()
@@ -462,7 +483,10 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 		}
 	}()
 
-	go c.startStreams()
+	inLock(&c.bgInProgressLock, func() {
+		c.bgInProgress = false
+		c.bgInProgressCond.Broadcast()
+	})
 
 	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	partitionOwnershipDecision := partitionAssignor(context)
