@@ -481,8 +481,6 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 		c.bgInProgressCond.Broadcast()
 	})
 
-	go c.startStreams()
-
 	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	partitionOwnershipDecision := partitionAssignor(context)
 	topicPartitions := make([]*TopicAndPartition, 0)
