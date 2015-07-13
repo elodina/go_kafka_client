@@ -19,7 +19,7 @@ import (
     "flag"
     "os"
     "fmt"
-    kafka "github.com/stealthly/go_kafka_client"
+    kafka "github.com/CrowdStrike/go_kafka_client"
     "github.com/stealthly/go-avro"
     "strings"
     "os/signal"

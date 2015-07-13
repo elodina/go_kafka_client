@@ -20,7 +20,7 @@ package main
 import (
 	"fmt"
 	metrics "github.com/rcrowley/go-metrics"
-	kafkaClient "github.com/stealthly/go_kafka_client"
+	kafkaClient "github.com/CrowdStrike/go_kafka_client"
 	"net"
 	"os"
 	"os/signal"

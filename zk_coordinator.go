@@ -707,7 +707,7 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 	blackholeFunc := func(blackhole <-chan zk.Event) {
 		<-blackhole
 	}
-	
+
 	for {
 		select {
 		// Using a priority select to provide precedence to the stop chan
@@ -727,7 +727,7 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
 			select {
 			case <-stopChan:
-				go blackholeFunc(zkMemberJoinedWatcher) 
+				go blackholeFunc(zkMemberJoinedWatcher)
 				return
 			case <-zkMemberJoinedWatcher:
 				continue
