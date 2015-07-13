@@ -208,10 +208,12 @@ func (c *Consumer) startStreams() {
 				delete(stopRedirects, tp)
 
 				Debugf(c, "Stopping worker manager for %s", tp)
+				timeout := time.NewTimer(5 * time.Second)
 				select {
 				case <-c.workerManagers[tp].Stop():
-				case <-time.After(5 * time.Second):
+				case <-timeout.C:
 				}
+				timeout.Stop()
 				delete(c.workerManagers, tp)
 
 				Debugf(c, "Stopping buffer: %s", c.topicPartitionsAndBuffers[tp])
@@ -528,6 +530,7 @@ func (c *Consumer) stopWorkerManagers() bool {
 			}
 			Debugf(c, "Worker channels length: %d", len(wmStopChannels))
 			notifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
+			timeout := time.NewTimer(c.config.WorkerManagersStopTimeout)
 			select {
 			case <-wmsAreStopped:
 				{
@@ -535,12 +538,13 @@ func (c *Consumer) stopWorkerManagers() bool {
 					c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 					success = true
 				}
-			case <-time.After(c.config.WorkerManagersStopTimeout):
+			case <-timeout.C:
 				{
 					Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
 					success = false
 				}
 			}
+			timeout.Stop()
 		} else {
 			Debug(c, "No worker managers to close")
 			success = true

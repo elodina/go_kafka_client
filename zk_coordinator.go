@@ -650,11 +650,13 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 		stopChan := make(chan struct{})
 		barrierTimeout := barrierExpiration.Sub(time.Now())
 		go this.waitForMembersToJoin(barrierPath, barrierSize, membershipDoneChan, stopChan)
+		timeout := time.NewTimer(barrierTimeout)
 		select {
 		case err = <- membershipDoneChan:
+			timeout.Stop()
 			// break the select
 			break
-		case <- time.After(barrierTimeout):
+		case <-timeout.C:
 			stopChan <- struct{}{}
 			err = fmt.Errorf("Timedout waiting for consensus on barrier path %s", barrierPath)
 		}
@@ -707,7 +709,7 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 	blackholeFunc := func(blackhole <-chan zk.Event) {
 		<-blackhole
 	}
-	
+
 	for {
 		select {
 		// Using a priority select to provide precedence to the stop chan
@@ -727,7 +729,7 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
 			select {
 			case <-stopChan:
-				go blackholeFunc(zkMemberJoinedWatcher) 
+				go blackholeFunc(zkMemberJoinedWatcher)
 				return
 			case <-zkMemberJoinedWatcher:
 				continue
