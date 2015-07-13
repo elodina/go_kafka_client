@@ -44,7 +44,7 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	}
 
 	// Ensure prefix ends with a dot (.) so it plays nice with statsd/graphite
-	prefix = strings.Trim(prefix, " ") 
+	prefix = strings.Trim(prefix, " ")
 	if prefix != "" && prefix[len(prefix)-1:] != "." {
 		prefix += "."
 	}

@@ -175,11 +175,11 @@ func (this *SyslogProducer) startProducers() {
 	config.ClientID = conf.Clientid
 	config.ChannelBufferSize = conf.SendBufferSize
 	switch strings.ToLower(conf.CompressionCodec) {
-		case "none":
+	case "none":
 		config.Producer.Compression = sarama.CompressionNone
-		case "gzip":
+	case "gzip":
 		config.Producer.Compression = sarama.CompressionGZIP
-		case "snappy":
+	case "snappy":
 		config.Producer.Compression = sarama.CompressionSnappy
 	}
 	config.Producer.Flush.Bytes = conf.FlushByteCount
