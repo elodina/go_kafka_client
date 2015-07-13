@@ -75,10 +75,12 @@ func (mb *messageBuffer) flush() {
 		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 	flushLoop:
 		for {
+			timeout := time.NewTimer(200 * time.Millisecond)
 			select {
 			case mb.OutputChannel <- mb.Messages:
+				timeout.Stop()
 				break flushLoop
-			case <-time.After(200 * time.Millisecond):
+			case <-timeout.C:
 				if mb.stopSending {
 					return
 				}
@@ -124,13 +126,15 @@ func (mb *messageBuffer) addBatch(messages []*Message) {
 
 	askNextLoop:
 		for !mb.stopSending {
+			timeout := time.NewTimer(mb.Config.RequeueAskNextBackoff)
 			select {
 			case mb.askNextBatch <- mb.TopicPartition:
 				{
+					timeout.Stop()
 					Trace(mb, "Asking for next batch")
 					break askNextLoop
 				}
-			case <-time.After(mb.Config.RequeueAskNextBackoff):
+			case <-timeout.C:
 			}
 		}
 	})
