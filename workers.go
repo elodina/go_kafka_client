@@ -102,11 +102,15 @@ func (wm *WorkerManager) Start() {
 			case batch := <-wm.inputChannel:
 				{
 					wm.metrics.wMsIdle().Update(time.Since(startIdle))
-					Trace(wm, "WorkerManager got batch")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "WorkerManager got batch")
+					}
 					wm.metrics.wMsBatchDuration().Time(func() {
 						wm.startBatch(batch)
 					})
-					Trace(wm, "WorkerManager got batch processed")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "WorkerManager got batch processed")
+					}
 				}
 			case <-wm.managerStop:
 				return
@@ -188,7 +192,9 @@ func (wm *WorkerManager) commitBatch() {
 
 func (wm *WorkerManager) commitOffset() {
 	largestOffset := wm.GetLargestOffset()
-	Tracef(wm, "Inside commit offset with largest %d and last %d", largestOffset, wm.lastCommittedOffset)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(wm, "Inside commit offset with largest %d and last %d", largestOffset, wm.lastCommittedOffset)
+	}
 	if largestOffset <= wm.lastCommittedOffset || isOffsetInvalid(largestOffset) {
 		return
 	}
@@ -198,7 +204,9 @@ func (wm *WorkerManager) commitOffset() {
 		err := wm.config.OffsetStorage.CommitOffset(wm.config.Groupid, wm.topicPartition.Topic, wm.topicPartition.Partition, largestOffset)
 		if err == nil {
 			success = true
-			Tracef(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
+			if Logger.IsAllowed(TraceLevel) {
+				Tracef(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
+			}
 			break
 		} else {
 			Warnf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
@@ -289,9 +297,13 @@ func (wm *WorkerManager) processBatch() {
 				}
 
 				if wm.IsBatchProcessed() {
-					Trace(wm, "Sending batch processed")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "Sending batch processed")
+					}
 					wm.batchProcessed <- true
-					Trace(wm, "Received batch processed")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "Received batch processed")
+					}
 				}
 			}
 		case <-wm.processingStop:
@@ -316,7 +328,9 @@ func (wm *WorkerManager) triggerShutdownIfRequired(decision *FailedDecision) {
 }
 
 func (wm *WorkerManager) taskSucceeded(result WorkerResult) {
-	Tracef(wm, "Task is done: %d", result.Id().Offset)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(wm, "Task is done: %d", result.Id().Offset)
+	}
 	wm.UpdateLargestOffset(result.Id().Offset)
 	wm.taskIsDone(result)
 	wm.metrics.activeWorkers().Dec(1)
