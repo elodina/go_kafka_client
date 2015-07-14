@@ -652,7 +652,7 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 		go this.waitForMembersToJoin(barrierPath, barrierSize, membershipDoneChan, stopChan)
 		timeout := time.NewTimer(barrierTimeout)
 		select {
-		case err = <- membershipDoneChan:
+		case err = <-membershipDoneChan:
 			timeout.Stop()
 			// break the select
 			break
@@ -680,7 +680,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(barrierPath, consumerId strin
 		// Attempt to create the barrier path, with a shared deadline
 		_, err = this.zkConn.Create(barrierPath, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
 		if err != nil {
-			if err != zk.ErrNodeExists{
+			if err != zk.ErrNodeExists {
 				continue
 			}
 			// If the barrier path already exists, read it's value
@@ -702,7 +702,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(barrierPath, consumerId strin
 	return time.Now(), fmt.Errorf("Failed to join state barrier %s after %d retries", barrierPath, this.config.MaxRequestRetries)
 }
 
-func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expected int, doneChan chan <- error, stopChan <- chan struct{}) {
+func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expected int, doneChan chan<- error, stopChan <-chan struct{}) {
 	// Make sure we clean up the channel.
 	defer close(doneChan)
 

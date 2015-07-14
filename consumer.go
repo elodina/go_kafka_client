@@ -622,7 +622,7 @@ func (c *Consumer) rebalance() {
 				var context *assignmentContext
 				var err error
 				barrierPassed := false
-				timeLimit := time.Now().Add(3*time.Minute)
+				timeLimit := time.Now().Add(3 * time.Minute)
 				for !barrierPassed && time.Now().Before(timeLimit) {
 					context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
 						c.config.ExcludeInternalTopics, c.config.Coordinator)
