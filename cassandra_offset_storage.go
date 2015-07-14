@@ -3,8 +3,6 @@ package go_kafka_client
 import (
     cql "github.com/gocql/gocql"
     "sync"
-    "fmt"
-    "strings"
 )
 
 type CassandraOffsetStorage struct {
@@ -25,8 +23,8 @@ func NewCassandraOffsetStorage(host string, keyspace string) *CassandraOffsetSto
 func (this *CassandraOffsetStorage) GetOffset (group string, topic string, partition int32) (int64, error) {
     this.ensureConnection(group)
     response := &OffsetResponse{}
-    data := this.connection.Query(fmt.Sprintf("SELECT * FROM %s WHERE topic = ? AND partition = ? LIMIT 1", strings.Replace(group, "-", "", -1)), topic, partition).Iter()
-    data.Scan(&response.Topic, &response.Partition, &response.LastOffset, &response.TraceData, &response.Updated)
+    data := this.connection.Query("SELECT group, topic, partition, last_offset, dateof(updated) as updated FROM kafka_offsets WHERE group = ? AND topic = ? AND partition = ? LIMIT 1", group, topic, partition).Iter()
+    data.Scan(&response.Group, &response.Topic, &response.Partition, &response.LastOffset, &response.TraceData, &response.Updated)
     if err := data.Close(); err != nil {
         return InvalidOffset, err
     }
@@ -38,7 +36,7 @@ func (this *CassandraOffsetStorage) GetOffset (group string, topic string, parti
 // May return an error if fails to commit the offset.
 func (this *CassandraOffsetStorage) CommitOffset (group string, topic string, partition int32, offset int64) error {
     this.ensureConnection(group)
-    return this.connection.Query(fmt.Sprintf("UPDATE %s SET last_offset = ?, updated = dateof(now()) WHERE topic = ? AND partition = ?", strings.Replace(group, "-", "", -1)), offset, topic, partition).Exec()
+    return this.connection.Query("INSERT INTO kafka_offsets(group, topic, partition, last_offset, updated) VALUES(?, ?, ?, ?, now())", group, topic, partition, offset).Exec()
 }
 
 func (this *CassandraOffsetStorage) ensureConnection(consumerGroup string) {
@@ -50,14 +48,14 @@ func (this *CassandraOffsetStorage) ensureConnection(consumerGroup string) {
                 if err != nil {
                     panic(err)
                 }
-                query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s(topic text, partition int, last_offset int, trace_data blob, updated timestamp, PRIMARY KEY(topic, partition))", strings.Replace(consumerGroup, "-", "", -1))
-                this.connection.Query(query).Exec()
+                this.connection.Query("CREATE TABLE IF NOT EXISTS kafka_offsets(group text, topic text, partition int, last_offset int, trace_data blob, updated timeuuid, PRIMARY KEY((group, topic, partition), last_offset, updated)) WITH CLUSTERING ORDER BY (last_offset DESC, updated DESC)").Exec()
             }
         })
     }
 }
 
 type OffsetResponse struct {
+    Group string
     Topic string
     Partition int32
     LastOffset int64
