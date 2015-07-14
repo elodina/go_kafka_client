@@ -620,7 +620,6 @@ func TestConsumeOnePartitionWithData(t *testing.T) {
 
 func testConsumerConfig() *ConsumerConfig {
 	config := DefaultConsumerConfig()
-	config.OffsetStorage = NewCassandraOffsetStorage("localhost", "offsets")
 	config.AutoOffsetReset = SmallestOffset
 	config.WorkerFailureCallback = func(_ *WorkerManager) FailedDecision {
 		return CommitOffsetAndContinue
