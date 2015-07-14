@@ -170,13 +170,15 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 
 func (wm *WorkerManager) commitBatch() {
 	for {
+		timeout := time.NewTimer(wm.config.OffsetCommitInterval)
 		select {
 		case <-wm.commitStop:
 			{
+				timeout.Stop()
 				wm.commitOffset()
 				return
 			}
-		case <-time.After(wm.config.OffsetCommitInterval):
+		case <-timeout.C:
 			{
 				wm.commitOffset()
 			}
@@ -361,24 +363,28 @@ func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 		go func() {
 			result := strategy(w, task.Msg, task.Id())
 			for !shouldStop {
+				timeout := time.NewTimer(5 * time.Second)
 				select {
 				case resultChannel <- result:
+					timeout.Stop()
 					return
-				case <-time.After(5 * time.Second):
+				case <-timeout.C:
 				}
 			}
 		}()
+		timeout := time.NewTimer(w.TaskTimeout)
 		select {
 		case result := <-resultChannel:
 			{
 				w.OutputChannel <- result
 			}
-		case <-time.After(w.TaskTimeout):
+		case <-timeout.C:
 			{
 				shouldStop = true
 				w.OutputChannel <- &TimedOutResult{task.Id()}
 			}
 		}
+		timeout.Stop()
 	}()
 }
 
@@ -408,8 +414,9 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 	}
 	go func() {
 		for {
+			timeout := time.NewTimer(WorkerThresholdTimeWindow)
 			select {
-			case <-time.After(WorkerThresholdTimeWindow):
+			case <-timeout.C:
 				{
 					if counter.count >= FailedThreshold {
 						counter.failed = true
@@ -421,6 +428,7 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 					}
 				}
 			case <-counter.stop:
+				timeout.Stop()
 				return
 			}
 		}

@@ -302,10 +302,12 @@ func (f *consumerFetcherRoutine) addPartitions(partitionTopicInfos map[TopicAndP
 		Debugf(f, "Sending ask next to %s for %s", f, topicAndPartition)
 	Loop:
 		for {
+			timeout := time.NewTimer(1 * time.Second)
 			select {
 			case askNext <- topicAndPartition:
+				timeout.Stop()
 				break Loop
-			case <-time.After(1 * time.Second):
+			case <-timeout.C:
 				{
 					if f.manager.shuttingDown {
 						return
