@@ -62,7 +62,7 @@ func (this *ZookeeperCoordinator) Connect() (err error) {
 		if err == nil {
 			return
 		}
-		Tracef(this, "Zookeeper connect failed after %d-th retry", i)
+		Warnf(this, "Zookeeper connect failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff)
 	}
 	return
@@ -88,7 +88,7 @@ func (this *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid st
 		if err == nil {
 			return
 		}
-		Tracef(this, "Registering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
+		Warnf(this, "Registering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -145,7 +145,7 @@ func (this *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid 
 		if err == nil {
 			return
 		}
-		Tracef(this, "Deregistering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
+		Warnf(this, "Deregistering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -161,7 +161,7 @@ func (this *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid str
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetConsumerInfo failed for consumer %s in group %s after %d-th retry", Consumerid, Groupid, i)
+		Warnf(this, "GetConsumerInfo failed for consumer %s in group %s after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -225,7 +225,7 @@ func (this *ZookeeperCoordinator) GetConsumersPerTopic(Groupid string, ExcludeIn
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetConsumersPerTopic failed for group %s after %d-th retry", Groupid, i)
+		Warnf(this, "GetConsumersPerTopic failed for group %s after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -266,7 +266,7 @@ func (this *ZookeeperCoordinator) GetConsumersInGroup(Groupid string) (consumers
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetConsumersInGroup failed for group %s after %d-th retry", Groupid, i)
+		Warnf(this, "GetConsumersInGroup failed for group %s after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -292,7 +292,7 @@ func (this *ZookeeperCoordinator) GetAllTopics() (topics []string, err error) {
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetAllTopics failed after %d-th retry", i)
+		Warnf(this, "GetAllTopics failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -322,7 +322,7 @@ func (this *ZookeeperCoordinator) GetPartitionsForTopics(Topics []string) (parti
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetPartitionsForTopics for topics %s failed after %d-th retry", Topics, i)
+		Warnf(this, "GetPartitionsForTopics for topics %s failed after %d-th retry", Topics, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -357,7 +357,7 @@ func (this *ZookeeperCoordinator) GetAllBrokers() (brokers []*BrokerInfo, err er
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetAllBrokers failed after %d-th retry", i)
+		Warnf(this, "GetAllBrokers failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -398,7 +398,7 @@ func (this *ZookeeperCoordinator) GetOffset(Groupid string, topic string, partit
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetOffset for group %s, topic %s and partition %d failed after %d-th retry", Groupid, topic, partition, i)
+		Warnf(this, "GetOffset for group %s, topic %s and partition %d failed after %d-th retry", Groupid, topic, partition, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -435,7 +435,7 @@ func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (events <-
 		if err == nil {
 			return
 		}
-		Tracef(this, "SubscribeForChanges for group %s failed after %d-th retry", Groupid, i)
+		Warnf(this, "SubscribeForChanges for group %s failed after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -535,7 +535,7 @@ func (this *ZookeeperCoordinator) GetBlueGreenRequest(Group string) (topics map[
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetNewDeployedTopics for group %s failed after %d-th retry", Group, i)
+		Warnf(this, "GetNewDeployedTopics for group %s failed after %d-th retry", Group, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -576,7 +576,7 @@ func (this *ZookeeperCoordinator) RequestBlueGreenDeployment(blue BlueGreenDeplo
 		if err == nil {
 			break
 		}
-		Tracef(this, "DeployTopics for group %s and topics %s failed after %d-th retry", green.Group, blue.Topics, i)
+		Warnf(this, "DeployTopics for group %s and topics %s failed after %d-th retry", green.Group, blue.Topics, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -591,7 +591,7 @@ func (this *ZookeeperCoordinator) RequestBlueGreenDeployment(blue BlueGreenDeplo
 		if err == nil {
 			return err
 		}
-		Tracef(this, "DeployTopics for group %s and topics %s failed after %d-th retry", blue.Group, green.Topics, i)
+		Warnf(this, "DeployTopics for group %s and topics %s failed after %d-th retry", blue.Group, green.Topics, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -746,7 +746,7 @@ func (this *ZookeeperCoordinator) RemoveStateBarrier(group string, stateHash str
 		if err == nil || err == zk.ErrNoNode {
 			return nil
 		}
-		Tracef(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
+		Warnf(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -797,7 +797,7 @@ func (this *ZookeeperCoordinator) ClaimPartitionOwnership(Groupid string, Topic 
 		if ok {
 			return ok, err
 		}
-		Tracef(this, "Claim failed for topic %s, partition %d after %d-th retry", Topic, Partition, i)
+		Warnf(this, "Claim failed for topic %s, partition %d after %d-th retry", Topic, Partition, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -843,7 +843,7 @@ func (this *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topi
 		if err == nil {
 			return err
 		}
-		Tracef(this, "ReleasePartitionOwnership failed for group %s, topic %s, partition %d after %d-th retry", Groupid, Topic, Partition, i)
+		Warnf(this, "ReleasePartitionOwnership failed for group %s, topic %s, partition %d after %d-th retry", Groupid, Topic, Partition, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}

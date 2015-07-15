@@ -203,7 +203,7 @@ func (c *Consumer) startStreams() {
 			}
 		case tp := <-c.disconnectChannelsForPartition:
 			{
-				Tracef(c, "Disconnecting %s", tp)
+				Debugf(c, "Disconnecting %s", tp)
 				stopRedirects[tp] <- true
 				delete(stopRedirects, tp)
 
@@ -770,7 +770,9 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[Topic
 func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
 	consumerThreadId ConsumerThreadId) {
-	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
+	}
 	partTopicInfoMap, exists := currenttopicRegistry[topicPartition.Topic]
 	if !exists {
 		partTopicInfoMap = make(map[int32]*partitionTopicInfo)
