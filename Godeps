@@ -1,5 +1,5 @@
 github.com/samuel/go-zookeeper/zk 	ad552be7b78b762b4a8040ffc5518bdaf5b7225d
-github.com/Shopify/sarama   6d47b6cfdee82ba22aee428ea46d9934c097f49b
+github.com/Shopify/sarama   094e483251042a52ce92f76dbcf140ad2bd7cffb
 github.com/jimlawless/cfg 4b1e3c1869d4e608fcbda6994e5f08dd9c6beaa1
 github.com/cihub/seelog 92dc4b8b540607b8187cc2f95cac200211dcd745
 github.com/rcrowley/go-metrics dee209f2455f101a5e4e593dea94872d2c62d85d
