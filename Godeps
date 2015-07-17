@@ -9,3 +9,4 @@ github.com/golang/protobuf/proto
 github.com/stealthly/siesta
 github.com/stealthly/go-avro
 github.com/satori/go.uuid
+github.com/golang/snappy
