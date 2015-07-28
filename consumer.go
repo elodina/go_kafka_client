@@ -371,12 +371,12 @@ func (c *Consumer) Close() <-chan bool {
 		Info(c, "Closing low-level client")
 		c.config.LowLevelClient.Close()
 		Info(c, "Disconnecting from consumer coordinator")
-		c.config.Coordinator.Disconnect()
-		Info(c, "Disconnected from consumer coordinator")
-
 		// Other consumers will wait to take partition ownership until the ownership in the coordinator is released
 		// As such it should be one of the last things we do to prevent duplicate ownership or "released" ownership but the consumer is still running.
 		c.releasePartitionOwnership(c.topicRegistry)
+		c.config.Coordinator.Disconnect()
+		Info(c, "Disconnected from consumer coordinator")
+
 
 		Info(c, "Unregistering all metrics")
 		c.metrics.close()
