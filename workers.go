@@ -30,7 +30,7 @@ type WorkerManager struct {
 	config              *ConsumerConfig
 	workers             []*Worker
 	availableWorkers    chan *Worker
-	currentBatch        map[TaskId]*Task //TODO inspect for race conditions
+	currentBatch        *taskBatch
 	batchOrder          []TaskId
 	inputChannel        chan []*Message
 	topicPartition      TopicAndPartition
@@ -66,7 +66,7 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		availableWorkers:    availableWorkers,
 		workers:             workers,
 		inputChannel:        make(chan []*Message),
-		currentBatch:        make(map[TaskId]*Task),
+		currentBatch:        newTaskBatch(),
 		batchOrder:          make([]TaskId, 0),
 		topicPartition:      topicPartition,
 		largestOffset:       InvalidOffset,
@@ -102,11 +102,15 @@ func (wm *WorkerManager) Start() {
 			case batch := <-wm.inputChannel:
 				{
 					wm.metrics.wMsIdle().Update(time.Since(startIdle))
-					Trace(wm, "WorkerManager got batch")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "WorkerManager got batch")
+					}
 					wm.metrics.wMsBatchDuration().Time(func() {
 						wm.startBatch(batch)
 					})
-					Trace(wm, "WorkerManager got batch processed")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "WorkerManager got batch processed")
+					}
 				}
 			case <-wm.managerStop:
 				return
@@ -143,16 +147,17 @@ func (wm *WorkerManager) Stop() chan bool {
 
 func (wm *WorkerManager) startBatch(batch []*Message) {
 	inLock(&wm.stopLock, func() {
+		wm.currentBatch = newTaskBatch()
 		wm.batchOrder = make([]TaskId, 0)
 		for _, message := range batch {
 			topicPartition := TopicAndPartition{message.Topic, message.Partition}
 			id := TaskId{topicPartition, message.Offset}
 			wm.batchOrder = append(wm.batchOrder, id)
-			wm.currentBatch[id] = &Task{Msg: message}
+			wm.currentBatch.add(id, &Task{Msg: message})
 		}
-		wm.metrics.pendingWMsTasks().Inc(int64(len(wm.currentBatch)))
+		wm.metrics.pendingWMsTasks().Inc(int64(wm.currentBatch.numOutstanding()))
 		for _, id := range wm.batchOrder {
-			task := wm.currentBatch[id]
+			task := wm.currentBatch.get(id)
 			worker := <-wm.availableWorkers
 
 			if wm.shutdownDecision == nil {
@@ -170,13 +175,15 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 
 func (wm *WorkerManager) commitBatch() {
 	for {
+		timeout := time.NewTimer(wm.config.OffsetCommitInterval)
 		select {
 		case <-wm.commitStop:
 			{
+				timeout.Stop()
 				wm.commitOffset()
 				return
 			}
-		case <-time.After(wm.config.OffsetCommitInterval):
+		case <-timeout.C:
 			{
 				wm.commitOffset()
 			}
@@ -186,7 +193,9 @@ func (wm *WorkerManager) commitBatch() {
 
 func (wm *WorkerManager) commitOffset() {
 	largestOffset := wm.GetLargestOffset()
-	Tracef(wm, "Inside commit offset with largest %d and last %d", largestOffset, wm.lastCommittedOffset)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(wm, "Inside commit offset with largest %d and last %d", largestOffset, wm.lastCommittedOffset)
+	}
 	if largestOffset <= wm.lastCommittedOffset || isOffsetInvalid(largestOffset) {
 		return
 	}
@@ -196,7 +205,9 @@ func (wm *WorkerManager) commitOffset() {
 		err := wm.config.OffsetStorage.CommitOffset(wm.config.Groupid, wm.topicPartition.Topic, wm.topicPartition.Partition, largestOffset)
 		if err == nil {
 			success = true
-			Tracef(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
+			if Logger.IsAllowed(TraceLevel) {
+				Tracef(wm, "Successfully committed offset %d for %s", largestOffset, wm.topicPartition)
+			}
 			break
 		} else {
 			Warnf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
@@ -213,7 +224,7 @@ func (wm *WorkerManager) commitOffset() {
 
 // Asks this WorkerManager whether the current batch is fully processed. Returns true if so, false otherwise.
 func (wm *WorkerManager) IsBatchProcessed() bool {
-	return len(wm.currentBatch) == 0
+	return wm.currentBatch.done()
 }
 
 func (wm *WorkerManager) processBatch() {
@@ -237,10 +248,10 @@ func (wm *WorkerManager) processBatch() {
 					continue
 				}
 
-				task := wm.currentBatch[result.Id()]
 				if result.Success() {
 					wm.taskSucceeded(result)
 				} else {
+					task := wm.currentBatch.get(result.Id())
 					if _, ok := result.(*TimedOutResult); ok {
 						wm.metrics.taskTimeouts().Inc(1)
 						task.Callee.OutputChannel = make(chan WorkerResult)
@@ -287,9 +298,13 @@ func (wm *WorkerManager) processBatch() {
 				}
 
 				if wm.IsBatchProcessed() {
-					Trace(wm, "Sending batch processed")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "Sending batch processed")
+					}
 					wm.batchProcessed <- true
-					Trace(wm, "Received batch processed")
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(wm, "Received batch processed")
+					}
 				}
 			}
 		case <-wm.processingStop:
@@ -313,23 +328,18 @@ func (wm *WorkerManager) triggerShutdownIfRequired(decision *FailedDecision) {
 	}
 }
 
-func (wm *WorkerManager) stopBatch() {
-	wm.currentBatch = make(map[TaskId]*Task)
-	for _, worker := range wm.workers {
-		worker.OutputChannel = make(chan WorkerResult)
-	}
-}
-
 func (wm *WorkerManager) taskSucceeded(result WorkerResult) {
-	Tracef(wm, "Task is done: %d", result.Id().Offset)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(wm, "Task is done: %d", result.Id().Offset)
+	}
 	wm.UpdateLargestOffset(result.Id().Offset)
 	wm.taskIsDone(result)
 	wm.metrics.activeWorkers().Dec(1)
 }
 
 func (wm *WorkerManager) taskIsDone(result WorkerResult) {
-	wm.availableWorkers <- wm.currentBatch[result.Id()].Callee
-	delete(wm.currentBatch, result.Id())
+	wm.availableWorkers <- wm.currentBatch.get(result.Id()).Callee
+	wm.currentBatch.markDone(result.Id())
 }
 
 // Gets the highest offset that has been processed by this WorkerManager.
@@ -368,24 +378,28 @@ func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
 		go func() {
 			result := strategy(w, task.Msg, task.Id())
 			for !shouldStop {
+				timeout := time.NewTimer(5 * time.Second)
 				select {
 				case resultChannel <- result:
+					timeout.Stop()
 					return
-				case <-time.After(5 * time.Second):
+				case <-timeout.C:
 				}
 			}
 		}()
+		timeout := time.NewTimer(w.TaskTimeout)
 		select {
 		case result := <-resultChannel:
 			{
 				w.OutputChannel <- result
 			}
-		case <-time.After(w.TaskTimeout):
+		case <-timeout.C:
 			{
 				shouldStop = true
 				w.OutputChannel <- &TimedOutResult{task.Id()}
 			}
 		}
+		timeout.Stop()
 	}()
 }
 
@@ -415,8 +429,9 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 	}
 	go func() {
 		for {
+			timeout := time.NewTimer(WorkerThresholdTimeWindow)
 			select {
-			case <-time.After(WorkerThresholdTimeWindow):
+			case <-timeout.C:
 				{
 					if counter.count >= FailedThreshold {
 						counter.failed = true
@@ -428,6 +443,7 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 					}
 				}
 			case <-counter.stop:
+				timeout.Stop()
 				return
 			}
 		}
@@ -569,3 +585,40 @@ const (
 	// Tells the worker manager not to commit offset and stop processing the current batch.
 	DoNotCommitOffsetAndStop
 )
+
+// taskBatch represents a batch of tasks which must be processed by workers
+type taskBatch struct {
+	tasks  map[TaskId]*Task
+	nTasks *int64
+	nDone  *int64
+}
+
+func newTaskBatch() *taskBatch {
+	var t, d int64 = 0, 0
+	return &taskBatch{
+		tasks:  make(map[TaskId]*Task),
+		nTasks: &t,
+		nDone:  &d,
+	}
+}
+
+func (b *taskBatch) add(id TaskId, task *Task) {
+	b.tasks[id] = task
+	atomic.AddInt64(b.nTasks, 1)
+}
+
+func (b *taskBatch) get(id TaskId) *Task {
+	return b.tasks[id]
+}
+
+func (b *taskBatch) markDone(id TaskId) {
+	atomic.AddInt64(b.nDone, 1)
+}
+
+func (b *taskBatch) numOutstanding() int {
+	return int(atomic.LoadInt64(b.nTasks) - atomic.LoadInt64(b.nDone))
+}
+
+func (b *taskBatch) done() bool {
+	return b.numOutstanding() == 0
+}

@@ -17,10 +17,11 @@ package go_kafka_client
 
 import (
 	"fmt"
-	metrics "github.com/rcrowley/go-metrics"
 	"io"
 	"strings"
 	"time"
+
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 type ConsumerMetrics struct {

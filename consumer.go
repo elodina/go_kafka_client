@@ -56,6 +56,9 @@ type Consumer struct {
 	close                          chan bool
 	stopCleanup                    chan struct{}
 	topicCount                     TopicsToNumStreams
+	bgInProgress                   bool
+	bgInProgressLock               sync.Mutex
+	bgInProgressCond               *sync.Cond
 
 	metrics *ConsumerMetrics
 
@@ -81,6 +84,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		stopStreams:                    make(chan bool),
 		close:                          make(chan bool),
 	}
+	c.bgInProgressCond = sync.NewCond(&c.bgInProgressLock)
 
 	if err := c.config.Coordinator.Connect(); err != nil {
 		panic(err)
@@ -184,19 +188,35 @@ func (c *Consumer) startStreams() {
 			{
 				Debug(c, "Stop streams")
 				c.disconnectChannels(stopRedirects)
-				return
+
+				exit := false
+				inLock(&c.bgInProgressLock, func() {
+					if c.bgInProgress {
+						for c.bgInProgress {
+							c.bgInProgressCond.Wait()
+						}
+					} else {
+						exit = true
+					}
+				})
+
+				if exit {
+					return
+				}
 			}
 		case tp := <-c.disconnectChannelsForPartition:
 			{
-				Tracef(c, "Disconnecting %s", tp)
+				Debugf(c, "Disconnecting %s", tp)
 				stopRedirects[tp] <- true
 				delete(stopRedirects, tp)
 
 				Debugf(c, "Stopping worker manager for %s", tp)
+				timeout := time.NewTimer(5 * time.Second)
 				select {
 				case <-c.workerManagers[tp].Stop():
-				case <-time.After(5 * time.Second):
+				case <-timeout.C:
 				}
+				timeout.Stop()
 				delete(c.workerManagers, tp)
 
 				Debugf(c, "Stopping buffer: %s", c.topicPartitionsAndBuffers[tp])
@@ -389,6 +409,9 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 				barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
 		}
 
+		inLock(&c.bgInProgressLock, func() {
+			c.bgInProgress = true
+		})
 		<-c.Close()
 
 		err = c.config.Coordinator.Connect()
@@ -489,7 +512,10 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 		}
 	}()
 
-	go c.startStreams()
+	inLock(&c.bgInProgressLock, func() {
+		c.bgInProgress = false
+		c.bgInProgressCond.Broadcast()
+	})
 
 	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	partitionOwnershipDecision := partitionAssignor(context)
@@ -531,6 +557,7 @@ func (c *Consumer) stopWorkerManagers() bool {
 			}
 			Debugf(c, "Worker channels length: %d", len(wmStopChannels))
 			notifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
+			timeout := time.NewTimer(c.config.WorkerManagersStopTimeout)
 			select {
 			case <-wmsAreStopped:
 				{
@@ -538,12 +565,13 @@ func (c *Consumer) stopWorkerManagers() bool {
 					c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 					success = true
 				}
-			case <-time.After(c.config.WorkerManagersStopTimeout):
+			case <-timeout.C:
 				{
 					Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
 					success = false
 				}
 			}
+			timeout.Stop()
 		} else {
 			Debug(c, "No worker managers to close")
 			success = true
@@ -784,7 +812,9 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[Topic
 func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
 	consumerThreadId ConsumerThreadId) {
-	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
+	}
 	partTopicInfoMap, exists := currenttopicRegistry[topicPartition.Topic]
 	if !exists {
 		partTopicInfoMap = make(map[int32]*partitionTopicInfo)
