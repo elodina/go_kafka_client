@@ -677,7 +677,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 				if t, err = strconv.ParseInt(string(data), 10, 64); err != nil {
 					t = int64(0) // If the data isn't a timestamp ensure it will be deleted anyway.
 				}
-			} else if api == BlueGreenRequest {
+			} else if api == BlueGreenDeploymentAPI {
 				if t, err = strconv.ParseInt(string(request), 10, 64); err != nil {
 					break
 				}
