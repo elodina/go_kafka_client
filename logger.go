@@ -45,6 +45,10 @@ type KafkaLogger interface {
 
 	//Formats a given message according to given params to log with level Critical.
 	Critical(message string, params ...interface{})
+
+	GetLogLevel() LogLevel
+
+	IsAllowed(logLevel LogLevel) bool
 }
 
 //Represents a logging level
@@ -69,6 +73,15 @@ const (
 	//Use CriticalLevel to indicate fatal errors that may cause data corruption or loss.
 	CriticalLevel LogLevel = "critical"
 )
+
+var logLevelPriorities = map[LogLevel]int {
+	TraceLevel: 0,
+	DebugLevel: 1,
+	InfoLevel: 2,
+	WarnLevel: 3,
+	ErrorLevel: 4,
+	CriticalLevel: 5,
+}
 
 //Writes a given message with a given tag to log with level Trace.
 func Trace(tag interface{}, message interface{}) {
@@ -144,6 +157,7 @@ func Criticalf(tag interface{}, message interface{}, params ...interface{}) {
 
 //Default implementation of KafkaLogger interface used in this client.
 type DefaultLogger struct {
+	logLevel LogLevel
 	logger log.LoggerInterface
 }
 
@@ -159,7 +173,7 @@ func NewDefaultLogger(Level LogLevel) *DefaultLogger {
     </formats>
 </seelog>`, Level)
 	logger, _ := log.LoggerFromConfigAsBytes([]byte(config))
-	return &DefaultLogger{logger}
+	return &DefaultLogger{Level, logger}
 }
 
 // Formats a given message according to given params to log with level Trace.
@@ -190,4 +204,13 @@ func (dl *DefaultLogger) Error(message string, params ...interface{}) {
 //Formats a given message according to given params to log with level Critical.
 func (dl *DefaultLogger) Critical(message string, params ...interface{}) {
 	dl.logger.Criticalf(message, params...)
+}
+
+func (dl *DefaultLogger) GetLogLevel() LogLevel {
+	return dl.logLevel
+}
+
+//Formats a given message according to given params to log with level Critical.
+func (dl *DefaultLogger) IsAllowed(loglevel LogLevel) bool {
+	return logLevelPriorities[loglevel] >= logLevelPriorities[dl.GetLogLevel()]
 }

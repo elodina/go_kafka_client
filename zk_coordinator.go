@@ -67,7 +67,7 @@ func (this *ZookeeperCoordinator) Connect() (err error) {
 			go this.listenConnectionEvents(connectionEvents)
 			return
 		}
-		Tracef(this, "Zookeeper connect failed after %d-th retry", i)
+		Warnf(this, "Zookeeper connect failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff)
 	}
 
@@ -119,7 +119,7 @@ func (this *ZookeeperCoordinator) RegisterConsumer(Consumerid string, Groupid st
 		if err == nil {
 			return
 		}
-		Tracef(this, "Registering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
+		Warnf(this, "Registering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -176,7 +176,7 @@ func (this *ZookeeperCoordinator) DeregisterConsumer(Consumerid string, Groupid 
 		if err == nil {
 			return
 		}
-		Tracef(this, "Deregistering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
+		Warnf(this, "Deregistering consumer %s in group %s failed after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -192,7 +192,7 @@ func (this *ZookeeperCoordinator) GetConsumerInfo(Consumerid string, Groupid str
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetConsumerInfo failed for consumer %s in group %s after %d-th retry", Consumerid, Groupid, i)
+		Warnf(this, "GetConsumerInfo failed for consumer %s in group %s after %d-th retry", Consumerid, Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -256,7 +256,7 @@ func (this *ZookeeperCoordinator) GetConsumersPerTopic(Groupid string, ExcludeIn
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetConsumersPerTopic failed for group %s after %d-th retry", Groupid, i)
+		Warnf(this, "GetConsumersPerTopic failed for group %s after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -297,7 +297,7 @@ func (this *ZookeeperCoordinator) GetConsumersInGroup(Groupid string) (consumers
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetConsumersInGroup failed for group %s after %d-th retry", Groupid, i)
+		Warnf(this, "GetConsumersInGroup failed for group %s after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -323,7 +323,7 @@ func (this *ZookeeperCoordinator) GetAllTopics() (topics []string, err error) {
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetAllTopics failed after %d-th retry", i)
+		Warnf(this, "GetAllTopics failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -353,7 +353,7 @@ func (this *ZookeeperCoordinator) GetPartitionsForTopics(Topics []string) (parti
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetPartitionsForTopics for topics %s failed after %d-th retry", Topics, i)
+		Warnf(this, "GetPartitionsForTopics for topics %s failed after %d-th retry", Topics, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -388,7 +388,7 @@ func (this *ZookeeperCoordinator) GetAllBrokers() (brokers []*BrokerInfo, err er
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetAllBrokers failed after %d-th retry", i)
+		Warnf(this, "GetAllBrokers failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -429,7 +429,7 @@ func (this *ZookeeperCoordinator) GetOffset(Groupid string, topic string, partit
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetOffset for group %s, topic %s and partition %d failed after %d-th retry", Groupid, topic, partition, i)
+		Warnf(this, "GetOffset for group %s, topic %s and partition %d failed after %d-th retry", Groupid, topic, partition, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -466,7 +466,7 @@ func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (events <-
 		if err == nil {
 			return
 		}
-		Tracef(this, "SubscribeForChanges for group %s failed after %d-th retry", Groupid, i)
+		Warnf(this, "SubscribeForChanges for group %s failed after %d-th retry", Groupid, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -573,7 +573,7 @@ func (this *ZookeeperCoordinator) GetBlueGreenRequest(Group string) (topics map[
 		if err == nil {
 			return
 		}
-		Tracef(this, "GetNewDeployedTopics for group %s failed after %d-th retry", Group, i)
+		Warnf(this, "GetNewDeployedTopics for group %s failed after %d-th retry", Group, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -614,7 +614,7 @@ func (this *ZookeeperCoordinator) RequestBlueGreenDeployment(blue BlueGreenDeplo
 		if err == nil {
 			break
 		}
-		Tracef(this, "DeployTopics for group %s and topics %s failed after %d-th retry", green.Group, blue.Topics, i)
+		Warnf(this, "DeployTopics for group %s and topics %s failed after %d-th retry", green.Group, blue.Topics, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -629,7 +629,7 @@ func (this *ZookeeperCoordinator) RequestBlueGreenDeployment(blue BlueGreenDeplo
 		if err == nil {
 			return err
 		}
-		Tracef(this, "DeployTopics for group %s and topics %s failed after %d-th retry", blue.Group, green.Topics, i)
+		Warnf(this, "DeployTopics for group %s and topics %s failed after %d-th retry", blue.Group, green.Topics, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -677,133 +677,103 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 
 func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, barrierName string,
 	barrierSize int, api string, timeout time.Duration) bool {
-	memberJoinedEvents, err := this.joinStateBarrier(consumerId, group, barrierName, api, timeout)
-	if err != nil {
-		panic(err)
-	}
+	barrierPath := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, barrierName)
 
-	passed := false
-	for !passed {
-		ask := <-memberJoinedEvents
-		passed, err = this.isStateBarrierPassed(group, barrierName, api, barrierSize)
-		if err != nil && err != zk.ErrNoNode {
-			panic(err)
-		}
-
-		if ask == nil {
-			if !passed && err != zk.ErrNoNode {
-				err = this.RemoveStateBarrier(group, barrierName, api)
-				if err != nil {
-					Error(this, err.Error())
-				}
-			}
+	var barrierExpiration time.Time
+	var err error
+	// Block and wait for this to consumerId to join the state barrier
+	if barrierExpiration, err = this.joinStateBarrier(barrierPath, consumerId, timeout); err == nil {
+		// Now that we've joined the barrier wait to verify all consumers have reached consensus.
+		membershipDoneChan := make(chan error)
+		stopChan := make(chan struct{})
+		barrierTimeout := barrierExpiration.Sub(time.Now())
+		go this.waitForMembersToJoin(barrierPath, barrierSize, membershipDoneChan, stopChan)
+		timeout := time.NewTimer(barrierTimeout)
+		select {
+		case err = <- membershipDoneChan:
+			timeout.Stop()
+			// break the select
 			break
-		} else {
-			if err != zk.ErrNoNode {
-				Debug(this, "Memeber joined")
-				ask <- passed
-			} else {
-				Debug(this, "Barrier failed")
-				ask <- true
-				break
-			}
+		case <-timeout.C:
+			stopChan <- struct{}{}
+			err = fmt.Errorf("Timedout waiting for consensus on barrier path %s", barrierPath)
 		}
 	}
 
-	return passed
+	if err != nil {
+		// Encountered an error waiting for consensus... Fail it
+		Errorf(this, "Failed awaiting on state barrier %s [%v]", barrierName, err)
+		return false
+	}
+
+	Infof(this, "Successfully awaited on state barrier %s", barrierName)
+	return true
 }
 
-func (this *ZookeeperCoordinator) joinStateBarrier(consumerId string, group string, stateHash string, api string, timeout time.Duration) (<-chan chan bool, error) {
-	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
+func (this *ZookeeperCoordinator) joinStateBarrier(barrierPath, consumerId string, timeout time.Duration) (time.Time, error) {
 	deadline := time.Now().Add(timeout)
 	var err error
+	Infof(this, "Joining state barrier %s", barrierPath)
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		Infof(this, "Joining state barrier %s", path)
-		_, err = this.zkConn.Create(path, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
+		// Attempt to create the barrier path, with a shared deadline
+		_, err = this.zkConn.Create(barrierPath, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
 		if err != nil {
-			if err == zk.ErrNodeExists {
-				data, _, err := this.zkConn.Get(path)
-				if err != nil {
-					continue
-				}
-				deadlineInt, _ := strconv.ParseInt(string(data), 10, 0)
+			if err != zk.ErrNodeExists{
+				continue
+			}
+			// If the barrier path already exists, read it's value
+			if data, _, err := this.zkConn.Get(barrierPath); err == nil {
+				deadlineInt, _ := strconv.ParseInt(string(data), 10, 64)
 				deadline = time.Unix(deadlineInt, 0)
 				Infof(this, "Barrier already exists with deadline set to %v. Joining...", deadline)
 			} else {
 				continue
 			}
 		}
-
-		_, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(path)
-		memberJoinedWatcher := make(chan chan bool)
-
-		err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", path, consumerId), make([]byte, 0))
-		if err != nil && err != zk.ErrNodeExists {
-			continue
+		// Register our consumerId as a child node on the barrierPath. This should notify other consumers we have joined.
+		if err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", barrierPath, consumerId), make([]byte, 0)); err == nil || err == zk.ErrNodeExists {
+			Infof(this, "Successfully joined state barrier %s", barrierPath)
+			return deadline, nil
 		}
-
-		if err == nil {
-			go func() {
-				for {
-					barrierTimeout := deadline.Sub(time.Now())
-					select {
-					case e, ok := <-zkMemberJoinedWatcher:
-						{
-							Debugf(this, "Member joined channel %v", e)
-							if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
-								ask := make(chan bool)
-								memberJoinedWatcher <- ask
-								if <-ask {
-									return
-								}
-							} else {
-								_, _, zkMemberJoinedWatcher, err = this.zkConn.ChildrenW(path)
-								Debugf(this, "Trying to renew watcher at %s", path)
-							}
-						}
-					case <-time.After(barrierTimeout):
-						{
-							Infof(this, "Barrier timed out after %v", barrierTimeout)
-							memberJoinedWatcher <- nil
-							return
-						}
-					}
-				}
-			}()
-
-			Infof(this, "Successfully joined state barrier %s", path)
-			return memberJoinedWatcher, err
-		}
-
-		Warnf(this, "Failed to join state barrier %s, retrying...", path)
+		Warnf(this, "Failed to join state barrier %s, retrying...", barrierPath)
 	}
-
-	Errorf(this, "Failed to join state barrier %s after %d retries", path, this.config.MaxRequestRetries)
-
-	return nil, err
+	return time.Now(), fmt.Errorf("Failed to join state barrier %s after %d retries", barrierPath, this.config.MaxRequestRetries)
 }
 
-func (this *ZookeeperCoordinator) isStateBarrierPassed(group string, stateHash string, api string, expected int) (bool, error) {
-	Debugf(this, "Trying to assert rebalance state for group %s and hash %s with %d", group, stateHash, expected)
-	path := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, stateHash)
-	var children []string
-	var err error
-	backoffMultiplier := 1
-	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		children, _, err = this.zkConn.Children(path)
-		if err == zk.ErrNoNode {
-			Debugf(this, "%v; path: %s", err, path)
-			return false, err
-		} else if err == nil {
-			return len(children) == expected, err
-		}
-		Warnf(this, "Failed to assert rebalance state %s, retrying...", path)
-		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
-		backoffMultiplier++
-	}
-	Errorf(this, "Failed to assert rebalance state %s after %d retries", path, this.config.MaxRequestRetries)
+func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expected int, doneChan chan <- error, stopChan <- chan struct{}) {
+	// Make sure we clean up the channel.
+	defer close(doneChan)
 
-	return false, err
+	blackholeFunc := func(blackhole <-chan zk.Event) {
+		<-blackhole
+	}
+
+	for {
+		select {
+		// Using a priority select to provide precedence to the stop chan
+		case <-stopChan:
+			return
+		default:
+			children, _, zkMemberJoinedWatcher, err := this.zkConn.ChildrenW(barrierPath)
+			if err != nil && err == zk.ErrNoNode {
+				doneChan <- fmt.Errorf("%v; path: %s", err, barrierPath)
+				return
+			} else if len(children) == expected {
+				doneChan <- nil
+				// don't leave the zkMemberJoinedWatcher chan out there with no one to receive the message it produces later as it would cause a block.
+				go blackholeFunc(zkMemberJoinedWatcher)
+				return
+			}
+			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
+			select {
+			case <-stopChan:
+				go blackholeFunc(zkMemberJoinedWatcher)
+				return
+			case <-zkMemberJoinedWatcher:
+				continue
+			}
+		}
+	}
 }
 
 func (this *ZookeeperCoordinator) RemoveStateBarrier(group string, stateHash string, api string) error {
@@ -814,7 +784,7 @@ func (this *ZookeeperCoordinator) RemoveStateBarrier(group string, stateHash str
 		if err == nil || err == zk.ErrNoNode {
 			return nil
 		}
-		Tracef(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
+		Warnf(this, "State assertion deletion %s in group %s failed after %d-th retry", hash, group, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -865,7 +835,7 @@ func (this *ZookeeperCoordinator) ClaimPartitionOwnership(Groupid string, Topic 
 		if ok {
 			return ok, err
 		}
-		Tracef(this, "Claim failed for topic %s, partition %d after %d-th retry", Topic, Partition, i)
+		Warnf(this, "Claim failed for topic %s, partition %d after %d-th retry", Topic, Partition, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
@@ -911,7 +881,7 @@ func (this *ZookeeperCoordinator) ReleasePartitionOwnership(Groupid string, Topi
 		if err == nil {
 			return err
 		}
-		Tracef(this, "ReleasePartitionOwnership failed for group %s, topic %s, partition %d after %d-th retry", Groupid, Topic, Partition, i)
+		Warnf(this, "ReleasePartitionOwnership failed for group %s, topic %s, partition %d after %d-th retry", Groupid, Topic, Partition, i)
 		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
 		backoffMultiplier++
 	}
