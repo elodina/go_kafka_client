@@ -54,6 +54,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
+	stopCleanup                    chan struct{}
 	topicCount                     TopicsToNumStreams
 
 	metrics *ConsumerMetrics
@@ -175,6 +176,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 }
 
 func (c *Consumer) startStreams() {
+	c.maintainCleanCoordinator()
 	stopRedirects := make(map[TopicAndPartition]chan bool)
 	for {
 		select {
@@ -208,6 +210,27 @@ func (c *Consumer) startStreams() {
 			}
 		}
 	}
+}
+
+// maintainCleanCoordinator runs on an interval to make sure that the coordinator removes old API requests to remove bloat from the coordinator over time.
+func (c *Consumer) maintainCleanCoordinator() {
+	if c.stopCleanup != nil {
+		return
+	}
+
+	c.stopCleanup = make(chan struct{})
+	go func() {
+		tick := time.NewTicker(5 * time.Minute)
+		for {
+			select {
+			case <-tick.C:
+				Infof(c, "Starting coordinator cleanup of API reqeusts for %s", c.config.Groupid)
+				c.config.Coordinator.RemoveOldApiRequests(c.config.Groupid)
+			case <-c.stopCleanup:
+				return
+			}
+		}
+	}()
 }
 
 func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
@@ -319,10 +342,10 @@ func (c *Consumer) Close() <-chan bool {
 
 		c.stopStreams <- true
 
-		c.releasePartitionOwnership(c.topicRegistry)
-
 		Info(c, "Deregistering consumer")
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
+		c.stopCleanup <- struct{}{} // Stop the background cleanup job.
+		c.stopCleanup = nil         // Reset it so it can be used again.
 		Info(c, "Successfully deregistered consumer")
 
 		Info(c, "Closing low-level client")
@@ -330,6 +353,10 @@ func (c *Consumer) Close() <-chan bool {
 		Info(c, "Disconnecting from consumer coordinator")
 		c.config.Coordinator.Disconnect()
 		Info(c, "Disconnected from consumer coordinator")
+
+		// Other consumers will wait to take partition ownership until the ownership in the coordinator is released
+		// As such it should be one of the last things we do to prevent duplicate ownership or "released" ownership but the consumer is still running.
+		c.releasePartitionOwnership(c.topicRegistry)
 
 		Info(c, "Unregistering all metrics")
 		c.metrics.close()
@@ -599,7 +626,7 @@ func (c *Consumer) rebalance() {
 				var context *assignmentContext
 				var err error
 				barrierPassed := false
-				timeLimit := time.Now().Add(3*time.Minute)
+				timeLimit := time.Now().Add(3 * time.Minute)
 				for !barrierPassed && time.Now().Before(timeLimit) {
 					context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
 						c.config.ExcludeInternalTopics, c.config.Coordinator)
@@ -622,6 +649,13 @@ func (c *Consumer) rebalance() {
 					barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
 						stateHash, barrierSize, string(Rebalance),
 						barrierTimeout)
+					if !barrierPassed {
+						// If the barrier failed to have consensus remove it.
+						err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, stateHash, string(Rebalance))
+						if err != nil {
+							Warnf(c, "Failed to remove state barrier %s due to: %s", stateHash, err.Error())
+						}
+					}
 				}
 				if !barrierPassed {
 					panic("Could not reach consensus on state barrier.")
@@ -642,6 +676,7 @@ func (c *Consumer) rebalance() {
 			if !success && !c.isShuttingdown {
 				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
 			} else {
+				c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, fmt.Sprintf("%s-ack", c.lastSuccessfulRebalanceHash), string(Rebalance))
 				c.lastSuccessfulRebalanceHash = stateHash
 				Info(c, "Rebalance has been successfully completed")
 			}
