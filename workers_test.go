@@ -75,7 +75,7 @@ func TestWorker(t *testing.T) {
 		OutputChannel: outChannel,
 		TaskTimeout:   taskTimeout,
 	}
-	worker.Start(task, goodStrategy)
+	worker.InputChannel <- &TaskAndStrategy{task, goodStrategy}
 
 	result := <-outChannel
 	if !result.Success() {
@@ -87,7 +87,7 @@ func TestWorker(t *testing.T) {
 		OutputChannel: outChannel,
 		TaskTimeout:   taskTimeout,
 	}
-	worker2.Start(task, failStrategy)
+	worker2.InputChannel <- &TaskAndStrategy{task, failStrategy}
 	result = <-outChannel
 	if result.Success() {
 		t.Error("Worker result with fail strategy should be unsuccessful")
@@ -98,7 +98,7 @@ func TestWorker(t *testing.T) {
 		OutputChannel: outChannel,
 		TaskTimeout:   taskTimeout,
 	}
-	worker3.Start(task, slowStrategy)
+	worker3.InputChannel <- &TaskAndStrategy{task, slowStrategy}
 	result = <-outChannel
 	if _, ok := result.(*TimedOutResult); !ok {
 		t.Error("Worker with slow strategy should time out")
