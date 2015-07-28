@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/stealthly/go-avro"
-	kafka "github.com/CrowdStrike/go_kafka_client"
+	kafka "github.com/stealthly/go_kafka_client"
 	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
 	"os"
 	"strings"

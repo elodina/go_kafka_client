@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
-	kafka "github.com/CrowdStrike/go_kafka_client"
+	kafka "github.com/stealthly/go_kafka_client"
 	sp "github.com/stealthly/go_kafka_client/syslog/syslog_proto"
 	"math"
 	"os"
