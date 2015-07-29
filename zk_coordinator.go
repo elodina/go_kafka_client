@@ -658,8 +658,6 @@ func (this *ZookeeperCoordinator) RemoveOldApiRequests(group string) (err error)
 func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api ConsumerGroupApi) error {
 	requests := make([]string, 0)
 	var err error
-	var data []byte
-	var t int64
 
 	apiPath := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api)
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
@@ -668,11 +666,13 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 			continue
 		}
 		for _, request := range requests {
+			var data []byte
+			var t int64
 			childPath := fmt.Sprintf("%s/%s", apiPath, request)
 			if api == Rebalance {
-				if data, _, err = this.zkConn.Get(childPath); err != nil && err != zk.ErrNoNode {
+				if data, _, err = this.zkConn.Get(childPath); err != nil && err == zk.ErrNoNode {
 					// It's possible another consumer deleted the node before we could read it's data
-					break
+					continue
 				}
 				if t, err = strconv.ParseInt(string(data), 10, 64); err != nil {
 					t = int64(0) // If the data isn't a timestamp ensure it will be deleted anyway.
@@ -683,8 +683,8 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 				}
 			}
 
-			// Don't delete if this zk node has a timestamp as the data and the timestamp is still valid
-			if !time.Unix(t, 0).Before(time.Now().Add(-10*time.Minute)) {
+			// Delete if this zk node has an expired timestamp
+			if time.Unix(t, 0).Before(time.Now().Add(-10*time.Minute)) {
 				// If the data is not a timestamp or is a timestamp but has reached expiration delete it
 				err = this.deleteNode(childPath)
 				if err != nil && err != zk.ErrNoNode {
