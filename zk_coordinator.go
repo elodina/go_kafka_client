@@ -40,6 +40,8 @@ type ZookeeperCoordinator struct {
 	config      *ZookeeperConfig
 	zkConn      *zk.Conn
 	unsubscribe chan bool
+	closed      bool
+	watches     map[string]chan CoordinatorEvent
 }
 
 func (this *ZookeeperCoordinator) String() string {
@@ -52,31 +54,60 @@ func NewZookeeperCoordinator(Config *ZookeeperConfig) *ZookeeperCoordinator {
 	return &ZookeeperCoordinator{
 		config:      Config,
 		unsubscribe: make(chan bool),
+		watches:     make(map[string]chan CoordinatorEvent),
 	}
 }
 
 /* Establish connection to this ConsumerCoordinator. Returns an error if fails to connect, nil otherwise. */
 func (this *ZookeeperCoordinator) Connect() (err error) {
+	var connectionEvents <-chan zk.Event
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
-		this.zkConn, err = this.tryConnect()
+		this.zkConn, connectionEvents, err = this.tryConnect()
 		if err == nil {
+			go this.listenConnectionEvents(connectionEvents)
 			return
 		}
 		Warnf(this, "Zookeeper connect failed after %d-th retry", i)
 		time.Sleep(this.config.RequestBackoff)
 	}
+
 	return
 }
 
-func (this *ZookeeperCoordinator) tryConnect() (zkConn *zk.Conn, err error) {
+func (this *ZookeeperCoordinator) tryConnect() (zkConn *zk.Conn, connectionEvents <-chan zk.Event, err error) {
 	Infof(this, "Connecting to ZK at %s\n", this.config.ZookeeperConnect)
-	zkConn, _, err = zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperTimeout)
+	zkConn, connectionEvents, err = zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperTimeout)
 	return
 }
 
 func (this *ZookeeperCoordinator) Disconnect() {
 	Infof(this, "Closing connection to ZK at %s\n", this.config.ZookeeperConnect)
+	this.closed = true
 	this.zkConn.Close()
+}
+
+func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan zk.Event) {
+	for event := range connectionEvents {
+		if this.closed {
+			return
+		}
+
+		if event.State == zk.StateExpired && event.Type == zk.EventSession {
+			err := this.Connect()
+			if err != nil {
+				panic(err)
+			}
+			for groupId, watch := range this.watches {
+				_, err := this.SubscribeForChanges(groupId)
+				if err != nil {
+					panic(err)
+				}
+				watch <- Reinitialize
+			}
+
+			return
+		}
+	}
 }
 
 /* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Groupid in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
@@ -443,7 +474,14 @@ func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (events <-
 }
 
 func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
-	changes := make(chan CoordinatorEvent)
+	var changes chan CoordinatorEvent
+	if _, ok := this.watches[Groupid]; !ok {
+		changes = make(chan CoordinatorEvent, 100)
+		this.watches[Groupid] = changes
+	} else {
+		changes = this.watches[Groupid]
+	}
+
 	Infof(this, "Subscribing for changes for %s", Groupid)
 
 	consumersWatcher, err := this.getConsumersInGroupWatcher(Groupid)
@@ -471,9 +509,10 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 	go func() {
 		for {
 			select {
-			case e, ok := <-zkEvents:
+			case e := <-zkEvents:
 				{
-					if ok && e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+					Infof(this, "Received zkEvent Type: %s State: %s Path: %s", e.Type.String(), e.State.String(), e.Path)
+					if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
 						if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
 							newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 							changes <- BlueGreenRequest
@@ -482,7 +521,6 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						}
 					}
 
-					Debugf(this, "Event path %s", e.Path)
 					if strings.HasPrefix(e.Path, newZKGroupDirs(this.config.Root, Groupid).ConsumerRegistryDir) {
 						Info(this, "Trying to renew watcher for consumer registry")
 						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
@@ -620,6 +658,9 @@ func (this *ZookeeperCoordinator) RemoveOldApiRequests(group string) (err error)
 func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api ConsumerGroupApi) error {
 	requests := make([]string, 0)
 	var err error
+	var data []byte
+	var t int64
+
 	apiPath := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api)
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		requests, _, err = this.zkConn.Children(apiPath)
@@ -627,9 +668,28 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 			continue
 		}
 		for _, request := range requests {
-			err = this.deleteNode(fmt.Sprintf("%s/%s", apiPath, request))
-			if err != nil && err != zk.ErrNoNode {
-				break
+			childPath := fmt.Sprintf("%s/%s", apiPath, request)
+			if api == Rebalance {
+				if data, _, err = this.zkConn.Get(childPath); err != nil && err != zk.ErrNoNode {
+					// It's possible another consumer deleted the node before we could read it's data
+					break
+				}
+				if t, err = strconv.ParseInt(string(data), 10, 64); err != nil {
+					t = int64(0) // If the data isn't a timestamp ensure it will be deleted anyway.
+				}
+			} else if api == BlueGreenDeploymentAPI {
+				if t, err = strconv.ParseInt(string(request), 10, 64); err != nil {
+					break
+				}
+			}
+
+			// Don't delete if this zk node has a timestamp as the data and the timestamp is still valid
+			if !time.Unix(t, 0).Before(time.Now().Add(-10*time.Minute)) {
+				// If the data is not a timestamp or is a timestamp but has reached expiration delete it
+				err = this.deleteNode(childPath)
+				if err != nil && err != zk.ErrNoNode {
+					break
+				}
 			}
 		}
 	}
@@ -658,7 +718,7 @@ func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group s
 			break
 		case <-timeout.C:
 			stopChan <- struct{}{}
-			err = fmt.Errorf("Timedout waiting for consensus on barrier path %s", barrierPath)
+			err = fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
 		}
 	}
 
@@ -680,7 +740,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(barrierPath, consumerId strin
 		// Attempt to create the barrier path, with a shared deadline
 		_, err = this.zkConn.Create(barrierPath, []byte(strconv.FormatInt(deadline.Unix(), 10)), 0, zk.WorldACL(zk.PermAll))
 		if err != nil {
-			if err != zk.ErrNodeExists{
+			if err != zk.ErrNodeExists {
 				continue
 			}
 			// If the barrier path already exists, read it's value
@@ -693,7 +753,8 @@ func (this *ZookeeperCoordinator) joinStateBarrier(barrierPath, consumerId strin
 			}
 		}
 		// Register our consumerId as a child node on the barrierPath. This should notify other consumers we have joined.
-		if err = this.createOrUpdatePathParentMayNotExistFailSafe(fmt.Sprintf("%s/%s", barrierPath, consumerId), make([]byte, 0)); err == nil || err == zk.ErrNodeExists {
+		// Need to join as an ephemeral node to ensure that if the barrier Id is re-used we aren't permanently registered giving false counts.
+		if _, err = this.zkConn.Create(fmt.Sprintf("%s/%s", barrierPath, consumerId), make([]byte, 0), zk.FlagEphemeral, zk.WorldACL(zk.PermAll)); err == nil || err == zk.ErrNodeExists {
 			Infof(this, "Successfully joined state barrier %s", barrierPath)
 			return deadline, nil
 		}
@@ -702,7 +763,7 @@ func (this *ZookeeperCoordinator) joinStateBarrier(barrierPath, consumerId strin
 	return time.Now(), fmt.Errorf("Failed to join state barrier %s after %d retries", barrierPath, this.config.MaxRequestRetries)
 }
 
-func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expected int, doneChan chan <- error, stopChan <- chan struct{}) {
+func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expected int, doneChan chan<- error, stopChan <-chan struct{}) {
 	// Make sure we clean up the channel.
 	defer close(doneChan)
 
@@ -820,6 +881,11 @@ func (this *ZookeeperCoordinator) tryClaimPartitionOwnership(group string, topic
 
 	if err != nil {
 		if err == zk.ErrNodeExists {
+			var data []byte
+			if data, _, err = this.zkConn.Get(pathToOwn); err == nil && string(data) == consumerThreadId.String() {
+				// If the current owner of the partition is the same consumer Id as the current one, carry on.
+				return true, nil
+			}
 			Debugf(consumerThreadId, "waiting for the partition ownership to be deleted: %d", partition)
 			return false, nil
 		} else {
