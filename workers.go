@@ -56,6 +56,8 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 		workers[i] = &Worker{
 			InputChannel: make(chan *TaskAndStrategy),
 			OutputChannel: make(chan WorkerResult),
+			HandlerInputChannel: make(chan *TaskAndStrategy),
+			HandlerOutputChannel: make(chan WorkerResult),
 			TaskTimeout:   config.WorkerTaskTimeout,
 		}
 		workers[i].Start()
@@ -370,6 +372,12 @@ type Worker struct {
 	// Channel to write processing results to.
 	OutputChannel chan WorkerResult
 
+	// Intermediate channel for pushing result to strategy handler
+	HandlerInputChannel chan *TaskAndStrategy
+
+	// Intermediate channel for pushing result from strategy handler
+	HandlerOutputChannel chan WorkerResult
+
 	// Timeout for a single worker task.
 	TaskTimeout time.Duration
 
@@ -384,32 +392,37 @@ func (w *Worker) String() string {
 // Starts processing a given task using given strategy with this worker.
 // Call to this method blocks until the task is done or timed out.
 func (w *Worker) Start() {
+	handlerInterrupted := false
+	go func() {
+		for taskAndStrategy := range w.HandlerInputChannel {
+			result := taskAndStrategy.Strategy(w, taskAndStrategy.WorkerTask.Msg, taskAndStrategy.WorkerTask.Id())
+			Loop:
+			for !handlerInterrupted {
+				timeout := time.NewTimer(5 * time.Second)
+				select {
+				case w.HandlerOutputChannel <- result:
+					timeout.Stop()
+					break Loop
+				case <-timeout.C:
+				}
+			}
+			handlerInterrupted = false
+		}
+	}()
+
 	go func() {
 		for taskAndStrategy := range w.InputChannel {
 			taskAndStrategy.WorkerTask.Callee = w
-			shouldStop := false
-			resultChannel := make(chan WorkerResult)
-			go func() {
-				result := taskAndStrategy.Strategy(w, taskAndStrategy.WorkerTask.Msg, taskAndStrategy.WorkerTask.Id())
-				for !shouldStop {
-					timeout := time.NewTimer(5 * time.Second)
-					select {
-					case resultChannel <- result:
-						timeout.Stop()
-						return
-					case <-timeout.C:
-					}
-				}
-			}()
+			w.HandlerInputChannel <- taskAndStrategy
 			timeout := time.NewTimer(w.TaskTimeout)
 			select {
-			case result := <-resultChannel:
+			case result := <-w.HandlerOutputChannel:
 				{
 					w.OutputChannel <- result
 				}
 			case <-timeout.C:
 				{
-					shouldStop = true
+					handlerInterrupted = true
 					w.OutputChannel <- &TimedOutResult{taskAndStrategy.WorkerTask.Id()}
 				}
 			}
@@ -420,6 +433,7 @@ func (w *Worker) Start() {
 
 func (w *Worker) Stop() {
 	close(w.InputChannel)
+	close(w.HandlerInputChannel)
 }
 
 // Defines what to do with a single Kafka message. Returns a WorkerResult to distinguish successful and unsuccessful processings.
