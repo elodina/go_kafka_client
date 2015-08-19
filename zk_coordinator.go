@@ -506,6 +506,8 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 	zkEvents := make(chan zk.Event)
 	stopRedirecting := redirectChannelsTo(inputChannels, zkEvents)
 
+	renewWatcherInterval := time.Duration(5) * time.Minute
+
 	go func() {
 		for {
 			select {
@@ -547,6 +549,64 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						}
 					} else {
 						Warnf(this, "Unknown event path: %s", e.Path)
+					}
+
+					stopRedirecting <- true
+					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
+				}
+			case <-time.After(renewWatcherInterval):
+				{
+					// Renew watchers on an interval so as to avoid potential of watcher expiry
+					// during a network event which interrupts and potentially invalidates the watcher.
+					// (We've observed this, where one consumer won't receive watcher notifications
+					// following network i/o issues with zk.)
+					Infof(this, "Automatically renewing all watchers at interval=%v", renewWatcherInterval)
+
+					// verify there's nothing already in the channel that we'll miss
+					select {
+					case e := <-zkEvents:
+						{
+							Infof(this, "Received zkEvent Type: %s State: %s Path: %s", e.Type.String(), e.State.String(), e.Path)
+							if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+								if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
+									newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+									changes <- BlueGreenRequest
+								} else {
+									changes <- Regular
+								}
+							}
+						}
+					case <-time.After(1 * time.Millisecond):
+						// extra safety to insure we don't block
+						// nothing to read
+						break
+					default:
+						// nothing to read
+						break
+					}
+
+					Info(this, "Trying to renew watcher for consumer registry")
+					consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+					if err != nil {
+						panic(err)
+					}
+
+					Info(this, "Trying to renew watcher for consumer API dir")
+					blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
+					if err != nil {
+						panic(err)
+					}
+
+					Info(this, "Trying to renew watcher for consumer topic dir")
+					topicsWatcher, err = this.getTopicsWatcher()
+					if err != nil {
+						panic(err)
+					}
+
+					Info(this, "Trying to renew watcher for brokers in cluster")
+					brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+					if err != nil {
+						panic(err)
 					}
 
 					stopRedirecting <- true
@@ -684,7 +744,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 			}
 
 			// Delete if this zk node has an expired timestamp
-			if time.Unix(t, 0).Before(time.Now().Add(-10*time.Minute)) {
+			if time.Unix(t, 0).Before(time.Now().Add(-10 * time.Minute)) {
 				// If the data is not a timestamp or is a timestamp but has reached expiration delete it
 				err = this.deleteNode(childPath)
 				if err != nil && err != zk.ErrNoNode {
@@ -698,7 +758,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 }
 
 func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, barrierName string,
-barrierSize int, api string, timeout time.Duration) bool {
+	barrierSize int, api string, timeout time.Duration) bool {
 	barrierPath := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, barrierName)
 
 	var barrierExpiration time.Time
@@ -773,14 +833,14 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 				go blackholeFunc(zkMemberJoinedWatcher)
 				return nil
 			}
-		// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
-				select {
-				case <-t.C:
-					go blackholeFunc(zkMemberJoinedWatcher)
-					return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
-				case <-zkMemberJoinedWatcher:
-					continue
-				}
+			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
+			select {
+			case <-t.C:
+				go blackholeFunc(zkMemberJoinedWatcher)
+				return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
+			case <-zkMemberJoinedWatcher:
+				continue
+			}
 		}
 	}
 
