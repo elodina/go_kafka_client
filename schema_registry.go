@@ -18,11 +18,12 @@ package go_kafka_client
 import (
 	"encoding/json"
 	"fmt"
-	avro "github.com/stealthly/go-avro"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+
+	avro "github.com/stealthly/go-avro"
 )
 
 const (
@@ -239,6 +240,7 @@ func (this *CachedSchemaRegistryClient) newDefaultRequest(method string, uri str
 	if err != nil {
 		return nil, err
 	}
+	request.Header.Set("Accept", SCHEMA_REGISTRY_V1_JSON)
 	request.Header.Set("Content-Type", SCHEMA_REGISTRY_V1_JSON)
 	return request, nil
 }
