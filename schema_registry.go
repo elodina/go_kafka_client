@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -250,16 +251,20 @@ func (this *CachedSchemaRegistryClient) isOK(response *http.Response) bool {
 }
 
 func (this *CachedSchemaRegistryClient) handleSuccess(response *http.Response, model interface{}) error {
-	responseBytes := make([]byte, response.ContentLength)
-	response.Body.Read(responseBytes)
+	responseBytes, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
 	return json.Unmarshal(responseBytes, model)
 }
 
 func (this *CachedSchemaRegistryClient) handleError(response *http.Response) error {
 	registryError := &ErrorMessage{}
-	responseBytes := make([]byte, response.ContentLength)
-	response.Body.Read(responseBytes)
-	err := json.Unmarshal(responseBytes, registryError)
+	responseBytes, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(responseBytes, registryError)
 	if err != nil {
 		return err
 	}
