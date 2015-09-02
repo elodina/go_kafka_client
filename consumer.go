@@ -27,12 +27,12 @@ import (
 )
 
 const (
-	// Offset with invalid value
+// Offset with invalid value
 	InvalidOffset int64 = -1
 
-	// Reset the offset to the smallest offset if it is out of range
+// Reset the offset to the smallest offset if it is out of range
 	SmallestOffset = "smallest"
-	// Reset the offset to the largest offset if it is out of range
+// Reset the offset to the largest offset if it is out of range
 	LargestOffset = "largest"
 )
 
@@ -54,9 +54,8 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
-	bgInProgress                   bool
-	bgInProgressLock               sync.Mutex
-	bgInProgressCond               *sync.Cond
+	stopCleanup                    chan struct{}
+	topicCount                     TopicsToNumStreams
 
 	metrics *ConsumerMetrics
 
@@ -82,7 +81,6 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		stopStreams:                    make(chan bool),
 		close:                          make(chan bool),
 	}
-	c.bgInProgressCond = sync.NewCond(&c.bgInProgressLock)
 
 	if err := c.config.Coordinator.Connect(); err != nil {
 		panic(err)
@@ -127,12 +125,12 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 		topicsToNumStreamsMap[topic] = c.config.NumConsumerFetchers
 	}
 
-	topicCount := &StaticTopicsToNumStreams{
+	c.topicCount = &StaticTopicsToNumStreams{
 		ConsumerId:            c.config.Consumerid,
 		TopicsToNumStreamsMap: topicsToNumStreamsMap,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
 	allTopics, err := c.config.Coordinator.GetAllTopics()
 	if err != nil {
 		panic(err)
@@ -144,7 +142,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 
 	time.Sleep(c.config.DeploymentTimeout)
 
-	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, allTopics, brokers, topicCount, topicPartitionMap)
+	assignmentContext := newStaticAssignmentContext(c.config.Groupid, c.config.Consumerid, []string{c.config.Consumerid}, allTopics, brokers, c.topicCount, topicPartitionMap)
 	partitionOwnershipDecision := newPartitionAssignor(c.config.PartitionAssignmentStrategy)(assignmentContext)
 
 	topicPartitions := make([]*TopicAndPartition, 0)
@@ -178,6 +176,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 }
 
 func (c *Consumer) startStreams() {
+	c.maintainCleanCoordinator()
 	stopRedirects := make(map[TopicAndPartition]chan bool)
 	for {
 		select {
@@ -185,35 +184,19 @@ func (c *Consumer) startStreams() {
 			{
 				Debug(c, "Stop streams")
 				c.disconnectChannels(stopRedirects)
-
-				exit := false
-				inLock(&c.bgInProgressLock, func() {
-					if c.bgInProgress {
-						for c.bgInProgress {
-							c.bgInProgressCond.Wait()
-						}
-					} else {
-						exit = true
-					}
-				})
-
-				if exit {
-					return
-				}
+				return
 			}
 		case tp := <-c.disconnectChannelsForPartition:
 			{
-				Debugf(c, "Disconnecting %s", tp)
+				Tracef(c, "Disconnecting %s", tp)
 				stopRedirects[tp] <- true
 				delete(stopRedirects, tp)
 
 				Debugf(c, "Stopping worker manager for %s", tp)
-				timeout := time.NewTimer(5 * time.Second)
 				select {
 				case <-c.workerManagers[tp].Stop():
-				case <-timeout.C:
+				case <-time.After(5 * time.Second):
 				}
-				timeout.Stop()
 				delete(c.workerManagers, tp)
 
 				Debugf(c, "Stopping buffer: %s", c.topicPartitionsAndBuffers[tp])
@@ -227,6 +210,27 @@ func (c *Consumer) startStreams() {
 			}
 		}
 	}
+}
+
+// maintainCleanCoordinator runs on an interval to make sure that the coordinator removes old API requests to remove bloat from the coordinator over time.
+func (c *Consumer) maintainCleanCoordinator() {
+	if c.stopCleanup != nil {
+		return
+	}
+
+	c.stopCleanup = make(chan struct{})
+	go func() {
+		tick := time.NewTicker(5 * time.Minute)
+		for {
+			select {
+			case <-tick.C:
+				Infof(c, "Starting coordinator cleanup of API reqeusts for %s", c.config.Groupid)
+				c.config.Coordinator.RemoveOldApiRequests(c.config.Groupid)
+			case <-c.stopCleanup:
+				return
+			}
+		}
+	}()
 }
 
 func (c *Consumer) pipeChannels(stopRedirects map[TopicAndPartition]chan bool) {
@@ -258,12 +262,12 @@ func (c *Consumer) disconnectChannels(stopRedirects map[TopicAndPartition]chan b
 }
 
 func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
-	topicCount := &StaticTopicsToNumStreams{
+	c.topicCount = &StaticTopicsToNumStreams{
 		ConsumerId:            c.config.Consumerid,
 		TopicsToNumStreamsMap: topicCountMap,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
 
 	time.Sleep(c.config.DeploymentTimeout)
 
@@ -271,7 +275,7 @@ func (c *Consumer) createMessageStreams(topicCountMap map[string]int) {
 }
 
 func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStreams int) {
-	topicCount := &WildcardTopicsToNumStreams{
+	c.topicCount = &WildcardTopicsToNumStreams{
 		Coordinator:           c.config.Coordinator,
 		ConsumerId:            c.config.Consumerid,
 		TopicFilter:           topicFilter,
@@ -279,7 +283,7 @@ func (c *Consumer) createMessageStreamsByFilterN(topicFilter TopicFilter, numStr
 		ExcludeInternalTopics: c.config.ExcludeInternalTopics,
 	}
 
-	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, topicCount)
+	c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
 
 	time.Sleep(c.config.DeploymentTimeout)
 
@@ -338,15 +342,18 @@ func (c *Consumer) Close() <-chan bool {
 
 		c.stopStreams <- true
 
-		c.releasePartitionOwnership(c.topicRegistry)
-
 		Info(c, "Deregistering consumer")
 		c.config.Coordinator.DeregisterConsumer(c.config.Consumerid, c.config.Groupid)
+		c.stopCleanup <- struct{}{} // Stop the background cleanup job.
+		c.stopCleanup = nil         // Reset it so it can be used again.
 		Info(c, "Successfully deregistered consumer")
 
 		Info(c, "Closing low-level client")
 		c.config.LowLevelClient.Close()
 		Info(c, "Disconnecting from consumer coordinator")
+		// Other consumers will wait to take partition ownership until the ownership in the coordinator is released
+		// As such it should be one of the last things we do to prevent duplicate ownership or "released" ownership but the consumer is still running.
+		c.releasePartitionOwnership(c.topicRegistry)
 		c.config.Coordinator.Disconnect()
 		Info(c, "Disconnected from consumer coordinator")
 
@@ -381,9 +388,6 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 				barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
 		}
 
-		inLock(&c.bgInProgressLock, func() {
-			c.bgInProgress = true
-		})
 		<-c.Close()
 
 		err = c.config.Coordinator.Connect()
@@ -417,10 +421,9 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		c.config.Coordinator.RemoveOldApiRequests(blueGreenRequest.Group)
 
 		//Generating new topicCount
-		var topicCount TopicsToNumStreams
 		switch blueGreenRequest.Pattern {
 		case blackListPattern:
-			topicCount = &WildcardTopicsToNumStreams{
+			c.topicCount = &WildcardTopicsToNumStreams{
 				Coordinator:           c.config.Coordinator,
 				ConsumerId:            c.config.Consumerid,
 				TopicFilter:           NewBlackList(blueGreenRequest.Topics),
@@ -428,7 +431,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 				ExcludeInternalTopics: c.config.ExcludeInternalTopics,
 			}
 		case whiteListPattern:
-			topicCount = &WildcardTopicsToNumStreams{
+			c.topicCount = &WildcardTopicsToNumStreams{
 				Coordinator:           c.config.Coordinator,
 				ConsumerId:            c.config.Consumerid,
 				TopicFilter:           NewWhiteList(blueGreenRequest.Topics),
@@ -441,7 +444,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 				for _, topic := range strings.Split(blueGreenRequest.Topics, ",") {
 					topicMap[topic] = c.config.NumConsumerFetchers
 				}
-				topicCount = &StaticTopicsToNumStreams{
+				c.topicCount = &StaticTopicsToNumStreams{
 					ConsumerId:            c.config.Consumerid,
 					TopicsToNumStreamsMap: topicMap,
 				}
@@ -449,7 +452,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		}
 
 		//Getting the partitions for specified topics
-		myTopicThreadIds := topicCount.GetConsumerThreadIdsPerTopic()
+		myTopicThreadIds := c.topicCount.GetConsumerThreadIdsPerTopic()
 		topics := make([]string, 0)
 		for topic, _ := range myTopicThreadIds {
 			topics = append(topics, topic)
@@ -461,7 +464,7 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 
 		//Creating assignment context with new parameters
 		newContext := newStaticAssignmentContext(blueGreenRequest.Group, c.config.Consumerid, context.Consumers,
-			context.AllTopics, context.Brokers, topicCount, topicPartitionMap)
+			context.AllTopics, context.Brokers, c.topicCount, topicPartitionMap)
 		c.config.Groupid = blueGreenRequest.Group
 
 		//Resume consuming
@@ -485,10 +488,7 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 		}
 	}()
 
-	inLock(&c.bgInProgressLock, func() {
-		c.bgInProgress = false
-		c.bgInProgressCond.Broadcast()
-	})
+	go c.startStreams()
 
 	partitionAssignor := newPartitionAssignor(c.config.PartitionAssignmentStrategy)
 	partitionOwnershipDecision := partitionAssignor(context)
@@ -530,7 +530,6 @@ func (c *Consumer) stopWorkerManagers() bool {
 			}
 			Debugf(c, "Worker channels length: %d", len(wmStopChannels))
 			notifyWhenThresholdIsReached(wmStopChannels, wmsAreStopped, len(wmStopChannels))
-			timeout := time.NewTimer(c.config.WorkerManagersStopTimeout)
 			select {
 			case <-wmsAreStopped:
 				{
@@ -538,13 +537,12 @@ func (c *Consumer) stopWorkerManagers() bool {
 					c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 					success = true
 				}
-			case <-timeout.C:
+			case <-time.After(c.config.WorkerManagersStopTimeout):
 				{
 					Errorf(c, "Workers failed to stop whithin timeout of %s", c.config.WorkerManagersStopTimeout)
 					success = false
 				}
 			}
-			timeout.Stop()
 		} else {
 			Debug(c, "No worker managers to close")
 			success = true
@@ -593,6 +591,18 @@ func (c *Consumer) subscribeForChanges(group string) {
 							}
 						}
 					} else {
+						if eventType == Reinitialize {
+							// Re-establish conneciton with coordinator
+							err := c.config.Coordinator.RegisterConsumer(c.config.Consumerid, c.config.Groupid, c.topicCount)
+							if err != nil {
+								panic(err)
+							}
+							// Reset our internal state to guarantee we go through the rebalance logic.
+							c.lastSuccessfulRebalanceHash = ""
+						}
+						// If it's not a blue-green request do a rebalance.
+						// Even it it's a Reinitialize event, make sure we drop partition ownership and re-discover what
+						// topic partitions we should be working on.
 						go c.rebalance()
 					}
 				}
@@ -622,7 +632,7 @@ func (c *Consumer) rebalance() {
 				var context *assignmentContext
 				var err error
 				barrierPassed := false
-				timeLimit := time.Now().Add(3*time.Minute)
+				timeLimit := time.Now().Add(3 * time.Minute)
 				for !barrierPassed && time.Now().Before(timeLimit) {
 					context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
 						c.config.ExcludeInternalTopics, c.config.Coordinator)
@@ -645,6 +655,13 @@ func (c *Consumer) rebalance() {
 					barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid,
 						stateHash, barrierSize, string(Rebalance),
 						barrierTimeout)
+					if !barrierPassed {
+						// If the barrier failed to have consensus remove it.
+						err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, stateHash, string(Rebalance))
+						if err != nil {
+							Warnf(c, "Failed to remove state barrier %s due to: %s", stateHash, err.Error())
+						}
+					}
 				}
 				if !barrierPassed {
 					panic("Could not reach consensus on state barrier.")
@@ -665,6 +682,7 @@ func (c *Consumer) rebalance() {
 			if !success && !c.isShuttingdown {
 				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
 			} else {
+				c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, fmt.Sprintf("%s-ack", c.lastSuccessfulRebalanceHash), string(Rebalance))
 				c.lastSuccessfulRebalanceHash = stateHash
 				Info(c, "Rebalance has been successfully completed")
 			}
@@ -731,18 +749,20 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 
 func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) {
 	switch topicCount := assignmentContext.MyTopicToNumStreams.(type) {
-	case *StaticTopicsToNumStreams:
+		case *StaticTopicsToNumStreams:
 		{
+			c.topicCount = topicCount
 			var numStreams int
-			for _, v := range topicCount.GetConsumerThreadIdsPerTopic() {
+			for _, v := range c.topicCount.GetConsumerThreadIdsPerTopic() {
 				numStreams = len(v)
 				break
 			}
 			Infof(c, "Trying to update fetcher")
 			c.updateFetcher(numStreams)
 		}
-	case *WildcardTopicsToNumStreams:
+		case *WildcardTopicsToNumStreams:
 		{
+			c.topicCount = topicCount
 			c.updateFetcher(topicCount.NumStreams)
 		}
 	}
@@ -768,11 +788,9 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[Topic
 }
 
 func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
-	topicPartition *TopicAndPartition, offset int64,
-	consumerThreadId ConsumerThreadId) {
-	if Logger.IsAllowed(TraceLevel) {
-		Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
-	}
+topicPartition *TopicAndPartition, offset int64,
+consumerThreadId ConsumerThreadId) {
+	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
 	partTopicInfoMap, exists := currenttopicRegistry[topicPartition.Topic]
 	if !exists {
 		partTopicInfoMap = make(map[int32]*partitionTopicInfo)
