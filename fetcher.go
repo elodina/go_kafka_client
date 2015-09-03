@@ -253,7 +253,7 @@ func (f *consumerFetcherRoutine) start() {
 									Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
 									f.handleOffsetOutOfRange(&nextTopicPartition)
 								} else {
-									Warnf(f, "Got a fetch error: %s", err)
+									Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
 									//TODO new backoff type?
 									time.Sleep(1 * time.Second)
 								}
