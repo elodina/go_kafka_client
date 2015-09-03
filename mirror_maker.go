@@ -249,12 +249,12 @@ func (this *MirrorMaker) startProducers() {
 		if this.config.TimingsProducerConfig != "" {
 			go this.timingsRoutine(producer)
 		}
-		go this.failedRoutine(producer)
 		if this.config.PreserveOrder {
 			go this.produceRoutine(producer, i)
 		} else {
 			go this.produceRoutine(producer, 0)
 		}
+        this.failedRoutine(producer)
 	}
 }
 

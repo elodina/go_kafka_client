@@ -16,69 +16,102 @@ limitations under the License. */
 package framework
 
 import (
-    "os"
-    "github.com/mesos/mesos-go/executor"
-    mesos "github.com/mesos/mesos-go/mesosproto"
-    "time"
+	"encoding/json"
+	"github.com/mesos/mesos-go/executor"
+	mesos "github.com/mesos/mesos-go/mesosproto"
+	kafka "github.com/stealthly/go_kafka_client"
+	"os"
 )
 
 type MirrorMakerExecutor struct {
+	config      map[string]string
+	mirrorMaker *kafka.MirrorMaker
+}
+
+func NewMirrorMakerExecutor() *MirrorMakerExecutor {
+	return &MirrorMakerExecutor{
+		config: make(map[string]string),
+	}
 }
 
 func (e *MirrorMakerExecutor) Registered(driver executor.ExecutorDriver, executor *mesos.ExecutorInfo, framework *mesos.FrameworkInfo, slave *mesos.SlaveInfo) {
-    Logger.Infof("[Registered] framework: %s slave: %s", framework.GetId().GetValue(), slave.GetId().GetValue())
+	Logger.Infof("[Registered] framework: %s slave: %s", framework.GetId().GetValue(), slave.GetId().GetValue())
 }
 
 func (e *MirrorMakerExecutor) Reregistered(driver executor.ExecutorDriver, slave *mesos.SlaveInfo) {
-    Logger.Infof("[Reregistered] slave: %s", slave.GetId().GetValue())
+	Logger.Infof("[Reregistered] slave: %s", slave.GetId().GetValue())
 }
 
 func (e *MirrorMakerExecutor) Disconnected(executor.ExecutorDriver) {
-    Logger.Info("[Disconnected]")
+	Logger.Info("[Disconnected]")
 }
 
 func (e *MirrorMakerExecutor) LaunchTask(driver executor.ExecutorDriver, task *mesos.TaskInfo) {
-    Logger.Infof("[LaunchTask] %s", task)
+	Logger.Infof("[LaunchTask] %s", task)
 
-    runStatus := &mesos.TaskStatus{
-        TaskId: task.GetTaskId(),
-        State:  mesos.TaskState_TASK_RUNNING.Enum(),
-    }
+	err := json.Unmarshal(task.GetData(), &e.config)
+	if err != nil {
+		Logger.Errorf("Could not unmarshal json data: %s", err)
+		panic(err)
+	}
 
-    if _, err := driver.SendStatusUpdate(runStatus); err != nil {
-        Logger.Errorf("Failed to send status update: %s", runStatus)
-        os.Exit(1) //TODO not sure if we should exit in this case, but probably yes
-    }
+	Logger.Info(e.config)
 
-    go func() {
-        time.Sleep(1 * time.Minute)
+	runStatus := &mesos.TaskStatus{
+		TaskId: task.GetTaskId(),
+		State:  mesos.TaskState_TASK_RUNNING.Enum(),
+	}
 
-        // finish task
-        Logger.Infof("Finishing task %s", task.GetName())
-        finStatus := &mesos.TaskStatus{
-            TaskId: task.GetTaskId(),
-            State:  mesos.TaskState_TASK_FINISHED.Enum(),
-        }
-        if _, err := driver.SendStatusUpdate(finStatus); err != nil {
-            Logger.Errorf("Failed to send status update: %s", finStatus)
-            os.Exit(1)
-        }
-        Logger.Infof("Task %s has finished", task.GetName())
-    }()
+	if _, err := driver.SendStatusUpdate(runStatus); err != nil {
+		Logger.Errorf("Failed to send status update: %s", runStatus)
+		os.Exit(1) //TODO not sure if we should exit in this case, but probably yes
+	}
+
+	go func() {
+		e.startMirrorMaker()
+
+		// finish task
+		Logger.Infof("Finishing task %s", task.GetName())
+		finStatus := &mesos.TaskStatus{
+			TaskId: task.GetTaskId(),
+			State:  mesos.TaskState_TASK_FINISHED.Enum(),
+		}
+		if _, err := driver.SendStatusUpdate(finStatus); err != nil {
+			Logger.Errorf("Failed to send status update: %s", finStatus)
+			os.Exit(1)
+		}
+		Logger.Infof("Task %s has finished", task.GetName())
+	}()
 }
 
 func (e *MirrorMakerExecutor) KillTask(driver executor.ExecutorDriver, id *mesos.TaskID) {
-    Logger.Infof("[KillTask] %s", id.GetValue())
+	Logger.Infof("[KillTask] %s", id.GetValue())
+	e.mirrorMaker.Stop()
 }
 
 func (e *MirrorMakerExecutor) FrameworkMessage(driver executor.ExecutorDriver, message string) {
-    Logger.Infof("[FrameworkMessage] %s", message)
+	Logger.Infof("[FrameworkMessage] %s", message)
 }
 
 func (e *MirrorMakerExecutor) Shutdown(driver executor.ExecutorDriver) {
-    Logger.Infof("[Shutdown]")
+	Logger.Infof("[Shutdown]")
+	e.mirrorMaker.Stop()
 }
 
 func (e *MirrorMakerExecutor) Error(driver executor.ExecutorDriver, message string) {
-    Logger.Errorf("[Error] %s", message)
+	Logger.Errorf("[Error] %s", message)
+}
+
+func (e *MirrorMakerExecutor) startMirrorMaker() {
+	mmConfig := kafka.NewMirrorMakerConfig()
+	mmConfig.NumProducers = 1
+	mmConfig.NumStreams = 1
+	mmConfig.TopicPrefix = "mirror_"
+	mmConfig.ChannelSize = 10000
+	mmConfig.Whitelist = e.config["whitelist"]
+	mmConfig.ProducerConfig = e.config["producer.config"]
+	mmConfig.ConsumerConfigs = []string{e.config["consumer.config"]}
+
+	e.mirrorMaker = kafka.NewMirrorMaker(mmConfig)
+	e.mirrorMaker.Start()
 }

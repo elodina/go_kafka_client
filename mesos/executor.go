@@ -18,48 +18,50 @@ limitations under the License. */
 package main
 
 import (
-    "flag"
-    "fmt"
-    "os"
+	"flag"
+	"fmt"
+	"os"
 
-    "github.com/mesos/mesos-go/executor"
-    "github.com/stealthly/go_kafka_client/mesos/framework"
+	"github.com/mesos/mesos-go/executor"
+	"github.com/stealthly/go_kafka_client/mesos/framework"
 )
 
 var logLevel = flag.String("log.level", "info", "Log level. trace|debug|info|warn|error|critical. Defaults to info.")
 var executorType = flag.String("type", "", "Type of executor to run")
 
 func main() {
-    flag.Parse()
-    err := framework.InitLogging(*logLevel)
-    if err != nil {
-        fmt.Println(err)
-        os.Exit(1)
-    }
+	flag.Parse()
+	err := framework.InitLogging(*logLevel)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
-    var taskExecutor executor.Executor
-    switch *executorType {
-        case framework.TaskTypeMirrorMaker: taskExecutor = new(framework.MirrorMakerExecutor)
-        default: {
-            framework.Logger.Errorf("Unknown executor type %s", *executorType)
-            os.Exit(1)
-        }
-    }
+	var taskExecutor executor.Executor
+	switch *executorType {
+	case framework.TaskTypeMirrorMaker:
+		taskExecutor = new(framework.MirrorMakerExecutor)
+	default:
+		{
+			framework.Logger.Errorf("Unknown executor type %s", *executorType)
+			os.Exit(1)
+		}
+	}
 
-    driverConfig := executor.DriverConfig{
-        Executor: taskExecutor,
-    }
+	driverConfig := executor.DriverConfig{
+		Executor: taskExecutor,
+	}
 
-    driver, err := executor.NewMesosExecutorDriver(driverConfig)
-    if err != nil {
-        framework.Logger.Error(err)
-        os.Exit(1)
-    }
+	driver, err := executor.NewMesosExecutorDriver(driverConfig)
+	if err != nil {
+		framework.Logger.Error(err)
+		os.Exit(1)
+	}
 
-    _, err = driver.Start()
-    if err != nil {
-        framework.Logger.Error(err)
-        os.Exit(1)
-    }
-    driver.Join()
+	_, err = driver.Start()
+	if err != nil {
+		framework.Logger.Error(err)
+		os.Exit(1)
+	}
+	driver.Join()
 }

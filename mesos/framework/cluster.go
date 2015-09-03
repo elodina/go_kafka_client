@@ -18,60 +18,64 @@ package framework
 import "sync"
 
 type Cluster struct {
-    tasks    map[string]Task
-    taskLock sync.Mutex
+	tasks    map[string]Task
+	taskLock sync.Mutex
 }
 
 func NewCluster() *Cluster {
-    return &Cluster{
-        tasks: make(map[string]Task),
-    }
+	return &Cluster{
+		tasks: make(map[string]Task),
+	}
 }
 
 func (c *Cluster) Exists(id string) bool {
-    c.taskLock.Lock()
-    defer c.taskLock.Unlock()
+	c.taskLock.Lock()
+	defer c.taskLock.Unlock()
 
-    _, exists := c.tasks[id]
-    return exists
+	_, exists := c.tasks[id]
+	return exists
 }
 
 func (c *Cluster) Add(task Task) {
-    c.taskLock.Lock()
-    defer c.taskLock.Unlock()
+	c.taskLock.Lock()
+	defer c.taskLock.Unlock()
 
-    c.tasks[task.GetID()] = task
+	c.tasks[task.GetID()] = task
 }
 
 func (c *Cluster) Remove(id string) {
-    c.taskLock.Lock()
-    defer c.taskLock.Unlock()
+	c.taskLock.Lock()
+	defer c.taskLock.Unlock()
 
-    delete(c.tasks, id)
+	delete(c.tasks, id)
+}
+
+func (c *Cluster) Get(id string) Task {
+	return c.tasks[id]
 }
 
 func (c *Cluster) GetAllTasks() []Task {
-    c.taskLock.Lock()
-    defer c.taskLock.Unlock()
+	c.taskLock.Lock()
+	defer c.taskLock.Unlock()
 
-    tasks := make([]Task, 0)
-    for _, task := range c.tasks {
-        tasks = append(tasks, task)
-    }
+	tasks := make([]Task, 0)
+	for _, task := range c.tasks {
+		tasks = append(tasks, task)
+	}
 
-    return tasks
+	return tasks
 }
 
 func (c *Cluster) GetTasksWithState(state TaskState) []Task {
-    c.taskLock.Lock()
-    defer c.taskLock.Unlock()
+	c.taskLock.Lock()
+	defer c.taskLock.Unlock()
 
-    tasks := make([]Task, 0)
-    for _, task := range c.tasks {
-        if task.GetState() == state {
-            tasks = append(tasks, task)
-        }
-    }
+	tasks := make([]Task, 0)
+	for _, task := range c.tasks {
+		if task.GetState() == state {
+			tasks = append(tasks, task)
+		}
+	}
 
-    return tasks
+	return tasks
 }

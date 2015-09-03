@@ -16,67 +16,67 @@ limitations under the License. */
 package framework
 
 import (
-    "encoding/json"
-    "fmt"
-    "io/ioutil"
-    "net/http"
-    "net/url"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 )
 
 type ApiRequest struct {
-    url    string
-    params map[string]string
+	url    string
+	params map[string]string
 }
 
 func NewApiRequest(url string) *ApiRequest {
-    return &ApiRequest{
-        url:    url,
-        params: make(map[string]string),
-    }
+	return &ApiRequest{
+		url:    url,
+		params: make(map[string]string),
+	}
 }
 
 func (r *ApiRequest) AddParam(key string, value interface{}) {
-    str := fmt.Sprintf("%s", value)
-    if str != "" {
-        r.params[key] = str
-    }
+	str := fmt.Sprintf("%s", value)
+	if str != "" {
+		r.params[key] = str
+	}
 }
 
 func (r *ApiRequest) Get() *ApiResponse {
-    values := url.Values{}
-    for key, value := range r.params {
-        values.Set(key, value)
-    }
-    queryString := values.Encode()
+	values := url.Values{}
+	for key, value := range r.params {
+		values.Set(key, value)
+	}
+	queryString := values.Encode()
 
-    url := fmt.Sprintf("%s?%s", r.url, queryString)
-    response, err := http.Get(url)
-    if err != nil {
-        return &ApiResponse{false, err.Error()}
-    }
+	url := fmt.Sprintf("%s?%s", r.url, queryString)
+	response, err := http.Get(url)
+	if err != nil {
+		return &ApiResponse{false, err.Error()}
+	}
 
-    responseBody, err := ioutil.ReadAll(response.Body)
-    if err != nil {
-        return &ApiResponse{false, err.Error()}
-    }
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return &ApiResponse{false, err.Error()}
+	}
 
-    apiResponse := new(ApiResponse)
-    err = json.Unmarshal(responseBody, apiResponse)
-    if err != nil {
-        return &ApiResponse{false, err.Error()}
-    }
+	apiResponse := new(ApiResponse)
+	err = json.Unmarshal(responseBody, apiResponse)
+	if err != nil {
+		return &ApiResponse{false, err.Error()}
+	}
 
-    return apiResponse
+	return apiResponse
 }
 
 type ApiResponse struct {
-    Success bool
-    Message string
+	Success bool
+	Message string
 }
 
 func NewApiResponse(success bool, message string) *ApiResponse {
-    return &ApiResponse{
-        Success: success,
-        Message: message,
-    }
+	return &ApiResponse{
+		Success: success,
+		Message: message,
+	}
 }
