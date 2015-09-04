@@ -190,6 +190,25 @@ func handleStart() error {
 }
 
 func handleStop() error {
+	id := stripArgument()
+	if id == "" {
+		return errors.New("No task id supplied to start")
+	}
+
+	var api string
+	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
+	flag.Parse()
+
+	if err := resolveApi(api); err != nil {
+		return err
+	}
+
+	request := framework.NewApiRequest(framework.Config.Api + "/api/stop")
+	request.PutString("id", id)
+	response := request.Get()
+
+	fmt.Println(response.Message)
+
 	return nil
 }
 

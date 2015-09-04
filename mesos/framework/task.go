@@ -38,6 +38,7 @@ type TaskState string
 const (
 	TaskStateInactive TaskState = "inactive"
 	TaskStateStopped  TaskState = "stopped"
+	TaskStateStaging  TaskState = "staging"
 	TaskStateRunning  TaskState = "running"
 )
 
@@ -87,8 +88,10 @@ func (tc TaskConfig) SetIntConfig(key string, where *int) {
 	}
 }
 
+//TODO i don't like that every implementor will have to implement plenty of similar stuff
 type Task interface {
 	GetID() string
+	GetTaskID() string
 	GetState() TaskState
 	SetState(TaskState)
 	Matches(*mesos.Offer) string
@@ -113,6 +116,7 @@ func NewTaskFromRequest(r *http.Request) (Task, error) {
 
 type MirrorMakerTask struct {
 	ID     string
+	taskID string
 	state  TaskState
 	cpu    float64
 	mem    float64
@@ -142,6 +146,10 @@ func (mm *MirrorMakerTask) GetID() string {
 	return mm.ID
 }
 
+func (mm *MirrorMakerTask) GetTaskID() string {
+	return mm.taskID
+}
+
 func (mm *MirrorMakerTask) GetState() TaskState {
 	return mm.state
 }
@@ -164,8 +172,9 @@ func (mm *MirrorMakerTask) Matches(offer *mesos.Offer) string {
 
 func (mm *MirrorMakerTask) CreateTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 	taskName := fmt.Sprintf("mirrormaker-%s", mm.ID)
+	mm.taskID = fmt.Sprintf("%s-%s", taskName, uuid())
 	taskId := &mesos.TaskID{
-		Value: proto.String(fmt.Sprintf("%s-%s", taskName, uuid())),
+		Value: proto.String(mm.taskID),
 	}
 
 	data, err := json.Marshal(mm.config)

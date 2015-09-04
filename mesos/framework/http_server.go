@@ -76,8 +76,13 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
-	//    sched.SetActive(false)
-	respond(true, "Servers stopped", w)
+	id := r.URL.Query().Get("id")
+	if sched.cluster.Exists(id) {
+		sched.stopTask(sched.cluster.Get(id))
+		respond(true, fmt.Sprintf("Stopped task %s", id), w)
+	} else {
+		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
+	}
 }
 
 func handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -95,13 +100,6 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 			respond(true, "Configuration updated", w)
 		}
 	}
-	//    queryParams := r.URL.Query()
-	//    setConfig(queryParams, "producer.properties", &Config.ProducerProperties)
-	//    setConfig(queryParams, "topic", &Config.Topic)
-	//    setConfig(queryParams, "transform", &Config.Transform)
-	//    setConfig(queryParams, "schema.registry.url", &Config.SchemaRegistryUrl)
-	//    setFloatConfig(queryParams, "cpu", &Config.Cpus)
-	//    setFloatConfig(queryParams, "mem", &Config.Mem)
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {

@@ -163,7 +163,9 @@ func (this *SaramaProducer) initInput() {
 }
 
 func (this *SaramaProducer) Close() error {
-	return this.saramaProducer.Close()
+	err := this.saramaProducer.Close()
+	close(this.errors)
+	return err
 }
 
 func (this *SaramaProducer) AsyncClose() {
