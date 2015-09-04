@@ -22,7 +22,7 @@ import (
 	"os"
 
 	"github.com/stealthly/go_kafka_client/mesos/framework"
-	"strconv"
+	"math"
 )
 
 func main() {
@@ -33,15 +33,11 @@ func main() {
 }
 
 func exec() error {
-	args := os.Args
-	if len(args) == 1 {
+	command := stripArgument()
+	if command == "" {
 		handleHelp()
 		return errors.New("No command supplied")
 	}
-
-	command := args[1]
-	commandArgs := args[1:]
-	os.Args = commandArgs
 
 	switch command {
 	case "help":
@@ -119,15 +115,11 @@ func handleScheduler() error {
 }
 
 func handleAdd() error {
-	args := os.Args
-	if len(args) == 1 {
+	addType := stripArgument()
+	if addType == "" {
 		handleHelp()
 		return errors.New("No task type supplied to add")
 	}
-
-	addType := args[1]
-	commandArgs := args[1:]
-	os.Args = commandArgs
 
 	switch addType {
 	case framework.TaskTypeMirrorMaker:
@@ -141,14 +133,10 @@ func handleAdd() error {
 }
 
 func handleAddMirrorMaker() error {
-	args := os.Args
-	if len(args) == 1 {
+	id := stripArgument()
+	if id == "" {
 		return errors.New("No task id supplied to add")
 	}
-
-	id := args[1]
-	commandArgs := args[1:]
-	os.Args = commandArgs
 
 	var api string
 	var cpu float64
@@ -165,10 +153,10 @@ func handleAddMirrorMaker() error {
 	}
 
 	request := framework.NewApiRequest(framework.Config.Api + "/api/add")
-	request.AddParam("type", framework.TaskTypeMirrorMaker)
-	request.AddParam("id", id)
-	request.AddParam("cpu", strconv.FormatFloat(cpu, 'E', -1, 64))
-	request.AddParam("mem", strconv.FormatFloat(mem, 'E', -1, 64))
+	request.PutString("type", framework.TaskTypeMirrorMaker)
+	request.PutString("id", id)
+	request.PutFloat("cpu", cpu)
+	request.PutFloat("mem", mem)
 
 	response := request.Get()
 
@@ -178,14 +166,10 @@ func handleAddMirrorMaker() error {
 }
 
 func handleStart() error {
-	args := os.Args
-	if len(args) == 1 {
+	id := stripArgument()
+	if id == "" {
 		return errors.New("No task id supplied to start")
 	}
-
-	id := args[1]
-	commandArgs := args[1:]
-	os.Args = commandArgs
 
 	var api string
 
@@ -197,7 +181,7 @@ func handleStart() error {
 	}
 
 	request := framework.NewApiRequest(framework.Config.Api + "/api/start")
-	request.AddParam("id", id)
+	request.PutString("id", id)
 
 	response := request.Get()
 	fmt.Println(response.Message)
@@ -210,31 +194,39 @@ func handleStop() error {
 }
 
 func handleUpdate() error {
-	args := os.Args
-	if len(args) == 1 {
-		return errors.New("No task id supplied to update")
+	id := stripArgument()
+	if id == "" {
+		return errors.New("No task id supplied to start")
 	}
-
-	id := args[1]
-	commandArgs := args[1:]
-	os.Args = commandArgs
 
 	var api string
 	var cpu float64
 	var mem float64
 	var whitelist string
 	var blacklist string
+	var consumerConfig consumerConfigs
 	var producerConfig string
-	var consumerConfig string
+	var numProducers int64
+	var numStreams int64
+	var preservePartitions bool
+	var preserveOrder bool
+	var prefix string
+	var channelSize int64
 	//TODO constraints
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
-	flag.Float64Var(&cpu, "cpu", 0.0, "CPUs per task.")
-	flag.Float64Var(&mem, "mem", 0.0, "Mem per task.")
-	flag.StringVar(&whitelist, "whitelist", "", "Whitelist to consume.")
-	flag.StringVar(&blacklist, "blacklist", "", "Blacklist to consume.")
+	flag.Float64Var(&cpu, "cpu", math.SmallestNonzeroFloat64, "CPUs per task.")
+	flag.Float64Var(&mem, "mem", math.SmallestNonzeroFloat64, "Mem per task.")
+	flag.StringVar(&whitelist, "whitelist", "", "Regex pattern for whitelist. Providing both whitelist and blacklist is an error.")
+	flag.StringVar(&blacklist, "blacklist", "", "Regex pattern for blacklist. Providing both whitelist and blacklist is an error.")
 	flag.StringVar(&producerConfig, "producer.config", "", "Producer config file name.")
-	flag.StringVar(&consumerConfig, "consumer.config", "", "Consumer config file name.")
+	flag.Var(&consumerConfig, "consumer.config", "Consumer config file name.")
+	flag.Int64Var(&numProducers, "num.producers", math.MinInt64, "Number of producers.")
+	flag.Int64Var(&numStreams, "num.streams", math.MinInt64, "Number of consumption streams.")
+	flag.BoolVar(&preservePartitions, "preserve.partitions", false, "Preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.")
+	flag.BoolVar(&preserveOrder, "preserve.order", false, "E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.")
+	flag.StringVar(&prefix, "prefix", "", "Destination topic prefix.")
+	flag.Int64Var(&channelSize, "queue.size", math.MinInt64, "Maximum number of messages that are buffered between the consumer and producer.")
 	flag.Parse()
 
 	if err := resolveApi(api); err != nil {
@@ -242,23 +234,38 @@ func handleUpdate() error {
 	}
 
 	request := framework.NewApiRequest(framework.Config.Api + "/api/update")
-	request.AddParam("id", id)
-	if cpu != 0.0 {
-		request.AddParam("cpu", strconv.FormatFloat(cpu, 'E', -1, 64))
-	}
-	if mem != 0.0 {
-		request.AddParam("mem", strconv.FormatFloat(mem, 'E', -1, 64))
-	}
-	request.AddParam("whitelist", whitelist)
-	request.AddParam("blacklist", blacklist)
-	request.AddParam("producer.config", producerConfig)
-	request.AddParam("consumer.config", consumerConfig)
+	request.PutString("id", id)
+	request.PutFloat("cpu", cpu)
+	request.PutFloat("mem", mem)
+	request.PutString("whitelist", whitelist)
+	request.PutString("blacklist", blacklist)
+	request.PutString("producer.config", producerConfig)
+	request.PutStringSlice("consumer.config", consumerConfig)
+	request.PutInt("num.producers", numProducers)
+	request.PutInt("num.streams", numStreams)
+	request.PutBool("preserve.partitions", preservePartitions)
+	request.PutBool("preserve.order", preserveOrder)
+	request.PutString("prefix", prefix)
+	request.PutInt("queue.size", channelSize)
 
 	response := request.Get()
 
 	fmt.Println(response.Message)
 
 	return nil
+}
+
+func stripArgument() string {
+	args := os.Args
+	if len(args) == 1 {
+		return ""
+	}
+
+	arg := args[1]
+	commandArgs := args[1:]
+	os.Args = commandArgs
+
+	return arg
 }
 
 func resolveApi(api string) error {
@@ -273,4 +280,15 @@ func resolveApi(api string) error {
 	}
 
 	return errors.New("Undefined API url. Please provide either a CLI --api option or GM_API env.")
+}
+
+type consumerConfigs []string
+
+func (i *consumerConfigs) String() string {
+	return fmt.Sprintf("%s", *i)
+}
+
+func (i *consumerConfigs) Set(value string) error {
+	*i = append(*i, value)
+	return nil
 }

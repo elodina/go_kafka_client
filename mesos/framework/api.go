@@ -19,8 +19,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 )
 
 type ApiRequest struct {
@@ -35,11 +38,35 @@ func NewApiRequest(url string) *ApiRequest {
 	}
 }
 
-func (r *ApiRequest) AddParam(key string, value interface{}) {
+func (r *ApiRequest) PutString(key string, value interface{}) {
 	str := fmt.Sprintf("%s", value)
 	if str != "" {
 		r.params[key] = str
 	}
+}
+
+func (r *ApiRequest) PutStringSlice(key string, value []string) {
+	if len(value) != 0 {
+		str := strings.Join(value, ",")
+		r.params[key] = str
+	}
+}
+
+func (r *ApiRequest) PutFloat(key string, value float64) {
+	if value != math.SmallestNonzeroFloat64 {
+		str := strconv.FormatFloat(value, 'E', -1, 64)
+		r.params[key] = str
+	}
+}
+
+func (r *ApiRequest) PutInt(key string, value int64) {
+	if value != math.MinInt64 {
+		r.params[key] = fmt.Sprintf("%d", value)
+	}
+}
+
+func (r *ApiRequest) PutBool(key string, value bool) {
+	r.params[key] = fmt.Sprintf("%t", value)
 }
 
 func (r *ApiRequest) Get() *ApiResponse {

@@ -22,9 +22,11 @@ import (
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	util "github.com/mesos/mesos-go/mesosutil"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -38,6 +40,52 @@ const (
 	TaskStateStopped  TaskState = "stopped"
 	TaskStateRunning  TaskState = "running"
 )
+
+type TaskConfig map[string]string
+
+func (tc TaskConfig) GetString(key string) (string, error) {
+	value, ok := tc[key]
+	if !ok {
+		return "", fmt.Errorf("Key %s missing", key)
+	}
+
+	return value, nil
+}
+
+func (tc TaskConfig) GetInt(key string) (int64, error) {
+	value, ok := tc[key]
+	if !ok {
+		return math.MinInt64, fmt.Errorf("Key %s missing", key)
+	}
+
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		return math.MinInt64, err
+	}
+
+	return int64(intValue), nil
+}
+
+func (tc TaskConfig) SetStringConfig(key string, where *string) {
+	value, err := tc.GetString(key)
+	if err == nil {
+		*where = value
+	}
+}
+
+func (tc TaskConfig) SetStringSliceConfig(key string, where *[]string) {
+	value, err := tc.GetString(key)
+	if err == nil {
+		*where = strings.Split(value, ",")
+	}
+}
+
+func (tc TaskConfig) SetIntConfig(key string, where *int) {
+	value, err := tc.GetInt(key)
+	if err == nil {
+		*where = int(value)
+	}
+}
 
 type Task interface {
 	GetID() string
@@ -141,9 +189,7 @@ func (mm *MirrorMakerTask) CreateTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 }
 
 func (mm *MirrorMakerTask) Update(queryParams url.Values) error {
-	mm.config["whitelist"] = queryParams.Get("whitelist")
-	mm.config["producer.config"] = queryParams.Get("producer.config")
-	mm.config["consumer.config"] = queryParams.Get("consumer.config")
+	updateConfig(queryParams, mm.config)
 
 	return nil
 }
@@ -169,5 +215,13 @@ func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 				},
 			},
 		},
+	}
+}
+
+func updateConfig(queryParams url.Values, config map[string]string) {
+	for key, value := range queryParams {
+		if len(value) > 0 {
+			config[key] = value[0]
+		}
 	}
 }

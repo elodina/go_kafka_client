@@ -127,7 +127,11 @@ func (s *Scheduler) StatusUpdate(driver scheduler.SchedulerDriver, status *mesos
 	if status.GetState() == mesos.TaskState_TASK_FAILED || status.GetState() == mesos.TaskState_TASK_KILLED ||
 		status.GetState() == mesos.TaskState_TASK_LOST || status.GetState() == mesos.TaskState_TASK_ERROR ||
 		status.GetState() == mesos.TaskState_TASK_FINISHED {
-		s.cluster.Remove(id)
+		if s.cluster.Exists(id) {
+			s.cluster.Get(id).SetState(TaskStateStopped)
+		} else {
+			Logger.Errorf("Got status update %s for unknown task with id %s, ignoring", status.GetState(), id)
+		}
 	}
 }
 

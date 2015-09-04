@@ -40,7 +40,7 @@ func main() {
 	var taskExecutor executor.Executor
 	switch *executorType {
 	case framework.TaskTypeMirrorMaker:
-		taskExecutor = new(framework.MirrorMakerExecutor)
+		taskExecutor = framework.NewMirrorMakerExecutor()
 	default:
 		{
 			framework.Logger.Errorf("Unknown executor type %s", *executorType)

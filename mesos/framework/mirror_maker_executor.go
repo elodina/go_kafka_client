@@ -24,13 +24,13 @@ import (
 )
 
 type MirrorMakerExecutor struct {
-	config      map[string]string
+	config      TaskConfig
 	mirrorMaker *kafka.MirrorMaker
 }
 
 func NewMirrorMakerExecutor() *MirrorMakerExecutor {
 	return &MirrorMakerExecutor{
-		config: make(map[string]string),
+		config: make(TaskConfig),
 	}
 }
 
@@ -104,13 +104,14 @@ func (e *MirrorMakerExecutor) Error(driver executor.ExecutorDriver, message stri
 
 func (e *MirrorMakerExecutor) startMirrorMaker() {
 	mmConfig := kafka.NewMirrorMakerConfig()
-	mmConfig.NumProducers = 1
-	mmConfig.NumStreams = 1
-	mmConfig.TopicPrefix = "mirror_"
-	mmConfig.ChannelSize = 10000
-	mmConfig.Whitelist = e.config["whitelist"]
-	mmConfig.ProducerConfig = e.config["producer.config"]
-	mmConfig.ConsumerConfigs = []string{e.config["consumer.config"]}
+	e.config.SetIntConfig("num.producers", &mmConfig.NumProducers)
+	e.config.SetIntConfig("num.streams", &mmConfig.NumStreams)
+	e.config.SetStringConfig("prefix", &mmConfig.TopicPrefix)
+	e.config.SetIntConfig("queue.size", &mmConfig.ChannelSize)
+	e.config.SetStringConfig("whitelist", &mmConfig.Whitelist)
+	e.config.SetStringConfig("blacklist", &mmConfig.Blacklist)
+	e.config.SetStringConfig("producer.config", &mmConfig.ProducerConfig)
+	e.config.SetStringSliceConfig("consumer.config", &mmConfig.ConsumerConfigs)
 
 	e.mirrorMaker = kafka.NewMirrorMaker(mmConfig)
 	e.mirrorMaker.Start()
