@@ -50,6 +50,8 @@ func exec() error {
 		return handleStart()
 	case "stop":
 		return handleStop()
+	case "remove":
+		return handleRemove()
 	case "update":
 		return handleUpdate()
 	case "status":
@@ -204,6 +206,29 @@ func handleStop() error {
 	}
 
 	request := framework.NewApiRequest(framework.Config.Api + "/api/stop")
+	request.PutString("id", id)
+	response := request.Get()
+
+	fmt.Println(response.Message)
+
+	return nil
+}
+
+func handleRemove() error {
+	id := stripArgument()
+	if id == "" {
+		return errors.New("No task id supplied to remove")
+	}
+
+	var api string
+	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
+	flag.Parse()
+
+	if err := resolveApi(api); err != nil {
+		return err
+	}
+
+	request := framework.NewApiRequest(framework.Config.Api + "/api/remove")
 	request.PutString("id", id)
 	response := request.Get()
 

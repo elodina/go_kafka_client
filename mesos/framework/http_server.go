@@ -43,6 +43,7 @@ func (hs *HttpServer) Start() {
 	http.HandleFunc("/api/add", handleAdd)
 	http.HandleFunc("/api/start", handleStart)
 	http.HandleFunc("/api/stop", handleStop)
+	http.HandleFunc("/api/remove", handleRemove)
 	http.HandleFunc("/api/update", handleUpdate)
 	http.HandleFunc("/api/status", handleStatus)
 	http.ListenAndServe(hs.address, nil)
@@ -80,6 +81,21 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 	if sched.cluster.Exists(id) {
 		sched.stopTask(sched.cluster.Get(id))
 		respond(true, fmt.Sprintf("Stopped task %s", id), w)
+	} else {
+		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
+	}
+}
+
+func handleRemove(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if sched.cluster.Exists(id) {
+		task := sched.cluster.Get(id)
+		if task.GetState() == TaskStateInactive {
+			sched.cluster.Remove(id)
+			respond(true, fmt.Sprintf("Removed task %s", id), w)
+		} else {
+			respond(false, fmt.Sprintf("Please stop task %s before removing", id), w)
+		}
 	} else {
 		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
 	}
