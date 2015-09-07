@@ -45,17 +45,6 @@ type config struct {
 	LogLevel      string
 }
 
-func (c *config) Read(task *mesos.TaskInfo) {
-	config := new(config)
-	Logger.Debugf("Task data: %s", string(task.GetData()))
-	err := json.Unmarshal(task.GetData(), config)
-	if err != nil {
-		Logger.Critical(err)
-		os.Exit(1)
-	}
-	*c = *config
-}
-
 func (c *config) String() string {
 	return fmt.Sprintf(`api:                 %s
 master:              %s

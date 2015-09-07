@@ -18,11 +18,9 @@ package framework
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"fmt"
-	"strconv"
 )
 
 type HttpServer struct {
@@ -106,7 +104,7 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	task := sched.cluster.Get(id)
 	if task == nil {
-		respond(false, fmt.Sprintf("Task with id %s does not exist"), w)
+		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
 	} else {
 		err := task.Update(r.URL.Query())
 		if err != nil {
@@ -120,7 +118,7 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	//    tasks := sched.cluster.GetAllTasks()
-	response := "cluster:\n"
+	//	response := "cluster:\n"
 	//    for host, task := range tasks {
 	//        response += fmt.Sprintf("  server: %s", host)
 	//        response += fmt.Sprintf("    id: %s", task.GetTaskId())
@@ -136,25 +134,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	//            }
 	//        }
 	//    }
-	respond(true, response, w)
-}
-
-func setConfig(queryParams url.Values, name string, config *string) {
-	value := queryParams.Get(name)
-	if value != "" {
-		*config = value
-	}
-}
-
-func setFloatConfig(queryParams url.Values, name string, config *float64) {
-	value := queryParams.Get(name)
-	floatValue, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return
-	}
-	if value != "" {
-		*config = floatValue
-	}
+	respond(true, "Not yet", w)
 }
 
 func respond(success bool, message string, w http.ResponseWriter) {

@@ -134,11 +134,15 @@ func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, er
 	}
 
 	return &MirrorMakerTask{
-		ID:     id,
-		state:  TaskStateInactive,
-		cpu:    cpu,
-		mem:    mem,
-		config: make(map[string]string),
+		ID:    id,
+		state: TaskStateInactive,
+		cpu:   cpu,
+		mem:   mem,
+		config: map[string]string{
+			"num.producers": "1",
+			"num.streams":   "1",
+			"queue.size":    "10000",
+		},
 	}, nil
 }
 
