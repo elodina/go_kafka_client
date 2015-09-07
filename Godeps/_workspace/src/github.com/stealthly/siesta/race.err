@@ -1,0 +1,372 @@
+2015/08/04 16:41:46 Starting the Kafka producer
+2015/08/04 16:41:46 Kafka producer started
+2015/08/04 16:41:46 Starting the Kafka producer
+2015/08/04 16:41:46 Kafka producer started
+==================
+WARNING: DATA RACE
+Read by goroutine 97:
+  runtime.mapaccess1_fast32()
+      /usr/local/go/src/runtime/hashmap_fast.go:11 +0x0
+  github.com/stealthly/siesta.(*RecordAccumulator).addRecord()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:80 +0x1de
+  github.com/stealthly/siesta.(*RecordAccumulator).sender()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:62 +0x19c
+
+Previous write by goroutine 102:
+  runtime.mapassign1()
+      /usr/local/go/src/runtime/hashmap.go:383 +0x0
+  github.com/stealthly/siesta.(*RecordAccumulator).watcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:103 +0x76c
+
+Goroutine 97 (running) created at:
+  github.com/stealthly/siesta.NewRecordAccumulator()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:44 +0x351
+  github.com/stealthly/siesta.NewKafkaProducer()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:151 +0x9b6
+  github.com/stealthly/siesta.TestProducerSend1000()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:67 +0x26d
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 102 (running) created at:
+  github.com/stealthly/siesta.(*RecordAccumulator).createBatch()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:90 +0x342
+  github.com/stealthly/siesta.(*RecordAccumulator).addRecord()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:81 +0x273
+  github.com/stealthly/siesta.(*RecordAccumulator).sender()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:62 +0x19c
+==================
+==================
+WARNING: DATA RACE
+Write by goroutine 46:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:799 +0x64
+  github.com/stealthly/siesta.(*DefaultConnector).syncSendAndReceive()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:660 +0x251
+  github.com/stealthly/siesta.func·004()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:620 +0xad
+
+Previous write by goroutine 87:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:799 +0x64
+  github.com/stealthly/siesta.(*Selector).responseDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:149 +0x2f7
+
+Goroutine 46 (running) created at:
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllLinks()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:622 +0x42a
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllAndReturnFirstSuccessful()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:603 +0x121
+  github.com/stealthly/siesta.(*DefaultConnector).getMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:443 +0x16f
+  github.com/stealthly/siesta.(*DefaultConnector).GetTopicMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:247 +0xb3
+  github.com/stealthly/siesta.(*Metadata).Refresh()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:45 +0x10f
+  github.com/stealthly/siesta.(*Metadata).Get()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:27 +0x520
+  github.com/stealthly/siesta.(*KafkaProducer).send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:236 +0x3d9
+  github.com/stealthly/siesta.(*KafkaProducer).Send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:212 +0x3f
+  github.com/stealthly/siesta.TestProducerSend1000()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:69 +0x48f
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 87 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:87 +0x117
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.NewNetworkClient()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/network_client.go:31 +0x33d
+  github.com/stealthly/siesta.NewKafkaProducer()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:137 +0x65d
+  github.com/stealthly/siesta.TestProducerSend1000()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:67 +0x26d
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+==================
+==================
+WARNING: DATA RACE
+Write by goroutine 46:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:800 +0xc3
+  github.com/stealthly/siesta.(*DefaultConnector).syncSendAndReceive()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:660 +0x251
+  github.com/stealthly/siesta.func·004()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:620 +0xad
+
+Previous write by goroutine 87:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:800 +0xc3
+  github.com/stealthly/siesta.(*Selector).responseDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:149 +0x2f7
+
+Goroutine 46 (running) created at:
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllLinks()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:622 +0x42a
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllAndReturnFirstSuccessful()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:603 +0x121
+  github.com/stealthly/siesta.(*DefaultConnector).getMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:443 +0x16f
+  github.com/stealthly/siesta.(*DefaultConnector).GetTopicMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:247 +0xb3
+  github.com/stealthly/siesta.(*Metadata).Refresh()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:45 +0x10f
+  github.com/stealthly/siesta.(*Metadata).Get()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:27 +0x520
+  github.com/stealthly/siesta.(*KafkaProducer).send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:236 +0x3d9
+  github.com/stealthly/siesta.(*KafkaProducer).Send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:212 +0x3f
+  github.com/stealthly/siesta.TestProducerSend1000()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:69 +0x48f
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 87 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:87 +0x117
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.NewNetworkClient()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/network_client.go:31 +0x33d
+  github.com/stealthly/siesta.NewKafkaProducer()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:137 +0x65d
+  github.com/stealthly/siesta.TestProducerSend1000()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:67 +0x26d
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+==================
+2015/08/04 16:41:47 Starting the Kafka producer
+2015/08/04 16:41:47 Kafka producer started
+==================
+WARNING: DATA RACE
+Write by goroutine 63:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:799 +0x64
+  github.com/stealthly/siesta.(*DefaultConnector).syncSendAndReceive()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:660 +0x251
+  github.com/stealthly/siesta.func·004()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:620 +0xad
+
+Previous write by goroutine 30:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:799 +0x64
+  github.com/stealthly/siesta.(*Selector).requestDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:129 +0x62d
+
+Goroutine 63 (running) created at:
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllLinks()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:622 +0x42a
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllAndReturnFirstSuccessful()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:603 +0x121
+  github.com/stealthly/siesta.(*DefaultConnector).getMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:443 +0x16f
+  github.com/stealthly/siesta.(*DefaultConnector).GetTopicMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:247 +0xb3
+  github.com/stealthly/siesta.(*Metadata).Refresh()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:45 +0x10f
+  github.com/stealthly/siesta.(*Metadata).Get()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:27 +0x520
+  github.com/stealthly/siesta.(*KafkaProducer).send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:236 +0x3d9
+  github.com/stealthly/siesta.(*KafkaProducer).Send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:212 +0x3f
+  github.com/stealthly/siesta.TestProducerRequiredAcks0()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:116 +0x58e
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 30 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:82 +0x7e
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.NewNetworkClient()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/network_client.go:31 +0x33d
+  github.com/stealthly/siesta.NewKafkaProducer()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:137 +0x65d
+  github.com/stealthly/siesta.TestProducerRequiredAcks0()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:99 +0x271
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+==================
+==================
+WARNING: DATA RACE
+Write by goroutine 63:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:800 +0xc3
+  github.com/stealthly/siesta.(*DefaultConnector).syncSendAndReceive()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:660 +0x251
+  github.com/stealthly/siesta.func·004()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:620 +0xad
+
+Previous write by goroutine 30:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:800 +0xc3
+  github.com/stealthly/siesta.(*Selector).requestDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:129 +0x62d
+
+Goroutine 63 (running) created at:
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllLinks()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:622 +0x42a
+  github.com/stealthly/siesta.(*DefaultConnector).sendToAllAndReturnFirstSuccessful()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:603 +0x121
+  github.com/stealthly/siesta.(*DefaultConnector).getMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:443 +0x16f
+  github.com/stealthly/siesta.(*DefaultConnector).GetTopicMetadata()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:247 +0xb3
+  github.com/stealthly/siesta.(*Metadata).Refresh()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:45 +0x10f
+  github.com/stealthly/siesta.(*Metadata).Get()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/metadata.go:27 +0x520
+  github.com/stealthly/siesta.(*KafkaProducer).send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:236 +0x3d9
+  github.com/stealthly/siesta.(*KafkaProducer).Send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:212 +0x3f
+  github.com/stealthly/siesta.TestProducerRequiredAcks0()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:116 +0x58e
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 30 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:82 +0x7e
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.NewNetworkClient()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/network_client.go:31 +0x33d
+  github.com/stealthly/siesta.NewKafkaProducer()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:137 +0x65d
+  github.com/stealthly/siesta.TestProducerRequiredAcks0()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:99 +0x271
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+==================
+==================
+WARNING: DATA RACE
+Read by goroutine 42:
+  github.com/stealthly/siesta.(*NetworkClient).send()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/network_client.go:48 +0x304
+  github.com/stealthly/siesta.(*RecordAccumulator).flush()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:114 +0xb0
+  github.com/stealthly/siesta.(*RecordAccumulator).flushAll()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:122 +0x281
+  github.com/stealthly/siesta.(*RecordAccumulator).cleanup()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:70 +0x35
+  github.com/stealthly/siesta.(*RecordAccumulator).sender()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:59 +0x148
+
+Previous write by goroutine 44:
+  github.com/stealthly/siesta.(*RecordAccumulator).watcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:103 +0x6d7
+  runtime.goexit()
+      /usr/local/go/src/runtime/asm_amd64.s:2232 +0x0
+  sync.(*Mutex).Lock()
+      /usr/local/go/src/sync/mutex.go:45 +0x68
+  math/rand.(*lockedSource).Int63()
+      /usr/local/go/src/math/rand/rand.go:236 +0x3c
+  math/rand.(*Rand).Int63()
+      /usr/local/go/src/math/rand/rand.go:43 +0x5b
+  math/rand.(*Rand).Int31()
+      /usr/local/go/src/math/rand/rand.go:49 +0x35
+  math/rand.(*Rand).Int31n()
+      /usr/local/go/src/math/rand/rand.go:84 +0xce
+  math/rand.(*Rand).Intn()
+      /usr/local/go/src/math/rand/rand.go:98 +0x9a
+  math/rand.Intn()
+      /usr/local/go/src/math/rand/rand.go:195 +0x51
+  github.com/stealthly/siesta.randomString()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/utils_test.go:69 +0xd1e
+  github.com/stealthly/siesta.TestSizingEncoder()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/encoder_decoder_test.go:254 +0x76e
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 42 (running) created at:
+  github.com/stealthly/siesta.NewRecordAccumulator()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:44 +0x351
+  github.com/stealthly/siesta.NewKafkaProducer()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer.go:151 +0x9b6
+  github.com/stealthly/siesta.TestProducerRequiredAcks0()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/kafka_producer_test.go:99 +0x271
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 44 (running) created at:
+  github.com/stealthly/siesta.(*RecordAccumulator).watcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/record_accumulator.go:98 +0x33e
+==================
+2015/08/04 16:41:47 Starting the Kafka producer
+2015/08/04 16:41:47 Kafka producer started
+==================
+WARNING: DATA RACE
+Write by goroutine 76:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:799 +0x64
+  github.com/stealthly/siesta.(*Selector).responseDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:149 +0x2f7
+
+Previous write by goroutine 61:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:799 +0x64
+  github.com/stealthly/siesta.(*Selector).responseDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:149 +0x2f7
+
+Goroutine 76 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:87 +0x117
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.TestSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector_test.go:25 +0x14a
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 61 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:87 +0x117
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.TestSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector_test.go:25 +0x14a
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+==================
+==================
+WARNING: DATA RACE
+Write by goroutine 76:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:800 +0xc3
+  github.com/stealthly/siesta.(*Selector).responseDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:149 +0x2f7
+
+Previous write by goroutine 61:
+  github.com/stealthly/siesta.(*brokerLink).Succeeded()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/connector.go:800 +0xc3
+  github.com/stealthly/siesta.(*Selector).responseDispatcher()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:149 +0x2f7
+
+Goroutine 76 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:87 +0x117
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.TestSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector_test.go:25 +0x14a
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+
+Goroutine 61 (running) created at:
+  github.com/stealthly/siesta.(*Selector).Start()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:87 +0x117
+  github.com/stealthly/siesta.NewSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector.go:76 +0x164
+  github.com/stealthly/siesta.TestSelector()
+      /home/snovachenko/work/workspace/go/src/github.com/stealthly/siesta/selector_test.go:25 +0x14a
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:447 +0x133
+==================
