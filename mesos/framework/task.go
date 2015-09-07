@@ -207,6 +207,21 @@ func (mm *MirrorMakerTask) Update(queryParams url.Values) error {
 	return nil
 }
 
+func (mm *MirrorMakerTask) String() string {
+	response := "    type: mirrormaker\n"
+	response += fmt.Sprintf("    id: %s\n", mm.ID)
+	response += fmt.Sprintf("    state: %s\n", mm.state)
+	response += fmt.Sprintf("    task id: %s\n", mm.taskID)
+	response += fmt.Sprintf("    cpu: %.2f\n", mm.cpu)
+	response += fmt.Sprintf("    mem: %.2f\n", mm.mem)
+	response += "    configs:\n"
+	for key, value := range mm.config {
+		response += fmt.Sprintf("      %s: %s\n", key, value)
+	}
+
+	return response
+}
+
 func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 	id := fmt.Sprintf("mirrormaker-%s", mm.ID)
 

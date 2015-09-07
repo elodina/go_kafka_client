@@ -117,24 +117,13 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
-	//    tasks := sched.cluster.GetAllTasks()
-	//	response := "cluster:\n"
-	//    for host, task := range tasks {
-	//        response += fmt.Sprintf("  server: %s", host)
-	//        response += fmt.Sprintf("    id: %s", task.GetTaskId())
-	//        response += fmt.Sprintf("    slave id: %s", task.GetSlaveId())
-	//        for _, resource := range task.GetResources() {
-	//            switch *resource.Type {
-	//                case mesos.Value_SCALAR:
-	//                response += fmt.Sprintf("    %s: %s", resource.GetName(), resource.GetScalar())
-	//                case mesos.Value_RANGES:
-	//                response += fmt.Sprintf("    %s: %s", resource.GetName(), resource.GetRanges())
-	//                case mesos.Value_SET:
-	//                response += fmt.Sprintf("    %s: %s", resource.GetName(), resource.GetSet())
-	//            }
-	//        }
-	//    }
-	respond(true, "Not yet", w)
+	tasks := sched.cluster.GetAllTasks()
+	response := "cluster:\n"
+	for _, task := range tasks {
+		response += "  task:\n"
+		response += fmt.Sprintf("%s", task)
+	}
+	respond(true, response, w)
 }
 
 func respond(success bool, message string, w http.ResponseWriter) {

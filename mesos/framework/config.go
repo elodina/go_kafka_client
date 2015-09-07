@@ -16,13 +16,10 @@ limitations under the License. */
 package framework
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 
 	log "github.com/cihub/seelog"
-	mesos "github.com/mesos/mesos-go/mesosproto"
 )
 
 var Logger log.LoggerInterface
