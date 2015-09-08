@@ -120,7 +120,7 @@ type MirrorMakerTask struct {
 	state  TaskState
 	cpu    float64
 	mem    float64
-	config map[string]string
+	config TaskConfig
 }
 
 func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, error) {
@@ -138,7 +138,7 @@ func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, er
 		state: TaskStateInactive,
 		cpu:   cpu,
 		mem:   mem,
-		config: map[string]string{
+		config: TaskConfig{
 			"num.producers": "1",
 			"num.streams":   "1",
 			"queue.size":    "10000",
@@ -246,9 +246,9 @@ func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 	}
 }
 
-func updateConfig(queryParams url.Values, config map[string]string) {
+func updateConfig(queryParams url.Values, config TaskConfig) {
 	for key, value := range queryParams {
-		if len(value) > 0 {
+		if key != "id" && len(value) > 0 {
 			config[key] = value[0]
 		}
 	}

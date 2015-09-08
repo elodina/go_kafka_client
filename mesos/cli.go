@@ -252,8 +252,8 @@ func handleUpdate() error {
 	var producerConfig string
 	var numProducers int64
 	var numStreams int64
-	var preservePartitions bool
-	var preserveOrder bool
+	preservePartitions := new(boolFlag)
+	preserveOrder := new(boolFlag)
 	var prefix string
 	var channelSize int64
 	//TODO constraints
@@ -267,8 +267,8 @@ func handleUpdate() error {
 	flag.Var(&consumerConfig, "consumer.config", "Consumer config file name.")
 	flag.Int64Var(&numProducers, "num.producers", math.MinInt64, "Number of producers.")
 	flag.Int64Var(&numStreams, "num.streams", math.MinInt64, "Number of consumption streams.")
-	flag.BoolVar(&preservePartitions, "preserve.partitions", false, "Preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.")
-	flag.BoolVar(&preserveOrder, "preserve.order", false, "E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.")
+	flag.Var(preservePartitions, "preserve.partitions", "Preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.")
+	flag.Var(preserveOrder, "preserve.order", "E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.")
 	flag.StringVar(&prefix, "prefix", "", "Destination topic prefix.")
 	flag.Int64Var(&channelSize, "queue.size", math.MinInt64, "Maximum number of messages that are buffered between the consumer and producer.")
 	flag.Parse()
@@ -287,8 +287,12 @@ func handleUpdate() error {
 	request.PutStringSlice("consumer.config", consumerConfig)
 	request.PutInt("num.producers", numProducers)
 	request.PutInt("num.streams", numStreams)
-	request.PutBool("preserve.partitions", preservePartitions)
-	request.PutBool("preserve.order", preserveOrder)
+	if preservePartitions.isSet {
+		request.PutBool("preserve.partitions", preservePartitions.value)
+	}
+	if preserveOrder.isSet {
+		request.PutBool("preserve.order", preserveOrder.value)
+	}
 	request.PutString("prefix", prefix)
 	request.PutInt("queue.size", channelSize)
 
@@ -335,4 +339,27 @@ func (i *consumerConfigs) String() string {
 func (i *consumerConfigs) Set(value string) error {
 	*i = append(*i, value)
 	return nil
+}
+
+type boolFlag struct {
+	isSet bool
+	value bool
+}
+
+func (b *boolFlag) String() string {
+	return fmt.Sprintf("%t", b.value)
+}
+
+func (b *boolFlag) Set(value string) error {
+	if value == "" || value == "true" {
+		b.value = true
+		b.isSet = true
+		return nil
+	} else if value == "false" {
+		b.value = false
+		b.isSet = true
+		return nil
+	}
+
+	return fmt.Errorf("Invalid value: %s", value)
 }

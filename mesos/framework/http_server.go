@@ -50,17 +50,27 @@ func (hs *HttpServer) Start() {
 func serveFile(w http.ResponseWriter, r *http.Request) {
 	resourceTokens := strings.Split(r.URL.Path, "/")
 	resource := resourceTokens[len(resourceTokens)-1]
+	Logger.Debugf("Serving file %s", resource)
 	http.ServeFile(w, r, resource)
 }
 
 func handleAdd(w http.ResponseWriter, r *http.Request) {
+	id := idFromRequest(r)
+	if sched.cluster.Exists(id) {
+		respond(false, fmt.Sprintf("Task with id %s already exists", id), w)
+		return
+	}
+
 	task, err := NewTaskFromRequest(r)
 	if err != nil {
 		respond(false, err.Error(), w)
+		return
 	}
 
 	sched.cluster.Add(task)
-	respond(true, "Task added", w)
+	result := fmt.Sprintf("Added task %s\n\n", id)
+	result += fmt.Sprintf("cluster:\n  task:\n%s", task)
+	respond(true, result, w)
 }
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
@@ -100,8 +110,7 @@ func handleRemove(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleUpdate(w http.ResponseWriter, r *http.Request) {
-	Logger.Debugf("Received update: %s", r.URL.Query())
-	id := r.URL.Query().Get("id")
+	id := idFromRequest(r)
 	task := sched.cluster.Get(id)
 	if task == nil {
 		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
@@ -110,8 +119,10 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			respond(false, err.Error(), w)
 		} else {
-			Logger.Info("Task configuration updated:")
-			respond(true, "Configuration updated", w)
+			Logger.Infof("Task configuration updated:\n%s", task)
+			result := "Configuration updated:\n\n"
+			result += fmt.Sprintf("cluster:\n  task:\n%s", task)
+			respond(true, result, w)
 		}
 	}
 }
@@ -124,6 +135,10 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		response += fmt.Sprintf("%s", task)
 	}
 	respond(true, response, w)
+}
+
+func idFromRequest(r *http.Request) string {
+	return r.URL.Query().Get("id")
 }
 
 func respond(success bool, message string, w http.ResponseWriter) {

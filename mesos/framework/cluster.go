@@ -41,6 +41,7 @@ func (c *Cluster) Add(task Task) {
 	defer c.taskLock.Unlock()
 
 	c.tasks[task.GetID()] = task
+	Logger.Infof("Added task:\n%s", task)
 }
 
 func (c *Cluster) Remove(id string) {
@@ -48,6 +49,7 @@ func (c *Cluster) Remove(id string) {
 	defer c.taskLock.Unlock()
 
 	delete(c.tasks, id)
+	Logger.Infof("Removed task %s", id)
 }
 
 func (c *Cluster) Get(id string) Task {
