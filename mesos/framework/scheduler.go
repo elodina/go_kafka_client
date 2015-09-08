@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/elodina/go-mesos-utils/pretty"
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	util "github.com/mesos/mesos-go/mesosutil"
@@ -104,7 +105,7 @@ func (s *Scheduler) Disconnected(scheduler.SchedulerDriver) {
 }
 
 func (s *Scheduler) ResourceOffers(driver scheduler.SchedulerDriver, offers []*mesos.Offer) {
-	Logger.Debugf("[ResourceOffers] %s", offersString(offers))
+	Logger.Debugf("[ResourceOffers] %s", pretty.Offers(offers))
 
 	for _, offer := range offers {
 		declineReason := s.acceptOffer(driver, offer)
@@ -120,7 +121,7 @@ func (s *Scheduler) OfferRescinded(driver scheduler.SchedulerDriver, id *mesos.O
 }
 
 func (s *Scheduler) StatusUpdate(driver scheduler.SchedulerDriver, status *mesos.TaskStatus) {
-	Logger.Infof("[StatusUpdate] %s", statusString(status))
+	Logger.Infof("[StatusUpdate] %s", pretty.Status(status))
 
 	id := s.idFromTaskId(status.GetTaskId().GetValue())
 
@@ -132,7 +133,7 @@ func (s *Scheduler) StatusUpdate(driver scheduler.SchedulerDriver, status *mesos
 	case mesos.TaskState_TASK_FINISHED, mesos.TaskState_TASK_KILLED:
 		s.onTaskFinished(id, status)
 	default:
-		Logger.Warnf("Got unexpected task state %s for task %s", statusString(status), id)
+		Logger.Warnf("Got unexpected task state %s for task %s", pretty.Status(status), id)
 	}
 }
 
@@ -190,7 +191,7 @@ func (s *Scheduler) onTaskStarted(id string, status *mesos.TaskStatus) {
 		task := s.cluster.Get(id)
 		task.SetState(TaskStateRunning)
 	} else {
-		Logger.Infof("Got %s for unknown/stopped task, killing task %s", statusString(status), status.GetTaskId().GetValue())
+		Logger.Infof("Got %s for unknown/stopped task, killing task %s", pretty.Status(status), status.GetTaskId().GetValue())
 	}
 }
 
@@ -199,13 +200,13 @@ func (s *Scheduler) onTaskFailed(id string, status *mesos.TaskStatus) {
 		task := s.cluster.Get(id)
 		task.SetState(TaskStateStopped)
 	} else {
-		Logger.Infof("Got %s for unknown/stopped task %s", statusString(status), status.GetTaskId().GetValue())
+		Logger.Infof("Got %s for unknown/stopped task %s", pretty.Status(status), status.GetTaskId().GetValue())
 	}
 }
 
 func (s *Scheduler) onTaskFinished(id string, status *mesos.TaskStatus) {
 	if !s.cluster.Exists(id) {
-		Logger.Infof("Got %s for unknown/stopped task %s", statusString(status), status.GetTaskId().GetValue())
+		Logger.Infof("Got %s for unknown/stopped task %s", pretty.Status(status), status.GetTaskId().GetValue())
 	}
 }
 
