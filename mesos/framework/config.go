@@ -28,6 +28,7 @@ var Config *config = &config{
 	FrameworkName: "go_kafka_client",
 	FrameworkRole: "*",
 	LogLevel:      "info",
+	Storage:       "file:go_kafka_client_mesos.json",
 }
 
 var executorMask = regexp.MustCompile("executor.*")
@@ -40,6 +41,7 @@ type config struct {
 	User          string
 	Executor      string
 	LogLevel      string
+	Storage       string
 }
 
 func (c *config) String() string {
@@ -50,7 +52,8 @@ framework role:      %s
 user:                %s
 executor:            %s
 log level:           %s
-`, c.Api, c.Master, c.FrameworkName, c.FrameworkRole, c.User, c.Executor, c.LogLevel)
+storage:             %s
+`, c.Api, c.Master, c.FrameworkName, c.FrameworkRole, c.User, c.Executor, c.LogLevel, c.Storage)
 }
 
 func InitLogging(level string) error {

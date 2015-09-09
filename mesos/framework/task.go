@@ -263,6 +263,14 @@ func (mm *MirrorMakerTask) String() string {
 	return response
 }
 
+func (mm *MirrorMakerTask) MarshalJSON() ([]byte, error) {
+	fields := make(map[string]interface{})
+	fields["type"] = TaskTypeMirrorMaker
+	fields["data"] = mm.TaskData
+
+	return json.Marshal(fields)
+}
+
 func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 	id := fmt.Sprintf("mirrormaker-%s", mm.ID)
 

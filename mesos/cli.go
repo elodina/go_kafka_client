@@ -89,12 +89,12 @@ func handleStatus() error {
 
 func handleScheduler() error {
 	var api string
-	var user string
 	var logLevel string
 
 	flag.StringVar(&framework.Config.Master, "master", "", "Mesos Master addresses.")
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
-	flag.StringVar(&user, "user", "", "Mesos user. Defaults to current system user")
+	flag.StringVar(&framework.Config.User, "user", "", "Mesos user. Defaults to current system user")
+	flag.StringVar(&framework.Config.Storage, "storage", "file:go_kafka_client_mesos.json", "Storage for cluster state. Examples: file:go_kafka_client_mesos.json; zk:master:2181/go-mesos")
 	flag.StringVar(&logLevel, "log.level", framework.Config.LogLevel, "Log level. trace|debug|info|warn|error|critical. Defaults to info.")
 	flag.StringVar(&framework.Config.FrameworkName, "framework.name", framework.Config.FrameworkName, "Framework name.")
 	flag.StringVar(&framework.Config.FrameworkRole, "framework.role", framework.Config.FrameworkRole, "Framework role.")

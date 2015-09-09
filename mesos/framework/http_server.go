@@ -90,6 +90,7 @@ func handleAdd(w http.ResponseWriter, r *http.Request) {
 	for _, task := range tasks {
 		result += fmt.Sprintf("  task:\n%s", task)
 	}
+	sched.cluster.Save()
 	respond(true, result, w)
 }
 
@@ -126,6 +127,8 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 	for _, task := range tasks {
 		result += fmt.Sprintf("  task:\n%s", task)
 	}
+
+	sched.cluster.Save()
 	respond(true, result, w)
 }
 
@@ -207,6 +210,7 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 		sched.stopTask(sched.cluster.Get(id))
 	}
 
+	sched.cluster.Save()
 	respond(true, fmt.Sprintf("Stopped tasks %s", idExpr), w)
 }
 
@@ -235,6 +239,7 @@ func handleRemove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	sched.cluster.Save()
 	respond(true, fmt.Sprintf("Removed tasks %s", idExpr), w)
 }
 

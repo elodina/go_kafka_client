@@ -16,7 +16,9 @@ limitations under the License. */
 package framework
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/elodina/go-mesos-utils"
 	"sort"
 	"strconv"
@@ -25,13 +27,20 @@ import (
 )
 
 type Cluster struct {
-	tasks    map[string]Task
-	taskLock sync.Mutex
+	frameworkID string
+	storage     utils.Storage
+	tasks       map[string]Task
+	taskLock    sync.Mutex
 }
 
 func NewCluster() *Cluster {
+	storage, err := NewStorage(Config.Storage)
+	if err != nil {
+		panic(err)
+	}
 	return &Cluster{
-		tasks: make(map[string]Task),
+		storage: storage,
+		tasks:   make(map[string]Task),
 	}
 }
 
@@ -119,4 +128,74 @@ func (c *Cluster) ExpandIDs(expr string) ([]string, error) {
 
 	sort.Strings(ids)
 	return ids, nil
+}
+
+func (c *Cluster) Save() {
+	jsonMap := make(map[string]interface{})
+	jsonMap["frameworkID"] = c.frameworkID
+	jsonMap["tasks"] = c.GetAllTasks()
+
+	js, err := json.Marshal(jsonMap)
+	if err != nil {
+		panic(err)
+	}
+
+	c.storage.Save(js)
+}
+
+func (c *Cluster) Load() {
+	js, err := c.storage.Load()
+	if err != nil || js == nil {
+		Logger.Warnf("Could not load cluster state from %s, assuming no cluster state available...", c.storage)
+		return
+	}
+
+	//golang's dynamic type detection is really shitty
+	jsonMap := make(map[string]json.RawMessage)
+	err = json.Unmarshal(js, &jsonMap)
+	if err != nil {
+		panic(err)
+	}
+	err = json.Unmarshal(jsonMap["frameworkID"], &c.frameworkID)
+	if err != nil {
+		panic(err)
+	}
+	rawTasks := make([]map[string]json.RawMessage, 0)
+	err = json.Unmarshal(jsonMap["tasks"], &rawTasks)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, rawTask := range rawTasks {
+		taskData := &TaskData{}
+		err = json.Unmarshal(rawTask["data"], taskData)
+		if err != nil {
+			panic(err)
+		}
+
+		var taskType string
+		json.Unmarshal(rawTask["type"], &taskType)
+		switch taskType {
+		case TaskTypeMirrorMaker:
+			c.Add(&MirrorMakerTask{taskData})
+		default:
+			panic(fmt.Errorf("Unknown task type %s", taskType))
+		}
+	}
+}
+
+func NewStorage(storage string) (utils.Storage, error) {
+	storageTokens := strings.SplitN(storage, ":", 2)
+	if len(storageTokens) != 2 {
+		return nil, fmt.Errorf("Unsupported storage")
+	}
+
+	switch storageTokens[0] {
+	case "file":
+		return utils.NewFileStorage(storageTokens[1]), nil
+	case "zk":
+		return utils.NewZKStorage(storageTokens[1])
+	default:
+		return nil, fmt.Errorf("Unsupported storage")
+	}
 }

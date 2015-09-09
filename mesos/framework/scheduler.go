@@ -27,14 +27,16 @@ import (
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	util "github.com/mesos/mesos-go/mesosutil"
 	"github.com/mesos/mesos-go/scheduler"
+	"time"
 )
 
 var sched *Scheduler // This is needed for HTTP server to be able to update this scheduler
 
 type Scheduler struct {
-	httpServer *HttpServer
-	cluster    *Cluster
-	driver     scheduler.SchedulerDriver
+	httpServer      *HttpServer
+	cluster         *Cluster
+	driver          scheduler.SchedulerDriver
+	schedulerDriver *scheduler.MesosSchedulerDriver
 }
 
 func (s *Scheduler) Start() error {
@@ -48,16 +50,21 @@ func (s *Scheduler) Start() error {
 		return err
 	}
 
+	s.cluster = NewCluster()
+	s.cluster.Load()
+
 	s.httpServer = NewHttpServer(Config.Api)
 	go s.httpServer.Start()
-
-	s.cluster = NewCluster()
 
 	frameworkInfo := &mesos.FrameworkInfo{
 		User:       proto.String(Config.User),
 		Name:       proto.String(Config.FrameworkName),
 		Role:       proto.String(Config.FrameworkRole),
 		Checkpoint: proto.Bool(true),
+	}
+
+	if s.cluster.frameworkID != "" {
+		frameworkInfo.Id = util.NewFrameworkID(s.cluster.frameworkID)
 	}
 
 	driverConfig := scheduler.DriverConfig{
@@ -67,6 +74,7 @@ func (s *Scheduler) Start() error {
 	}
 
 	driver, err := scheduler.NewMesosSchedulerDriver(driverConfig)
+	s.schedulerDriver = driver
 	go func() {
 		<-ctrlc
 		s.Shutdown(driver)
@@ -88,6 +96,9 @@ func (s *Scheduler) Start() error {
 
 func (s *Scheduler) Registered(driver scheduler.SchedulerDriver, id *mesos.FrameworkID, master *mesos.MasterInfo) {
 	Logger.Infof("[Registered] framework: %s master: %s:%d", id.GetValue(), master.GetHostname(), master.GetPort())
+
+	s.cluster.frameworkID = id.GetValue()
+	sched.cluster.Save()
 
 	s.driver = driver
 }
@@ -114,6 +125,7 @@ func (s *Scheduler) ResourceOffers(driver scheduler.SchedulerDriver, offers []*m
 			Logger.Debugf("Declined offer: %s", declineReason)
 		}
 	}
+	sched.cluster.Save()
 }
 
 func (s *Scheduler) OfferRescinded(driver scheduler.SchedulerDriver, id *mesos.OfferID) {
@@ -135,6 +147,8 @@ func (s *Scheduler) StatusUpdate(driver scheduler.SchedulerDriver, status *mesos
 	default:
 		Logger.Warnf("Got unexpected task state %s for task %s", pretty.Status(status), id)
 	}
+
+	sched.cluster.Save()
 }
 
 func (s *Scheduler) FrameworkMessage(driver scheduler.SchedulerDriver, executor *mesos.ExecutorID, slave *mesos.SlaveID, message string) {
@@ -151,6 +165,12 @@ func (s *Scheduler) ExecutorLost(driver scheduler.SchedulerDriver, executor *mes
 
 func (s *Scheduler) Error(driver scheduler.SchedulerDriver, message string) {
 	Logger.Errorf("[Error] %s", message)
+
+	if s.schedulerDriver.Status() == mesos.Status_DRIVER_ABORTED {
+		Logger.Errorf("Driver aborted, exiting...")
+		time.Sleep(1 * time.Second) // sometimes logs do not flush so give them some time
+		os.Exit(1)
+	}
 }
 
 func (s *Scheduler) Shutdown(driver *scheduler.MesosSchedulerDriver) {
