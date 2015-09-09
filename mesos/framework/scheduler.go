@@ -180,8 +180,8 @@ func (s *Scheduler) acceptOffer(driver scheduler.SchedulerDriver, offer *mesos.O
 }
 
 func (s *Scheduler) launchTask(task Task, offer *mesos.Offer) {
-	taskInfo := task.CreateTaskInfo(offer)
-	task.SetState(TaskStateStaging)
+	taskInfo := task.NewTaskInfo(offer)
+	task.Data().State = TaskStateStaging
 
 	s.driver.LaunchTasks([]*mesos.OfferID{offer.GetId()}, []*mesos.TaskInfo{taskInfo}, &mesos.Filters{RefuseSeconds: proto.Float64(1)})
 }
@@ -189,7 +189,7 @@ func (s *Scheduler) launchTask(task Task, offer *mesos.Offer) {
 func (s *Scheduler) onTaskStarted(id string, status *mesos.TaskStatus) {
 	if s.cluster.Exists(id) {
 		task := s.cluster.Get(id)
-		task.SetState(TaskStateRunning)
+		task.Data().State = TaskStateRunning
 	} else {
 		Logger.Infof("Got %s for unknown/stopped task, killing task %s", pretty.Status(status), status.GetTaskId().GetValue())
 	}
@@ -198,7 +198,9 @@ func (s *Scheduler) onTaskStarted(id string, status *mesos.TaskStatus) {
 func (s *Scheduler) onTaskFailed(id string, status *mesos.TaskStatus) {
 	if s.cluster.Exists(id) {
 		task := s.cluster.Get(id)
-		task.SetState(TaskStateStopped)
+		if task.Data().State != TaskStateInactive {
+			task.Data().State = TaskStateStopped
+		}
 	} else {
 		Logger.Infof("Got %s for unknown/stopped task %s", pretty.Status(status), status.GetTaskId().GetValue())
 	}
@@ -211,12 +213,12 @@ func (s *Scheduler) onTaskFinished(id string, status *mesos.TaskStatus) {
 }
 
 func (s *Scheduler) stopTask(task Task) {
-	if task.GetTaskID() != "" {
-		Logger.Infof("Stopping task %s", task.GetTaskID())
-		s.driver.KillTask(util.NewTaskID(task.GetTaskID()))
-
-		task.SetState(TaskStateInactive)
+	if task.Data().State == TaskStateRunning || task.Data().State == TaskStateStaging {
+		Logger.Infof("Stopping task %s", task.Data().TaskID)
+		s.driver.KillTask(util.NewTaskID(task.Data().TaskID))
 	}
+
+	task.Data().State = TaskStateInactive
 }
 
 func (s *Scheduler) idFromTaskId(taskId string) string {

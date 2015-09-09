@@ -174,8 +174,11 @@ func handleStart() error {
 	}
 
 	var api string
+	var timeout int64
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
+	flag.Int64Var(&timeout, "timeout", 30, "")
+
 	flag.Parse()
 
 	if err := resolveApi(api); err != nil {
@@ -184,6 +187,7 @@ func handleStart() error {
 
 	request := framework.NewApiRequest(framework.Config.Api + "/api/start")
 	request.PutString("id", id)
+	request.PutInt("timeout", timeout)
 
 	response := request.Get()
 	fmt.Println(response.Message)

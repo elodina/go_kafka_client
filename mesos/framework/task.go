@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -88,15 +89,79 @@ func (tc TaskConfig) SetIntConfig(key string, where *int) {
 	}
 }
 
-//TODO i don't like that every implementor will have to implement plenty of similar stuff
+type TaskData struct {
+	ID         string
+	TaskID     string
+	SlaveID    string
+	ExecutorID string
+	Attributes map[string]string
+	State      TaskState
+	Config     TaskConfig
+	Cpu        float64
+	Mem        float64
+}
+
+func (td *TaskData) Update(queryParams url.Values) error {
+	for key, value := range queryParams {
+		if key != "id" && len(value) > 0 {
+			td.Config[key] = value[0]
+		}
+	}
+
+	return nil
+}
+
+func (td *TaskData) WaitFor(state TaskState, timeout time.Duration) bool {
+	timeoutChan := time.After(timeout)
+	ticker := time.Tick(100 * time.Millisecond)
+	for {
+		select {
+		case <-timeoutChan:
+			return false
+		case <-ticker:
+			{
+				if td.State == state {
+					return true
+				}
+			}
+		}
+	}
+}
+
+func (td *TaskData) String() string {
+	response := fmt.Sprintf("    id: %s\n", td.ID)
+	response += fmt.Sprintf("    state: %s\n", td.State)
+	response += fmt.Sprintf("    cpu: %.2f\n", td.Cpu)
+	response += fmt.Sprintf("    mem: %.2f\n", td.Mem)
+	if td.TaskID != "" {
+		response += fmt.Sprintf("    task id: %s\n", td.TaskID)
+	}
+	if td.SlaveID != "" {
+		response += fmt.Sprintf("    slave id: %s\n", td.SlaveID)
+	}
+	if td.ExecutorID != "" {
+		response += fmt.Sprintf("    executor id: %s\n", td.ExecutorID)
+	}
+	if len(td.Attributes) > 0 {
+		response += "    attributes:\n"
+		for key, value := range td.Attributes {
+			response += fmt.Sprintf("      %s: %s\n", key, value)
+		}
+	}
+	if len(td.Config) > 0 {
+		response += "    configs:\n"
+		for key, value := range td.Config {
+			response += fmt.Sprintf("      %s: %s\n", key, value)
+		}
+	}
+
+	return response
+}
+
 type Task interface {
-	GetID() string
-	GetTaskID() string
-	GetState() TaskState
-	SetState(TaskState)
+	Data() *TaskData
 	Matches(*mesos.Offer) string
-	CreateTaskInfo(*mesos.Offer) *mesos.TaskInfo
-	Update(url.Values) error
+	NewTaskInfo(*mesos.Offer) *mesos.TaskInfo
 }
 
 func NewTaskFromRequest(r *http.Request) (Task, error) {
@@ -115,12 +180,7 @@ func NewTaskFromRequest(r *http.Request) (Task, error) {
 }
 
 type MirrorMakerTask struct {
-	ID     string
-	taskID string
-	state  TaskState
-	cpu    float64
-	mem    float64
-	config TaskConfig
+	*TaskData
 }
 
 func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, error) {
@@ -134,54 +194,56 @@ func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, er
 	}
 
 	return &MirrorMakerTask{
-		ID:    id,
-		state: TaskStateInactive,
-		cpu:   cpu,
-		mem:   mem,
-		config: TaskConfig{
-			"num.producers": "1",
-			"num.streams":   "1",
-			"queue.size":    "10000",
+		TaskData: &TaskData{
+			ID:    id,
+			State: TaskStateInactive,
+			Config: TaskConfig{
+				"num.producers": "1",
+				"num.streams":   "1",
+				"queue.size":    "10000",
+			},
+			Cpu: cpu,
+			Mem: mem,
 		},
 	}, nil
 }
 
-func (mm *MirrorMakerTask) GetID() string {
-	return mm.ID
-}
-
-func (mm *MirrorMakerTask) GetTaskID() string {
-	return mm.taskID
-}
-
-func (mm *MirrorMakerTask) GetState() TaskState {
-	return mm.state
-}
-
-func (mm *MirrorMakerTask) SetState(state TaskState) {
-	mm.state = state
+func (mm *MirrorMakerTask) Data() *TaskData {
+	return mm.TaskData
 }
 
 func (mm *MirrorMakerTask) Matches(offer *mesos.Offer) string {
-	if mm.cpu > getScalarResources(offer, "cpus") {
+	if mm.Cpu > getScalarResources(offer, "cpus") {
 		return "no cpus"
 	}
 
-	if mm.mem > getScalarResources(offer, "mem") {
+	if mm.Mem > getScalarResources(offer, "mem") {
 		return "no mem"
+	}
+
+	if mm.Config["producer.config"] == "" {
+		return "producer.config not set"
+	}
+
+	if mm.Config["consumer.config"] == "" {
+		return "consumer.config not set"
+	}
+
+	if mm.Config["whitelist"] == "" && mm.Config["blacklist"] == "" {
+		return "Both whitelist and blacklist are not set"
 	}
 
 	return ""
 }
 
-func (mm *MirrorMakerTask) CreateTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
+func (mm *MirrorMakerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 	taskName := fmt.Sprintf("mirrormaker-%s", mm.ID)
-	mm.taskID = fmt.Sprintf("%s-%s", taskName, uuid())
+	mm.TaskID = fmt.Sprintf("%s-%s", taskName, uuid())
 	taskId := &mesos.TaskID{
-		Value: proto.String(mm.taskID),
+		Value: proto.String(mm.TaskID),
 	}
 
-	data, err := json.Marshal(mm.config)
+	data, err := json.Marshal(mm.Config)
 	if err != nil {
 		panic(err)
 	}
@@ -192,8 +254,8 @@ func (mm *MirrorMakerTask) CreateTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 		SlaveId:  offer.GetSlaveId(),
 		Executor: mm.createExecutor(),
 		Resources: []*mesos.Resource{
-			util.NewScalarResource("cpus", mm.cpu),
-			util.NewScalarResource("mem", mm.mem),
+			util.NewScalarResource("cpus", mm.Cpu),
+			util.NewScalarResource("mem", mm.Mem),
 		},
 		Data: data,
 	}
@@ -201,23 +263,9 @@ func (mm *MirrorMakerTask) CreateTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 	return taskInfo
 }
 
-func (mm *MirrorMakerTask) Update(queryParams url.Values) error {
-	updateConfig(queryParams, mm.config)
-
-	return nil
-}
-
 func (mm *MirrorMakerTask) String() string {
 	response := "    type: mirrormaker\n"
-	response += fmt.Sprintf("    id: %s\n", mm.ID)
-	response += fmt.Sprintf("    state: %s\n", mm.state)
-	response += fmt.Sprintf("    task id: %s\n", mm.taskID)
-	response += fmt.Sprintf("    cpu: %.2f\n", mm.cpu)
-	response += fmt.Sprintf("    mem: %.2f\n", mm.mem)
-	response += "    configs:\n"
-	for key, value := range mm.config {
-		response += fmt.Sprintf("      %s: %s\n", key, value)
-	}
+	response += mm.TaskData.String()
 
 	return response
 }
@@ -236,20 +284,12 @@ func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 					Executable: proto.Bool(true),
 				},
 				&mesos.CommandInfo_URI{
-					Value: proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, mm.config["producer.config"])),
+					Value: proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, mm.Config["producer.config"])),
 				},
 				&mesos.CommandInfo_URI{
-					Value: proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, mm.config["consumer.config"])),
+					Value: proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, mm.Config["consumer.config"])),
 				},
 			},
 		},
-	}
-}
-
-func updateConfig(queryParams url.Values, config TaskConfig) {
-	for key, value := range queryParams {
-		if key != "id" && len(value) > 0 {
-			config[key] = value[0]
-		}
 	}
 }

@@ -40,7 +40,7 @@ func (c *Cluster) Add(task Task) {
 	c.taskLock.Lock()
 	defer c.taskLock.Unlock()
 
-	c.tasks[task.GetID()] = task
+	c.tasks[task.Data().ID] = task
 	Logger.Infof("Added task:\n%s", task)
 }
 
@@ -74,7 +74,7 @@ func (c *Cluster) GetTasksWithState(state TaskState) []Task {
 
 	tasks := make([]Task, 0)
 	for _, task := range c.tasks {
-		if task.GetState() == state {
+		if task.Data().State == state {
 			tasks = append(tasks, task)
 		}
 	}
