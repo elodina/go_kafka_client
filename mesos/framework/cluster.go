@@ -15,7 +15,14 @@ limitations under the License. */
 
 package framework
 
-import "sync"
+import (
+	"errors"
+	"github.com/elodina/go-mesos-utils"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+)
 
 type Cluster struct {
 	tasks    map[string]Task
@@ -80,4 +87,36 @@ func (c *Cluster) GetTasksWithState(state TaskState) []Task {
 	}
 
 	return tasks
+}
+
+func (c *Cluster) ExpandIDs(expr string) ([]string, error) {
+	if expr == "" {
+		return nil, errors.New("ID expression cannot be empty")
+	}
+
+	ids := make([]string, 0)
+
+	ranges := strings.Split(expr, ",")
+	for _, rangeExpr := range ranges {
+		if rangeExpr == "*" {
+			tasks := c.GetAllTasks()
+			for _, task := range tasks {
+				ids = append(ids, task.Data().ID)
+			}
+			sort.Strings(ids)
+			return ids, nil
+		} else {
+			rng, err := utils.ParseRange(rangeExpr)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, value := range rng.Values() {
+				ids = append(ids, strconv.Itoa(value))
+			}
+		}
+	}
+
+	sort.Strings(ids)
+	return ids, nil
 }

@@ -57,71 +57,125 @@ func serveFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAdd(w http.ResponseWriter, r *http.Request) {
-	id := idFromRequest(r)
-	if sched.cluster.Exists(id) {
-		respond(false, fmt.Sprintf("Task with id %s already exists", id), w)
-		return
-	}
-
-	task, err := NewTaskFromRequest(r)
+	idExpr := idFromRequest(r)
+	ids, err := sched.cluster.ExpandIDs(idExpr)
 	if err != nil {
 		respond(false, err.Error(), w)
 		return
 	}
 
-	sched.cluster.Add(task)
-	result := fmt.Sprintf("Added task %s\n\n", id)
-	result += fmt.Sprintf("cluster:\n  task:\n%s", task)
+	for _, id := range ids {
+		if sched.cluster.Exists(id) {
+			respond(false, fmt.Sprintf("Task with id %s already exists", id), w)
+			return
+		}
+	}
+
+	tasks := make([]Task, 0)
+
+	taskType := r.URL.Query().Get("type")
+	for _, id := range ids {
+		task, err := NewTaskFromRequest(taskType, id, r)
+		if err != nil {
+			respond(false, err.Error(), w)
+			return
+		}
+
+		sched.cluster.Add(task)
+		tasks = append(tasks, task)
+	}
+
+	result := fmt.Sprintf("Added tasks %s\n\n", idExpr)
+	result += "cluster:\n"
+	for _, task := range tasks {
+		result += fmt.Sprintf("  task:\n%s", task)
+	}
 	respond(true, result, w)
 }
 
 func handleUpdate(w http.ResponseWriter, r *http.Request) {
-	id := idFromRequest(r)
-	task := sched.cluster.Get(id)
-	if task == nil {
-		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
-	} else {
+	idExpr := idFromRequest(r)
+	ids, err := sched.cluster.ExpandIDs(idExpr)
+	if err != nil {
+		respond(false, err.Error(), w)
+		return
+	}
+
+	for _, id := range ids {
+		if !sched.cluster.Exists(id) {
+			respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
+			return
+		}
+	}
+
+	tasks := make([]Task, 0)
+	for _, id := range ids {
+		task := sched.cluster.Get(id)
 		err := task.Data().Update(r.URL.Query())
 		if err != nil {
 			respond(false, err.Error(), w)
+			return
 		} else {
 			Logger.Infof("Task configuration updated:\n%s", task)
-			result := "Configuration updated:\n\n"
-			result += fmt.Sprintf("cluster:\n  task:\n%s", task)
-			respond(true, result, w)
+			tasks = append(tasks, task)
 		}
 	}
+
+	result := "Configuration updated:\n\n"
+	result += "cluster:\n"
+	for _, task := range tasks {
+		result += fmt.Sprintf("  task:\n%s", task)
+	}
+	respond(true, result, w)
 }
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	idExpr := idFromRequest(r)
+	ids, err := sched.cluster.ExpandIDs(idExpr)
+	if err != nil {
+		respond(false, err.Error(), w)
+		return
+	}
+
+	for _, id := range ids {
+		if !sched.cluster.Exists(id) {
+			respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
+			return
+		}
+	}
+
 	timeout, err := strconv.Atoi(r.URL.Query().Get("timeout"))
 	if err != nil {
 		respond(false, err.Error(), w)
 		return
 	}
-	task := sched.cluster.Get(id)
-	if task == nil {
-		respond(false, fmt.Sprintf("Task with id %s not found", id), w)
-	} else {
+
+	result := fmt.Sprintf("Started tasks %s\n\n", idExpr)
+	result += "cluster:\n"
+	for _, id := range ids {
+		task := sched.cluster.Get(id)
+
 		if task.Data().State == TaskStateInactive {
 			task.Data().State = TaskStateStopped
 			if timeout > 0 {
 				if task.Data().WaitFor(TaskStateRunning, time.Duration(timeout)*time.Second) {
-					result := fmt.Sprintf("Started task %s\n\n", id)
-					result += fmt.Sprintf("cluster:\n  task:\n%s", task)
-					respond(true, result, w)
+					result += fmt.Sprintf("  task:\n%s", task)
 				} else {
 					respond(false, fmt.Sprintf("Start task %s timed out after %d seconds", id, timeout), w)
+					return
 				}
 			} else {
-				respond(true, fmt.Sprintf("Task %s scheduled to start", id), w)
+				respond(true, fmt.Sprintf("Tasks %s scheduled to start", idExpr), w)
+				return
 			}
 		} else {
 			Logger.Infof("Task %s already started", id)
 			respond(false, fmt.Sprintf("Task %s already started", id), w)
+			return
 		}
 	}
+
+	respond(true, result, w)
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -135,28 +189,53 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	if sched.cluster.Exists(id) {
-		sched.stopTask(sched.cluster.Get(id))
-		respond(true, fmt.Sprintf("Stopped task %s", id), w)
-	} else {
-		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
+	idExpr := idFromRequest(r)
+	ids, err := sched.cluster.ExpandIDs(idExpr)
+	if err != nil {
+		respond(false, err.Error(), w)
+		return
 	}
+
+	for _, id := range ids {
+		if !sched.cluster.Exists(id) {
+			respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
+			return
+		}
+	}
+
+	for _, id := range ids {
+		sched.stopTask(sched.cluster.Get(id))
+	}
+
+	respond(true, fmt.Sprintf("Stopped tasks %s", idExpr), w)
 }
 
 func handleRemove(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	if sched.cluster.Exists(id) {
+	idExpr := idFromRequest(r)
+	ids, err := sched.cluster.ExpandIDs(idExpr)
+	if err != nil {
+		respond(false, err.Error(), w)
+		return
+	}
+
+	for _, id := range ids {
+		if !sched.cluster.Exists(id) {
+			respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
+			return
+		}
+	}
+
+	for _, id := range ids {
 		task := sched.cluster.Get(id)
 		if task.Data().State == TaskStateInactive {
 			sched.cluster.Remove(id)
-			respond(true, fmt.Sprintf("Removed task %s", id), w)
 		} else {
 			respond(false, fmt.Sprintf("Please stop task %s before removing", id), w)
+			return
 		}
-	} else {
-		respond(false, fmt.Sprintf("Task with id %s does not exist", id), w)
 	}
+
+	respond(true, fmt.Sprintf("Removed tasks %s", idExpr), w)
 }
 
 func idFromRequest(r *http.Request) string {

@@ -17,7 +17,6 @@ package framework
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
@@ -164,13 +163,7 @@ type Task interface {
 	NewTaskInfo(*mesos.Offer) *mesos.TaskInfo
 }
 
-func NewTaskFromRequest(r *http.Request) (Task, error) {
-	taskType := r.URL.Query().Get("type")
-	id := r.URL.Query().Get("id")
-	if id == "" {
-		return nil, errors.New("No task id supplied")
-	}
-
+func NewTaskFromRequest(taskType string, id string, r *http.Request) (Task, error) {
 	switch taskType {
 	case TaskTypeMirrorMaker:
 		return NewMirrorMakerTask(id, r.URL.Query())
