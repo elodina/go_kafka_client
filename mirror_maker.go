@@ -100,6 +100,7 @@ type MirrorMaker struct {
 	logLineSchema   *avro.RecordSchema
 	evolutioned     *schemaSet
 	errors          chan *FailedMessage
+	stopped         chan struct{}
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
@@ -113,6 +114,7 @@ func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 		logLineSchema: logLineSchema,
 		evolutioned:   newSchemaSet(),
 		errors:        make(chan *FailedMessage),
+		stopped:       make(chan struct{}),
 	}
 }
 
@@ -121,6 +123,7 @@ func (this *MirrorMaker) Start() {
 	this.initializeMessageChannels()
 	this.startConsumers()
 	this.startProducers()
+	<-this.stopped
 }
 
 // Gracefully stops the MirrorMaker.
@@ -142,6 +145,10 @@ func (this *MirrorMaker) Stop() {
 	for _, producer := range this.producers {
 		producer.Close()
 	}
+
+	Info("", "Sending stopped")
+	this.stopped <- struct{}{}
+	Info("", "Sent stopped")
 }
 
 func (this *MirrorMaker) startConsumers() {
@@ -254,7 +261,7 @@ func (this *MirrorMaker) startProducers() {
 		} else {
 			go this.produceRoutine(producer, 0)
 		}
-        this.failedRoutine(producer)
+		go this.failedRoutine(producer)
 	}
 }
 

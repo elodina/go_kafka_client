@@ -27,12 +27,12 @@ import (
 )
 
 const (
-// Offset with invalid value
+	// Offset with invalid value
 	InvalidOffset int64 = -1
 
-// Reset the offset to the smallest offset if it is out of range
+	// Reset the offset to the smallest offset if it is out of range
 	SmallestOffset = "smallest"
-// Reset the offset to the largest offset if it is out of range
+	// Reset the offset to the largest offset if it is out of range
 	LargestOffset = "largest"
 )
 
@@ -749,7 +749,7 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 
 func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) {
 	switch topicCount := assignmentContext.MyTopicToNumStreams.(type) {
-		case *StaticTopicsToNumStreams:
+	case *StaticTopicsToNumStreams:
 		{
 			c.topicCount = topicCount
 			var numStreams int
@@ -760,7 +760,7 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 			Infof(c, "Trying to update fetcher")
 			c.updateFetcher(numStreams)
 		}
-		case *WildcardTopicsToNumStreams:
+	case *WildcardTopicsToNumStreams:
 		{
 			c.topicCount = topicCount
 			c.updateFetcher(topicCount.NumStreams)
@@ -788,8 +788,8 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[Topic
 }
 
 func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
-topicPartition *TopicAndPartition, offset int64,
-consumerThreadId ConsumerThreadId) {
+	topicPartition *TopicAndPartition, offset int64,
+	consumerThreadId ConsumerThreadId) {
 	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
 	partTopicInfoMap, exists := currenttopicRegistry[topicPartition.Topic]
 	if !exists {

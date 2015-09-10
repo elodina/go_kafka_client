@@ -248,11 +248,19 @@ func (f *consumerFetcherRoutine) start() {
 						})
 
 						if err != nil {
-							if offset > -1 { // Negative offsets are obviously out of range but don't spam the logs...
-								if f.manager.client.IsOffsetOutOfRange(err) {
+							switch f.manager.client.GetErrorType(err) {
+							case ErrorTypeOffsetOutOfRange:
+								{
 									Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
 									f.handleOffsetOutOfRange(&nextTopicPartition)
-								} else {
+								}
+							case ErrorTypeCorruptedResponse:
+								{
+									Warnf(f, "Got a corrupted fetch response: %s", err)
+									f.partitionMap[nextTopicPartition].FetchedOffset = f.partitionMap[nextTopicPartition].FetchedOffset + 1
+								}
+							case ErrorTypeOther:
+								{
 									Warnf(f, "Got a fetch error: %s", err)
 									//TODO new backoff type?
 									time.Sleep(1 * time.Second)

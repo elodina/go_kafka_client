@@ -684,7 +684,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 			}
 
 			// Delete if this zk node has an expired timestamp
-			if time.Unix(t, 0).Before(time.Now().Add(-10*time.Minute)) {
+			if time.Unix(t, 0).Before(time.Now().Add(-10 * time.Minute)) {
 				// If the data is not a timestamp or is a timestamp but has reached expiration delete it
 				err = this.deleteNode(childPath)
 				if err != nil && err != zk.ErrNoNode {
@@ -698,7 +698,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 }
 
 func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, barrierName string,
-barrierSize int, api string, timeout time.Duration) bool {
+	barrierSize int, api string, timeout time.Duration) bool {
 	barrierPath := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, barrierName)
 
 	var barrierExpiration time.Time
@@ -773,14 +773,14 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 				go blackholeFunc(zkMemberJoinedWatcher)
 				return nil
 			}
-		// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
-				select {
-				case <-t.C:
-					go blackholeFunc(zkMemberJoinedWatcher)
-					return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
-				case <-zkMemberJoinedWatcher:
-					continue
-				}
+			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
+			select {
+			case <-t.C:
+				go blackholeFunc(zkMemberJoinedWatcher)
+				return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
+			case <-zkMemberJoinedWatcher:
+				continue
+			}
 		}
 	}
 
