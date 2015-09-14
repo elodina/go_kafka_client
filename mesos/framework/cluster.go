@@ -84,6 +84,18 @@ func (c *Cluster) GetAllTasks() []Task {
 	return tasks
 }
 
+func (c *Cluster) GetConstrained() []utils.Constrained {
+	c.taskLock.Lock()
+	defer c.taskLock.Unlock()
+
+	constrained := make([]utils.Constrained, 0)
+	for _, task := range c.tasks {
+		constrained = append(constrained, task.Data())
+	}
+
+	return constrained
+}
+
 func (c *Cluster) GetTasksWithState(state TaskState) []Task {
 	c.taskLock.Lock()
 	defer c.taskLock.Unlock()

@@ -143,11 +143,12 @@ func handleAddMirrorMaker() error {
 	var api string
 	var cpu float64
 	var mem float64
-	//TODO constraints
+	var constraints string
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
 	flag.Float64Var(&cpu, "cpu", 0.5, "CPUs per task.")
 	flag.Float64Var(&mem, "mem", 512, "Mem per task.")
+	flag.StringVar(&constraints, "constraints", "", "Constraints (hostname=like:^master$,rack=like:^1.*$).")
 	flag.Parse()
 
 	if err := resolveApi(api); err != nil {
@@ -159,6 +160,7 @@ func handleAddMirrorMaker() error {
 	request.PutString("id", id)
 	request.PutFloat("cpu", cpu)
 	request.PutFloat("mem", mem)
+	request.PutString("constraints", constraints)
 
 	response := request.Get()
 
@@ -260,7 +262,7 @@ func handleUpdate() error {
 	preserveOrder := new(boolFlag)
 	var prefix string
 	var channelSize int64
-	//TODO constraints
+	var constraints string
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
 	flag.Float64Var(&cpu, "cpu", math.SmallestNonzeroFloat64, "CPUs per task.")
@@ -275,6 +277,7 @@ func handleUpdate() error {
 	flag.Var(preserveOrder, "preserve.order", "E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.")
 	flag.StringVar(&prefix, "prefix", "", "Destination topic prefix.")
 	flag.Int64Var(&channelSize, "queue.size", math.MinInt64, "Maximum number of messages that are buffered between the consumer and producer.")
+	flag.StringVar(&constraints, "constraints", "", "Constraints (hostname=like:^master$,rack=like:^1.*$).")
 	flag.Parse()
 
 	if err := resolveApi(api); err != nil {
@@ -285,6 +288,7 @@ func handleUpdate() error {
 	request.PutString("id", id)
 	request.PutFloat("cpu", cpu)
 	request.PutFloat("mem", mem)
+	request.PutString("constraints", constraints)
 	request.PutString("whitelist", whitelist)
 	request.PutString("blacklist", blacklist)
 	request.PutString("producer.config", producerConfig)

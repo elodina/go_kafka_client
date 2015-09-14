@@ -18,6 +18,7 @@ package framework
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/elodina/go-mesos-utils"
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	util "github.com/mesos/mesos-go/mesosutil"
@@ -89,21 +90,69 @@ func (tc TaskConfig) SetIntConfig(key string, where *int) {
 }
 
 type TaskData struct {
-	ID         string
-	TaskID     string
-	SlaveID    string
-	ExecutorID string
-	Attributes map[string]string
-	State      TaskState
-	Config     TaskConfig
-	Cpu        float64
-	Mem        float64
+	ID          string
+	TaskID      string
+	SlaveID     string
+	ExecutorID  string
+	Attributes  map[string]string
+	State       TaskState
+	Config      TaskConfig
+	Cpu         float64
+	Mem         float64
+	constraints map[string][]utils.Constraint
+}
+
+func (td *TaskData) Attribute(name string) string {
+	return td.Attributes[name]
+}
+
+func (td *TaskData) Constraints() map[string][]utils.Constraint {
+	return td.constraints
 }
 
 func (td *TaskData) Update(queryParams url.Values) error {
 	for key, value := range queryParams {
-		if key != "id" && len(value) > 0 {
-			td.Config[key] = value[0]
+		if len(value) > 0 {
+			switch key {
+			case "id", "type":
+				continue
+			case "cpu":
+				{
+					cpus, err := strconv.ParseFloat(value[0], 64)
+					if err != nil {
+						return err
+					}
+					td.Cpu = cpus
+				}
+			case "mem":
+				{
+					mem, err := strconv.ParseFloat(value[0], 64)
+					if err != nil {
+						return err
+					}
+					td.Mem = mem
+				}
+			case "constraints":
+				{
+					td.constraints = make(map[string][]utils.Constraint)
+
+					rawAttributesAndConstraints := strings.Split(value[0], ",")
+					for _, rawAttributeAndConstraint := range rawAttributesAndConstraints {
+						attributeAndConstraint := strings.Split(rawAttributeAndConstraint, "=")
+						if len(attributeAndConstraint) != 2 {
+							return fmt.Errorf("Invalid constraint definition: %s", rawAttributeAndConstraint)
+						}
+						attribute := attributeAndConstraint[0]
+						constraint, err := utils.ParseConstraint(attributeAndConstraint[1])
+						if err != nil {
+							return err
+						}
+						td.constraints[attribute] = append(td.constraints[attribute], constraint)
+					}
+				}
+			default:
+				td.Config[key] = value[0]
+			}
 		}
 	}
 
@@ -153,6 +202,16 @@ func (td *TaskData) String() string {
 			response += fmt.Sprintf("      %s: %s\n", key, value)
 		}
 	}
+	if len(td.constraints) > 0 {
+		response += "    constraints:\n"
+		for key, value := range td.constraints {
+			stringValues := make([]string, len(value))
+			for i, constraint := range value {
+				stringValues[i] = fmt.Sprintf("%s", constraint)
+			}
+			response += fmt.Sprintf("      %s: %s\n", key, strings.Join(stringValues, ", "))
+		}
+	}
 
 	return response
 }
@@ -177,27 +236,23 @@ type MirrorMakerTask struct {
 }
 
 func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, error) {
-	cpu, err := strconv.ParseFloat(queryParams.Get("cpu"), 64)
-	if err != nil {
-		return nil, err
+	taskData := &TaskData{
+		ID:    id,
+		State: TaskStateInactive,
+		Config: TaskConfig{
+			"num.producers": "1",
+			"num.streams":   "1",
+			"queue.size":    "10000",
+		},
 	}
-	mem, err := strconv.ParseFloat(queryParams.Get("mem"), 64)
+
+	err := taskData.Update(queryParams)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MirrorMakerTask{
-		TaskData: &TaskData{
-			ID:    id,
-			State: TaskStateInactive,
-			Config: TaskConfig{
-				"num.producers": "1",
-				"num.streams":   "1",
-				"queue.size":    "10000",
-			},
-			Cpu: cpu,
-			Mem: mem,
-		},
+		TaskData: taskData,
 	}, nil
 }
 
@@ -231,9 +286,8 @@ func (mm *MirrorMakerTask) Matches(offer *mesos.Offer) string {
 
 func (mm *MirrorMakerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 	taskName := fmt.Sprintf("mirrormaker-%s", mm.ID)
-	mm.TaskID = fmt.Sprintf("%s-%s", taskName, uuid())
 	taskId := &mesos.TaskID{
-		Value: proto.String(mm.TaskID),
+		Value: proto.String(fmt.Sprintf("%s-%s", taskName, uuid())),
 	}
 
 	data, err := json.Marshal(mm.Config)

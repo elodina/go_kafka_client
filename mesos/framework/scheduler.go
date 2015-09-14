@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/elodina/go-mesos-utils"
 	"github.com/elodina/go-mesos-utils/pretty"
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
@@ -187,10 +188,15 @@ func (s *Scheduler) acceptOffer(driver scheduler.SchedulerDriver, offer *mesos.O
 	}
 
 	for _, task := range tasks {
-		declineReason := task.Matches(offer)
+		declineReason := utils.CheckConstraints(offer, task.Data().constraints, s.cluster.GetConstrained())
 		if declineReason == "" {
-			s.launchTask(task, offer)
-			return ""
+			declineReason = task.Matches(offer)
+			if declineReason == "" {
+				s.launchTask(task, offer)
+				return ""
+			} else {
+				declineReasons = append(declineReasons, declineReason)
+			}
 		} else {
 			declineReasons = append(declineReasons, declineReason)
 		}
@@ -202,6 +208,10 @@ func (s *Scheduler) acceptOffer(driver scheduler.SchedulerDriver, offer *mesos.O
 func (s *Scheduler) launchTask(task Task, offer *mesos.Offer) {
 	taskInfo := task.NewTaskInfo(offer)
 	task.Data().State = TaskStateStaging
+	task.Data().Attributes = utils.OfferAttributes(offer)
+	task.Data().ExecutorID = taskInfo.GetExecutor().GetExecutorId().GetValue()
+	task.Data().SlaveID = taskInfo.GetSlaveId().GetValue()
+	task.Data().TaskID = taskInfo.GetTaskId().GetValue()
 
 	s.driver.LaunchTasks([]*mesos.OfferID{offer.GetId()}, []*mesos.TaskInfo{taskInfo}, &mesos.Filters{RefuseSeconds: proto.Float64(1)})
 }
