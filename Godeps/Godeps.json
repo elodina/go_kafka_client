@@ -30,6 +30,10 @@
 			"Rev": "ded5959c0d4e360646dc9e9908cff48666781367"
 		},
 		{
+			"ImportPath": "github.com/elodina/go-mesos-utils",
+			"Rev": "be43c61dc5748d160e9697695770703b8462f1db"
+		},
+		{
 			"ImportPath": "github.com/gogo/protobuf/proto",
 			"Rev": "8edb24c179ed858a38f18920d9005c2dde05ec17"
 		},
