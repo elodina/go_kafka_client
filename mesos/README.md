@@ -48,27 +48,126 @@ Clone and build the project
 Scheduler configuration
 -----------------------
 
+```
+# ./cli help scheduler
+Usage: scheduler [options]
+
+Options:
     --master: Mesos Master addresses.
     --api: API host:port for advertizing.
     --user: Mesos user. Defaults to current system user.
     --storage: Storage for cluster state. Examples: file:go_kafka_client_mesos.json; zk:master:2181/go-mesos.
-	--log.level: Log level. trace|debug|info|warn|error|critical. Defaults to info.
-	--framework.name: Framework name.
-	--framework.role: Framework role.
+    --log.level: Log level. trace|debug|info|warn|error|critical. Defaults to info.
+    --framework.name: Framework name.
+    --framework.role: Framework role.
     --framework.timeout: Framework failover timeout.
+```
     
 Quick start
 -----------
 
+In order not to pass the API url to each CLI call lets export the URL as follows:
+
     # export GM_API=http://master:6666
-    # ./cli scheduler --master master:5050 --log.level debug
-    # ./cli add mirrormaker 0
-    # ./cli update 0 --producer.config producer.config --consumer.config consumer.config --whitelist "^test$"
-    # ./cli start 0
-    ...
-    # ./cli status
-    # ./cli stop 0
-    # ./cli remove 0
+    
+First lets start 1 mirror maker task with the default settings. Further in the readme you can see how to change these from the defaults.    
+
+```
+# ./cli add mirrormaker 0
+Added tasks 0
+
+cluster:
+  task:
+    type: mirrormaker
+    id: 0
+    state: inactive
+    cpu: 0.50
+    mem: 512.00
+    configs:
+      num.producers: 1
+      num.streams: 1
+      queue.size: 10000
+```
+    
+You now have a cluster with 1 task that is not started.    
+
+```
+# ./cli status
+cluster:
+  task:
+    type: mirrormaker
+    id: 0
+    state: inactive
+    cpu: 0.50
+    mem: 512.00
+    configs:
+      queue.size: 10000
+      num.producers: 1
+      num.streams: 1
+```
+
+Each mirror maker task requires some basic configuration.
+
+```
+# ./cli update 0 --producer.config producer.config --consumer.config consumer.config --whitelist "^mytopic$"
+Configuration updated:
+
+cluster:
+  task:
+    type: mirrormaker
+    id: 0
+    state: inactive
+    cpu: 0.50
+    mem: 512.00
+    configs:
+      num.producers: 1
+      num.streams: 1
+      queue.size: 10000
+      consumer.config: consumer.config
+      producer.config: producer.config
+      whitelist: ^mytopic$
+```
+
+Now lets start the task. This call to CLI will block until the task is actually started but will wait no more than a configured timeout. Timeout can be passed via --timeout flag and defaults to 30s. If a timeout of 0ms is passed CLI won't wait for tasks to start at all and will reply with "Scheduled tasks ..." message.
+
+```
+# ./cli start 0
+Started tasks 0
+
+cluster:
+  task:
+    type: mirrormaker
+    id: 0
+    state: running
+    cpu: 0.50
+    mem: 512.00
+    task id: mirrormaker-0-e5ab7581-1c31-d85d-ff14-77b5fb3de4d4
+    slave id: 20150914-091943-84125888-5050-10717-S1
+    executor id: mirrormaker-0
+    attributes:
+      hostname: slave0
+    configs:
+      consumer.config: consumer.config
+      producer.config: producer.config
+      whitelist: ^mytopic$
+      num.producers: 1
+      num.streams: 1
+      queue.size: 10000
+```
+
+By now you should have a single mirror maker instance running. Here's how you stop it:
+
+```
+# ./cli stop 0
+Stopped tasks 0
+```
+
+And remove:
+
+```
+# ./cli remove 0
+Removed tasks 0
+```
     
 Typical operations
 =================
@@ -87,102 +186,156 @@ Navigating the CLI
 Requesting help
 --------------
 
-**TODO** incomplete!
 ```
 # ./cli help
 Usage:
   help: show this message
   scheduler: start scheduler
   add: add task
-  start: start task
-  stop: stop task
   update: update configuration
+  start: start task
   status: get current cluster status
-More help you can get from ./cli <command> -h
+  stop: stop task
+  remove: remove task
+Get detailed help from ./cli help <command>
 ```
     
 Adding tasks to the cluster
 --------------------------
 
-    # ./cli add <type> <id>
-    
-Example:
+```
+# ./cli help add
+Usage: add <type> <id-expr> [options]
 
-    # ./cli add mirrormaker 0
-    
+Types:
+    mirrormaker
+
 Options:
-
-    --api: API host:port for advertizing.
+    --api: API host:port for advertizing. Optional if GM_API env is set.
     --cpu: CPUs per task. Defaults to 0.5.
-	--mem: Mem per task. Defaults to 512.
+    --mem: Mem per task. Defaults to 512.
     --constraints: Constraints (hostname=like:^master$,rack=like:^1.*$).
+    
+id-expr examples:
+    0      - task 0
+    0,1    - tasks 0,1
+    0..2   - tasks 0,1,2
+    0,1..2 - tasks 0,1,2
+    *      - all tasks in cluster
+
+constraint examples:
+    like:slave0    - value equals 'slave0'
+    unlike:slave0  - value is not equal to 'slave0'
+    like:slave.*   - value starts with 'slave'
+    unique         - all values are unique
+    cluster        - all values are the same
+    cluster:slave0 - value equals 'slave0'
+    groupBy        - all values are the same
+    groupBy:3      - all values are within 3 different groups
+```
     
 Configuring tasks in the cluster
 -------------------------------
 
-    # ./cli update <id> <flags>
-    
-Options (for mirrormaker):
+```
+# ./cli help update
+Usage: update <id-expr> [options]
 
-    --api: API host:port for advertizing.
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
     --cpu: CPUs per task.
-	--mem: Mem per task.
-	--whitelist: Regex pattern for whitelist. Providing both whitelist and blacklist is an error.
-	--blacklist: Regex pattern for blacklist. Providing both whitelist and blacklist is an error.
-	--producer.config: Producer config file name.
-	--consumer.config: Consumer config file name.
-	--num.producers: Number of producers.
-	--num.streams: Number of consumption streams.
-	--preserve.partitions: Preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.
-	--preserve.order: E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.
-	--prefix: Destination topic prefix.")
-	--queue.size: Maximum number of messages that are buffered between the consumer and producer.
+    --mem: Mem per task.
+    --constraints: Constraints (hostname=like:^master$,rack=like:^1.*$).
+    --whitelist: Regex pattern for whitelist. Providing both whitelist and blacklist is an error.
+    --blacklist: Regex pattern for blacklist. Providing both whitelist and blacklist is an error.
+    --producer.config: Producer config file name.
+    --consumer.config: Consumer config file name.
+    --num.producers: Number of producers.
+    --num.streams: Number of consumption streams.
+    --preserve.partitions: Preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.
+    --preserve.order: E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.
+    --prefix: Destination topic prefix.")
+    --queue.size: Maximum number of messages that are buffered between the consumer and producer.
+    
+id-expr examples:
+    0      - task 0
+    0,1    - tasks 0,1
+    0..2   - tasks 0,1,2
+    0,1..2 - tasks 0,1,2
+    *      - all tasks in cluster
+constraint examples:
+    like:slave0    - value equals 'slave0'
+    unlike:slave0  - value is not equal to 'slave0'
+    like:slave.*   - value starts with 'slave'
+    unique         - all values are unique
+    cluster        - all values are the same
+    cluster:slave0 - value equals 'slave0'
+    groupBy        - all values are the same
+    groupBy:3      - all values are within 3 different groups
+```
     
 Starting tasks in the cluster
 -----------------------------
 
-    # ./cli start <id>
-    
-Example:
-    
-    # ./cli start 0
-    
-Options:
+```
+# ./cli help start
+Usage: start <id-expr> [options]
 
-    --api: API host:port for advertizing.
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
     --timeout: Timeout in seconds to wait until the task receives Running status.
+    
+id-expr examples:
+    0      - task 0
+    0,1    - tasks 0,1
+    0..2   - tasks 0,1,2
+    0,1..2 - tasks 0,1,2
+    *      - all tasks in cluster
+```
     
 Stopping tasks in the cluster
 -----------------------------
 
-    # ./cli stop <id>
-    
-Example:
-    
-    # ./cli stop 0
-    
-Options:
+```
+# ./cli help stop
+Usage: stop <id-expr> [options]
 
-    --api: API host:port for advertizing.
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+    
+id-expr examples:
+    0      - task 0
+    0,1    - tasks 0,1
+    0..2   - tasks 0,1,2
+    0,1..2 - tasks 0,1,2
+    *      - all tasks in cluster
+```
     
 Removing tasks from the cluster
 -----------------------------
 
-    # ./cli remove <id>
-    
-Example:
-    
-    # ./cli remove 0
-    
-Options:
+```
+# ./cli help remove
+Usage: remove <id-expr> [options]
 
-    --api: API host:port for advertizing.
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+    
+id-expr examples:
+    0      - task 0
+    0,1    - tasks 0,1
+    0..2   - tasks 0,1,2
+    0,1..2 - tasks 0,1,2
+    *      - all tasks in cluster
+```
     
 Cluster status
 --------------
 
-    # ./cli status
-    
-Options:
+```
+# ./cli help status
+Usage: status [options]
 
-    --api: API host:port for advertizing.
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+```

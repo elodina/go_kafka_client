@@ -35,13 +35,13 @@ func main() {
 func exec() error {
 	command := stripArgument()
 	if command == "" {
-		handleHelp()
+		handleHelp("")
 		return errors.New("No command supplied")
 	}
 
 	switch command {
 	case "help":
-		return handleHelp()
+		return handleHelp(stripArgument())
 	case "scheduler":
 		return handleScheduler()
 	case "add":
@@ -61,24 +61,156 @@ func exec() error {
 	return fmt.Errorf("Unknown command: %s\n", command)
 }
 
-func handleHelp() error {
+func handleHelp(cmd string) error {
+	switch cmd {
+	case "scheduler":
+		handleHelpScheduler()
+	case "add":
+		handleHelpAdd()
+	case "update":
+		handleHelpUpdate()
+	case "start":
+		handleHelpStart()
+	case "status":
+		handleHelpStatus()
+	case "stop":
+		handleHelpStop()
+	case "remove":
+		handleHelpRemove()
+	default:
+		handleGenericHelp()
+	}
+	return nil
+}
+
+func handleGenericHelp() {
 	fmt.Println(`Usage:
   help: show this message
   scheduler: start scheduler
   add: add task
-  start: start task
-  stop: stop task
   update: update configuration
+  start: start task
   status: get current cluster status
-More help you can get from ./cli <command> -h`)
-	return nil
+  stop: stop task
+  remove: remove task
+Get detailed help from ./cli help <command>`)
+}
+
+func handleHelpScheduler() {
+	fmt.Println(`Usage: scheduler [options]
+
+Options:
+    --master: Mesos Master addresses.
+    --api: API host:port for advertizing.
+    --user: Mesos user. Defaults to current system user.
+    --storage: Storage for cluster state. Examples: file:go_kafka_client_mesos.json; zk:master:2181/go-mesos.
+    --log.level: Log level. trace|debug|info|warn|error|critical. Defaults to info.
+    --framework.name: Framework name.
+    --framework.role: Framework role.
+    --framework.timeout: Framework failover timeout.`)
+}
+
+func handleHelpAdd() {
+	fmt.Println(`Usage: add <type> <id-expr> [options]
+
+Types:
+    mirrormaker
+
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+    --cpu: CPUs per task. Defaults to 0.5.
+    --mem: Mem per task. Defaults to 512.
+    --constraints: Constraints (hostname=like:^master$,rack=like:^1.*$).
+    `)
+	printIDExprExamples()
+	fmt.Println()
+	printConstraintExamples()
+}
+
+func handleHelpUpdate() {
+	fmt.Println(`Usage: update <id-expr> [options]
+
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+    --cpu: CPUs per task.
+    --mem: Mem per task.
+    --constraints: Constraints (hostname=like:^master$,rack=like:^1.*$).
+    --whitelist: Regex pattern for whitelist. Providing both whitelist and blacklist is an error.
+    --blacklist: Regex pattern for blacklist. Providing both whitelist and blacklist is an error.
+    --producer.config: Producer config file name.
+    --consumer.config: Consumer config file name.
+    --num.producers: Number of producers.
+    --num.streams: Number of consumption streams.
+    --preserve.partitions: Preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.
+    --preserve.order: E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.
+    --prefix: Destination topic prefix.")
+    --queue.size: Maximum number of messages that are buffered between the consumer and producer.
+    `)
+	printIDExprExamples()
+	printConstraintExamples()
+}
+
+func handleHelpStart() {
+	fmt.Println(`Usage: start <id-expr> [options]
+
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+    --timeout: Timeout in seconds to wait until the task receives Running status.
+    `)
+	printIDExprExamples()
+}
+
+func handleHelpStatus() {
+	fmt.Println(`Usage: status [options]
+
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.`)
+}
+
+func handleHelpStop() {
+	fmt.Println(`Usage: stop <id-expr> [options]
+
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+    `)
+	printIDExprExamples()
+}
+
+func handleHelpRemove() {
+	fmt.Println(`Usage: remove <id-expr> [options]
+
+Options:
+    --api: API host:port for advertizing. Optional if GM_API env is set.
+    `)
+	printIDExprExamples()
+}
+
+func printIDExprExamples() {
+	fmt.Println(`id-expr examples:
+    0      - task 0
+    0,1    - tasks 0,1
+    0..2   - tasks 0,1,2
+    0,1..2 - tasks 0,1,2
+    *      - all tasks in cluster`)
+}
+
+func printConstraintExamples() {
+	fmt.Println(`constraint examples:
+    like:slave0    - value equals 'slave0'
+    unlike:slave0  - value is not equal to 'slave0'
+    like:slave.*   - value starts with 'slave'
+    unique         - all values are unique
+    cluster        - all values are the same
+    cluster:slave0 - value equals 'slave0'
+    groupBy        - all values are the same
+    groupBy:3      - all values are within 3 different groups`)
 }
 
 func handleStatus() error {
 	var api string
 	flag.StringVar(&api, "api", "", "Binding host:port for http/artifact server. Optional if SM_API env is set.")
 
-	flag.Parse()
+	ParseFlags("status")
 	if err := resolveApi(api); err != nil {
 		return err
 	}
@@ -100,7 +232,7 @@ func handleScheduler() error {
 	flag.StringVar(&framework.Config.FrameworkRole, "framework.role", framework.Config.FrameworkRole, "Framework role.")
 	flag.DurationVar(&framework.Config.FrameworkTimeout, "framework.timeout", framework.Config.FrameworkTimeout, "Framework failover timeout.")
 
-	flag.Parse()
+	ParseFlags("scheduler")
 
 	if err := resolveApi(api); err != nil {
 		return err
@@ -120,7 +252,7 @@ func handleScheduler() error {
 func handleAdd() error {
 	addType := stripArgument()
 	if addType == "" {
-		handleHelp()
+		handleHelp("add")
 		return errors.New("No task type supplied to add")
 	}
 
@@ -129,7 +261,7 @@ func handleAdd() error {
 		return handleAddMirrorMaker()
 	default:
 		{
-			handleHelp()
+			handleHelp("add")
 			return fmt.Errorf("Unknown task type %s", addType)
 		}
 	}
@@ -150,7 +282,7 @@ func handleAddMirrorMaker() error {
 	flag.Float64Var(&cpu, "cpu", 0.5, "CPUs per task.")
 	flag.Float64Var(&mem, "mem", 512, "Mem per task.")
 	flag.StringVar(&constraints, "constraints", "", "Constraints (hostname=like:^master$,rack=like:^1.*$).")
-	flag.Parse()
+	ParseFlags("add")
 
 	if err := resolveApi(api); err != nil {
 		return err
@@ -182,7 +314,7 @@ func handleStart() error {
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
 	flag.Int64Var(&timeout, "timeout", 30, "Timeout in seconds to wait until the task receives Running status.")
 
-	flag.Parse()
+	ParseFlags("start")
 
 	if err := resolveApi(api); err != nil {
 		return err
@@ -206,7 +338,7 @@ func handleStop() error {
 
 	var api string
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
-	flag.Parse()
+	ParseFlags("stop")
 
 	if err := resolveApi(api); err != nil {
 		return err
@@ -229,7 +361,7 @@ func handleRemove() error {
 
 	var api string
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
-	flag.Parse()
+	ParseFlags("remove")
 
 	if err := resolveApi(api); err != nil {
 		return err
@@ -279,7 +411,7 @@ func handleUpdate() error {
 	flag.StringVar(&prefix, "prefix", "", "Destination topic prefix.")
 	flag.Int64Var(&channelSize, "queue.size", math.MinInt64, "Maximum number of messages that are buffered between the consumer and producer.")
 	flag.StringVar(&constraints, "constraints", "", "Constraints (hostname=like:^master$,rack=like:^1.*$).")
-	flag.Parse()
+	ParseFlags("update")
 
 	if err := resolveApi(api); err != nil {
 		return err
@@ -337,6 +469,14 @@ func resolveApi(api string) error {
 	}
 
 	return errors.New("Undefined API url. Please provide either a CLI --api option or GM_API env.")
+}
+
+func ParseFlags(cmd string) {
+	flag.CommandLine.Usage = func() {
+		handleHelp(cmd)
+		fmt.Println()
+	}
+	flag.Parse()
 }
 
 type consumerConfigs []string
