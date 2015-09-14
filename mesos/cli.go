@@ -98,6 +98,7 @@ func handleScheduler() error {
 	flag.StringVar(&logLevel, "log.level", framework.Config.LogLevel, "Log level. trace|debug|info|warn|error|critical. Defaults to info.")
 	flag.StringVar(&framework.Config.FrameworkName, "framework.name", framework.Config.FrameworkName, "Framework name.")
 	flag.StringVar(&framework.Config.FrameworkRole, "framework.role", framework.Config.FrameworkRole, "Framework role.")
+	flag.DurationVar(&framework.Config.FrameworkTimeout, "framework.timeout", framework.Config.FrameworkTimeout, "Framework failover timeout.")
 
 	flag.Parse()
 

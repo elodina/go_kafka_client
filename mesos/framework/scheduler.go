@@ -58,10 +58,11 @@ func (s *Scheduler) Start() error {
 	go s.httpServer.Start()
 
 	frameworkInfo := &mesos.FrameworkInfo{
-		User:       proto.String(Config.User),
-		Name:       proto.String(Config.FrameworkName),
-		Role:       proto.String(Config.FrameworkRole),
-		Checkpoint: proto.Bool(true),
+		User:            proto.String(Config.User),
+		Name:            proto.String(Config.FrameworkName),
+		Role:            proto.String(Config.FrameworkRole),
+		FailoverTimeout: proto.Float64(float64(Config.FrameworkTimeout / 1e9)),
+		Checkpoint:      proto.Bool(true),
 	}
 
 	if s.cluster.frameworkID != "" {
@@ -76,22 +77,19 @@ func (s *Scheduler) Start() error {
 
 	driver, err := scheduler.NewMesosSchedulerDriver(driverConfig)
 	s.schedulerDriver = driver
-	go func() {
-		<-ctrlc
-		s.Shutdown(driver)
-	}()
 
 	if err != nil {
 		return fmt.Errorf("Unable to create SchedulerDriver: %s", err)
 	}
 
-	if stat, err := driver.Run(); err != nil {
-		Logger.Infof("Framework stopped with status %s and error: %s\n", stat.String(), err)
-		return err
-	}
+	go func() {
+		if stat, err := driver.Run(); err != nil {
+			Logger.Infof("Framework stopped with status %s and error: %s\n", stat.String(), err)
+			panic(err)
+		}
+	}()
 
-	//TODO stop http server
-
+	<-ctrlc
 	return nil
 }
 

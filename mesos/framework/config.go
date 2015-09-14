@@ -20,28 +20,31 @@ import (
 	"regexp"
 
 	log "github.com/cihub/seelog"
+	"time"
 )
 
 var Logger log.LoggerInterface
 
 var Config *config = &config{
-	FrameworkName: "go_kafka_client",
-	FrameworkRole: "*",
-	LogLevel:      "info",
-	Storage:       "file:go_kafka_client_mesos.json",
+	FrameworkName:    "go_kafka_client",
+	FrameworkRole:    "*",
+	FrameworkTimeout: 30 * time.Minute,
+	LogLevel:         "info",
+	Storage:          "file:go_kafka_client_mesos.json",
 }
 
 var executorMask = regexp.MustCompile("executor.*")
 
 type config struct {
-	Api           string
-	Master        string
-	FrameworkName string
-	FrameworkRole string
-	User          string
-	Executor      string
-	LogLevel      string
-	Storage       string
+	Api              string
+	Master           string
+	FrameworkName    string
+	FrameworkRole    string
+	FrameworkTimeout time.Duration
+	User             string
+	Executor         string
+	LogLevel         string
+	Storage          string
 }
 
 func (c *config) String() string {
@@ -49,11 +52,12 @@ func (c *config) String() string {
 master:              %s
 framework name:      %s
 framework role:      %s
+framework timeout    %s
 user:                %s
 executor:            %s
 log level:           %s
 storage:             %s
-`, c.Api, c.Master, c.FrameworkName, c.FrameworkRole, c.User, c.Executor, c.LogLevel, c.Storage)
+`, c.Api, c.Master, c.FrameworkName, c.FrameworkRole, c.FrameworkTimeout, c.User, c.Executor, c.LogLevel, c.Storage)
 }
 
 func InitLogging(level string) error {
