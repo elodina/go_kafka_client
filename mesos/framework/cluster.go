@@ -110,6 +110,10 @@ func (c *Cluster) GetTasksWithState(state TaskState) []Task {
 	return tasks
 }
 
+func (c *Cluster) IsReconciling() bool {
+	return len(c.GetTasksWithState(TaskStateReconciling)) > 0
+}
+
 func (c *Cluster) ExpandIDs(expr string) ([]string, error) {
 	if expr == "" {
 		return nil, errors.New("ID expression cannot be empty")

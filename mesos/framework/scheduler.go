@@ -31,6 +31,11 @@ import (
 	"time"
 )
 
+const (
+	reconcileDelay    = 10 * time.Second
+	reconcileMaxTries = 3
+)
+
 var sched *Scheduler // This is needed for HTTP server to be able to update this scheduler
 
 type Scheduler struct {
@@ -38,6 +43,15 @@ type Scheduler struct {
 	cluster         *Cluster
 	driver          scheduler.SchedulerDriver
 	schedulerDriver *scheduler.MesosSchedulerDriver
+
+	reconcileTime time.Time
+	reconciles    int
+}
+
+func NewScheduler() *Scheduler {
+	return &Scheduler{
+		reconcileTime: time.Unix(0, 0),
+	}
 }
 
 func (s *Scheduler) Start() error {
@@ -97,15 +111,17 @@ func (s *Scheduler) Registered(driver scheduler.SchedulerDriver, id *mesos.Frame
 	Logger.Infof("[Registered] framework: %s master: %s:%d", id.GetValue(), master.GetHostname(), master.GetPort())
 
 	s.cluster.frameworkID = id.GetValue()
-	sched.cluster.Save()
+	s.cluster.Save()
 
 	s.driver = driver
+	s.reconcileTasks(true)
 }
 
 func (s *Scheduler) Reregistered(driver scheduler.SchedulerDriver, master *mesos.MasterInfo) {
 	Logger.Infof("[Reregistered] master: %s:%d", master.GetHostname(), master.GetPort())
 
 	s.driver = driver
+	s.reconcileTasks(true)
 }
 
 func (s *Scheduler) Disconnected(scheduler.SchedulerDriver) {
@@ -124,7 +140,9 @@ func (s *Scheduler) ResourceOffers(driver scheduler.SchedulerDriver, offers []*m
 			Logger.Debugf("Declined offer: %s", declineReason)
 		}
 	}
-	sched.cluster.Save()
+
+	s.reconcileTasks(false)
+	s.cluster.Save()
 }
 
 func (s *Scheduler) OfferRescinded(driver scheduler.SchedulerDriver, id *mesos.OfferID) {
@@ -147,7 +165,7 @@ func (s *Scheduler) StatusUpdate(driver scheduler.SchedulerDriver, status *mesos
 		Logger.Warnf("Got unexpected task state %s for task %s", pretty.Status(status), id)
 	}
 
-	sched.cluster.Save()
+	s.cluster.Save()
 }
 
 func (s *Scheduler) FrameworkMessage(driver scheduler.SchedulerDriver, executor *mesos.ExecutorID, slave *mesos.SlaveID, message string) {
@@ -247,6 +265,7 @@ func (s *Scheduler) stopTask(task Task) {
 	}
 
 	task.Data().State = TaskStateInactive
+	task.Data().ResetTaskInfo()
 }
 
 func (s *Scheduler) idFromTaskId(taskId string) string {
@@ -254,6 +273,41 @@ func (s *Scheduler) idFromTaskId(taskId string) string {
 	id := tokens[1]
 	Logger.Debugf("ID extracted from %s is %s", taskId, id)
 	return id
+}
+
+func (s *Scheduler) reconcileTasks(force bool) {
+	if time.Now().Sub(s.reconcileTime) >= reconcileDelay {
+		if !s.cluster.IsReconciling() {
+			s.reconciles = 0
+		}
+		s.reconciles++
+		s.reconcileTime = time.Now()
+
+		if s.reconciles > reconcileMaxTries {
+			for _, task := range s.cluster.GetTasksWithState(TaskStateReconciling) {
+				if task.Data().TaskID != "" {
+					Logger.Infof("Reconciling exceeded %d tries for task %s, sending killTask for task %s", reconcileMaxTries, task.Data().ID, task.Data().TaskID)
+					s.driver.KillTask(util.NewTaskID(task.Data().TaskID))
+
+					task.Data().ResetTaskInfo()
+				}
+			}
+		} else {
+			if force {
+				s.driver.ReconcileTasks(nil)
+			} else {
+				statuses := make([]*mesos.TaskStatus, 0)
+				for _, task := range s.cluster.GetAllTasks() {
+					if task.Data().TaskID != "" {
+						task.Data().State = TaskStateReconciling
+						Logger.Infof("Reconciling %d/%d task state for id %s, task id %s", s.reconciles, reconcileMaxTries, task.Data().ID, task.Data().TaskID)
+						statuses = append(statuses, util.NewTaskStatus(util.NewTaskID(task.Data().TaskID), mesos.TaskState_TASK_STAGING))
+					}
+				}
+				s.driver.ReconcileTasks(statuses)
+			}
+		}
+	}
 }
 
 func (s *Scheduler) resolveDeps() error {

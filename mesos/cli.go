@@ -114,7 +114,7 @@ func handleScheduler() error {
 		return errors.New("--master flag is required.")
 	}
 
-	return new(framework.Scheduler).Start()
+	return framework.NewScheduler().Start()
 }
 
 func handleAdd() error {

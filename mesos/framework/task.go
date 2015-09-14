@@ -37,10 +37,11 @@ const (
 type TaskState string
 
 const (
-	TaskStateInactive TaskState = "inactive"
-	TaskStateStopped  TaskState = "stopped"
-	TaskStateStaging  TaskState = "staging"
-	TaskStateRunning  TaskState = "running"
+	TaskStateInactive    TaskState = "inactive"
+	TaskStateStopped     TaskState = "stopped"
+	TaskStateStaging     TaskState = "staging"
+	TaskStateRunning     TaskState = "running"
+	TaskStateReconciling TaskState = "reconciling"
 )
 
 type TaskConfig map[string]string
@@ -174,6 +175,13 @@ func (td *TaskData) WaitFor(state TaskState, timeout time.Duration) bool {
 			}
 		}
 	}
+}
+
+func (td *TaskData) ResetTaskInfo() {
+	td.TaskID = ""
+	td.ExecutorID = ""
+	td.SlaveID = ""
+	td.Attributes = make(map[string]string)
 }
 
 func (td *TaskData) String() string {
