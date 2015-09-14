@@ -180,7 +180,7 @@ func handleStart() error {
 	var timeout int64
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
-	flag.Int64Var(&timeout, "timeout", 30, "")
+	flag.Int64Var(&timeout, "timeout", 30, "Timeout in seconds to wait until the task receives Running status.")
 
 	flag.Parse()
 
