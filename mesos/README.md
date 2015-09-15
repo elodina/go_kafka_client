@@ -7,6 +7,8 @@ go_kafka_client Mesos Framework
 * [Scheduler configuration](#scheduler-configuration)
 * [Run the scheduler](#run-the-scheduler)
 * [Quick start](#quick-start)
+* [Quick start using Vagrant](https://github.com/stealthly/go_kafka_client/tree/mesos-framework/mesos/vagrant/quickstart.md)
+* [Running with Marathon](https://github.com/stealthly/go_kafka_client/tree/mesos-framework/mesos/marathon)
 
 [Typical operations](#typical-operations)
 * [Shutting down framework](#shutting-down-framework)
