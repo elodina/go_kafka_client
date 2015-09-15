@@ -46,6 +46,7 @@ func (hs *HttpServer) Start() {
 	http.HandleFunc("/api/remove", handleRemove)
 	http.HandleFunc("/api/update", handleUpdate)
 	http.HandleFunc("/api/status", handleStatus)
+	http.HandleFunc("/health", handleHealth)
 	http.ListenAndServe(hs.address, nil)
 }
 
@@ -243,6 +244,10 @@ func handleRemove(w http.ResponseWriter, r *http.Request) {
 	respond(true, fmt.Sprintf("Removed tasks %s", idExpr), w)
 }
 
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
 func idFromRequest(r *http.Request) string {
 	return r.URL.Query().Get("id")
 }
@@ -254,9 +259,9 @@ func respond(success bool, message string, w http.ResponseWriter) {
 		panic(err) //this shouldn't happen
 	}
 	if success {
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 	} else {
-		w.WriteHeader(500)
+		w.WriteHeader(http.StatusBadRequest)
 	}
 	w.Write(bytes)
 }
