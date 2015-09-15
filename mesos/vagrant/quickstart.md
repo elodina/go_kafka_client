@@ -1,7 +1,7 @@
 Go Kafka Client on Mesos quickstart using Vagrant
 ================================================
 
-This quickstart guide assumes you have no Mesos cluster running anywhere. This also assumes you have Zookeeper and Kafka running somewhere.
+This quickstart guide assumes you have no Mesos cluster running anywhere. This also assumes you have Zookeeper and Kafka running somewhere. **Please make sure your brokers advertise themselves properly and are accessible from Vagrant VMs**
 
 Step by step guide:
 

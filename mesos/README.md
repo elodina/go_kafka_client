@@ -9,6 +9,7 @@ go_kafka_client Mesos Framework
 * [Quick start](#quick-start)
 * [Quick start using Vagrant](https://github.com/stealthly/go_kafka_client/tree/mesos-framework/mesos/vagrant/quickstart.md)
 * [Running with Marathon](https://github.com/stealthly/go_kafka_client/tree/mesos-framework/mesos/marathon)
+* [Running with Docker](https://github.com/stealthly/go_kafka_client/tree/mesos-framework/mesos/docker)
 
 [Typical operations](#typical-operations)
 * [Shutting down framework](#shutting-down-framework)
