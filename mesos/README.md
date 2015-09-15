@@ -240,6 +240,8 @@ constraint examples:
 Configuring tasks in the cluster
 -------------------------------
 
+All file-related configs should be set as file names located `.` (e.g. setting --producer.config producer.properties) OR 
+http/https URLs (e.g. http://192.168.3.1:6666/producer.config). Please note that http URLs MUST end with file name to be downloaded as Mesos does not respect `Content-Disposition` header.
 ```
 # ./cli help update
 Usage: update <id-expr> [options]
@@ -251,8 +253,8 @@ Options:
     --constraints: Constraints (hostname=like:^master$,rack=like:^1.*$).
     --whitelist: Regex pattern for whitelist. Providing both whitelist and blacklist is an error.
     --blacklist: Regex pattern for blacklist. Providing both whitelist and blacklist is an error.
-    --producer.config: Producer config file name.
-    --consumer.config: Consumer config file name.
+    --producer.config: Producer config url or file name.
+    --consumer.config: Consumer config url or file name.
     --num.producers: Number of producers.
     --num.streams: Number of consumption streams.
     --preserve.partitions: Preserve partition number. E.g. if message was read from partition 5 it'll be written to partition 5.

@@ -6,9 +6,7 @@
   "cmd": "chmod u+x cli && ./cli scheduler --master master:5050 --user vagrant --storage zk:master:2181/go_kafka_client/mesos/storage --log.level debug --api http://$HOST:$PORT0",
   "uris": [
     "http://192.168.3.1:7777/cli",
-    "http://192.168.3.1:7777/executor",
-    "http://192.168.3.1:7777/producer.config",
-    "http://192.168.3.1:7777/consumer.config"
+    "http://192.168.3.1:7777/executor"
   ],
   "constraints": [["hostname", "LIKE", "master"]],
   "ports": [31000],

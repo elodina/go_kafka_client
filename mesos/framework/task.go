@@ -277,6 +277,8 @@ func (mm *MirrorMakerTask) Matches(offer *mesos.Offer) string {
 		return "no mem"
 	}
 
+	//TODO this could potentially include checks whether producer.config and consumer.config files/uris are valid
+	// because if they are not Mesos executor failure messages are not intuitive at all.
 	if mm.Config["producer.config"] == "" {
 		return "producer.config not set"
 	}
@@ -335,24 +337,36 @@ func (mm *MirrorMakerTask) MarshalJSON() ([]byte, error) {
 
 func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 	id := fmt.Sprintf("mirrormaker-%s", mm.ID)
+	uris := []*mesos.CommandInfo_URI{
+		&mesos.CommandInfo_URI{
+			Value:      proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, Config.Executor)),
+			Executable: proto.Bool(true),
+		},
+		toURI(mm.Config["producer.config"]),
+	}
+
+	for _, consumerConfig := range strings.Split(mm.Config["consumer.config"], ",") {
+		uris = append(uris, toURI(consumerConfig))
+	}
 
 	return &mesos.ExecutorInfo{
 		ExecutorId: util.NewExecutorID(id),
 		Name:       proto.String(id),
 		Command: &mesos.CommandInfo{
 			Value: proto.String(fmt.Sprintf("./%s --log.level %s --type %s", Config.Executor, Config.LogLevel, TaskTypeMirrorMaker)),
-			Uris: []*mesos.CommandInfo_URI{
-				&mesos.CommandInfo_URI{
-					Value:      proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, Config.Executor)),
-					Executable: proto.Bool(true),
-				},
-				&mesos.CommandInfo_URI{
-					Value: proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, mm.Config["producer.config"])),
-				},
-				&mesos.CommandInfo_URI{
-					Value: proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, mm.Config["consumer.config"])),
-				},
-			},
+			Uris:  uris,
 		},
+	}
+}
+
+func toURI(resource string) *mesos.CommandInfo_URI {
+	value := resource
+	if !strings.HasPrefix(resource, "http") {
+		resourceTokens := strings.Split(resource, "/")
+		value = fmt.Sprintf("%s/resource/%s", Config.Api, resourceTokens[len(resourceTokens)-1])
+	}
+
+	return &mesos.CommandInfo_URI{
+		Value: proto.String(value),
 	}
 }

@@ -21,6 +21,7 @@ import (
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	kafka "github.com/stealthly/go_kafka_client"
 	"os"
+	"strings"
 )
 
 type MirrorMakerExecutor struct {
@@ -103,6 +104,16 @@ func (e *MirrorMakerExecutor) Error(driver executor.ExecutorDriver, message stri
 }
 
 func (e *MirrorMakerExecutor) startMirrorMaker() {
+	consumerConfigs := make([]string, 0)
+	rawConsumerConfigs := strings.Split(e.config["consumer.config"], ",")
+	for _, config := range rawConsumerConfigs {
+		resourceTokens := strings.Split(config, "/")
+		consumerConfigs = append(consumerConfigs, resourceTokens[len(resourceTokens)-1])
+	}
+
+	rawProducerConfig := strings.Split(e.config["producer.config"], "/")
+	producerConfig := rawProducerConfig[len(rawProducerConfig)-1]
+
 	mmConfig := kafka.NewMirrorMakerConfig()
 	e.config.SetIntConfig("num.producers", &mmConfig.NumProducers)
 	e.config.SetIntConfig("num.streams", &mmConfig.NumStreams)
@@ -110,8 +121,8 @@ func (e *MirrorMakerExecutor) startMirrorMaker() {
 	e.config.SetIntConfig("queue.size", &mmConfig.ChannelSize)
 	e.config.SetStringConfig("whitelist", &mmConfig.Whitelist)
 	e.config.SetStringConfig("blacklist", &mmConfig.Blacklist)
-	e.config.SetStringConfig("producer.config", &mmConfig.ProducerConfig)
-	e.config.SetStringSliceConfig("consumer.config", &mmConfig.ConsumerConfigs)
+	mmConfig.ProducerConfig = producerConfig
+	mmConfig.ConsumerConfigs = consumerConfigs
 
 	e.mirrorMaker = kafka.NewMirrorMaker(mmConfig)
 	e.mirrorMaker.Start()
