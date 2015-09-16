@@ -34,6 +34,12 @@ var (
 	brokerTopicsPath = "/brokers/topics"
 )
 
+type GroupWatch struct {
+	coordinatorEvents chan CoordinatorEvent
+	zkEvents          chan zk.Event
+	poisonPillMessage string
+}
+
 // ZookeeperCoordinator implements ConsumerCoordinator and OffsetStorage interfaces and is used to coordinate multiple consumers that work within the same consumer group
 // as well as storing and retrieving their offsets.
 type ZookeeperCoordinator struct {
@@ -41,7 +47,7 @@ type ZookeeperCoordinator struct {
 	zkConn      *zk.Conn
 	unsubscribe chan bool
 	closed      bool
-	watches     map[string]chan CoordinatorEvent
+	watches     map[string]*GroupWatch
 }
 
 func (this *ZookeeperCoordinator) String() string {
@@ -54,7 +60,7 @@ func NewZookeeperCoordinator(Config *ZookeeperConfig) *ZookeeperCoordinator {
 	return &ZookeeperCoordinator{
 		config:      Config,
 		unsubscribe: make(chan bool),
-		watches:     make(map[string]chan CoordinatorEvent),
+		watches:     make(map[string]*GroupWatch),
 	}
 }
 
@@ -98,11 +104,16 @@ func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan
 				panic(err)
 			}
 			for groupId, watch := range this.watches {
+				watch.zkEvents <- zk.Event{
+					Type:  zk.EventNodeCreated,
+					State: zk.StateConnected,
+					Path:  watch.poisonPillMessage,
+				}
 				_, err := this.SubscribeForChanges(groupId)
 				if err != nil {
 					panic(err)
 				}
-				watch <- Reinitialize
+				watch.coordinatorEvents <- Reinitialize
 			}
 
 			return
@@ -474,15 +485,21 @@ func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (events <-
 }
 
 func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
-	var changes chan CoordinatorEvent
+	var groupWatch *GroupWatch
+	//	var changes chan CoordinatorEvent
 	if _, ok := this.watches[Groupid]; !ok {
-		changes = make(chan CoordinatorEvent, 100)
-		this.watches[Groupid] = changes
+		groupWatch = &GroupWatch{
+			coordinatorEvents: make(chan CoordinatorEvent, 100),
+			poisonPillMessage: uuid(),
+		}
+		this.watches[Groupid] = groupWatch
 	} else {
-		changes = this.watches[Groupid]
+		groupWatch = this.watches[Groupid]
 	}
 
 	Infof(this, "Subscribing for changes for %s", Groupid)
+	zkEvents := make(chan zk.Event, 100)
+	this.watches[Groupid].zkEvents = zkEvents
 
 	consumersWatcher, err := this.getConsumersInGroupWatcher(Groupid)
 	if err != nil {
@@ -503,7 +520,6 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 
 	inputChannels := make([]*<-chan zk.Event, 0)
 	inputChannels = append(inputChannels, &consumersWatcher, &blueGreenWatcher, &topicsWatcher, &brokersWatcher)
-	zkEvents := make(chan zk.Event)
 	stopRedirecting := redirectChannelsTo(inputChannels, zkEvents)
 
 	go func() {
@@ -515,9 +531,12 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 					if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
 						if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
 							newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
-							changes <- BlueGreenRequest
+							groupWatch.coordinatorEvents <- BlueGreenRequest
+						} else if e.Path == groupWatch.poisonPillMessage {
+							stopRedirecting <- true
+							return
 						} else {
-							changes <- Regular
+							groupWatch.coordinatorEvents <- Regular
 						}
 					}
 
@@ -561,7 +580,7 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 		}
 	}()
 
-	return changes, nil
+	return groupWatch.coordinatorEvents, nil
 }
 
 // Gets all deployed topics for consume group Group from consumer coordinator.
@@ -684,7 +703,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 			}
 
 			// Delete if this zk node has an expired timestamp
-			if time.Unix(t, 0).Before(time.Now().Add(-10*time.Minute)) {
+			if time.Unix(t, 0).Before(time.Now().Add(-10 * time.Minute)) {
 				// If the data is not a timestamp or is a timestamp but has reached expiration delete it
 				err = this.deleteNode(childPath)
 				if err != nil && err != zk.ErrNoNode {
@@ -698,7 +717,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 }
 
 func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, barrierName string,
-barrierSize int, api string, timeout time.Duration) bool {
+	barrierSize int, api string, timeout time.Duration) bool {
 	barrierPath := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, barrierName)
 
 	var barrierExpiration time.Time
@@ -773,14 +792,14 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 				go blackholeFunc(zkMemberJoinedWatcher)
 				return nil
 			}
-		// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
-				select {
-				case <-t.C:
-					go blackholeFunc(zkMemberJoinedWatcher)
-					return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
-				case <-zkMemberJoinedWatcher:
-					continue
-				}
+			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
+			select {
+			case <-t.C:
+				go blackholeFunc(zkMemberJoinedWatcher)
+				return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
+			case <-zkMemberJoinedWatcher:
+				continue
+			}
 		}
 	}
 
@@ -937,50 +956,39 @@ func (this *ZookeeperCoordinator) ensureZkPathsExist(group string) {
 	}
 }
 
-func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Event, error) {
-	Debug(this, "Subscribing for events from broker registry")
-	zkPath := this.rootedPath(brokerIdsPath)
-	_, _, watcher, err := this.zkConn.ChildrenW(zkPath)
-	if err != nil {
-		Debugf(this, "%v; path: %s", err, zkPath)
-		return nil, err
+func (this *ZookeeperCoordinator) getWatcher(path string) (<-chan zk.Event, error) {
+	Debugf(this, "Getting watcher for %s", path)
+
+	var watcher <-chan zk.Event
+	var err error
+	backoffMultiplier := 1
+	for i := 0; i <= this.config.MaxRequestRetries; i++ {
+		_, _, watcher, err = this.zkConn.ChildrenW(path)
+		if err == nil {
+			return watcher, err
+		}
+		Debugf(this, "%v; path: %s", err, path)
+		time.Sleep(this.config.RequestBackoff * time.Duration(backoffMultiplier))
+		backoffMultiplier++
 	}
 
-	return watcher, nil
+	return nil, err
+}
+
+func (this *ZookeeperCoordinator) getAllBrokersInClusterWatcher() (<-chan zk.Event, error) {
+	return this.getWatcher(this.rootedPath(brokerIdsPath))
 }
 
 func (this *ZookeeperCoordinator) getConsumersInGroupWatcher(group string) (<-chan zk.Event, error) {
-	Debugf(this, "Getting consumer watcher for group %s", group)
-	zkPath := newZKGroupDirs(this.config.Root, group).ConsumerRegistryDir
-	_, _, watcher, err := this.zkConn.ChildrenW(zkPath)
-	if err != nil {
-		Debugf(this, "%v; path: %s", err, zkPath)
-		return nil, err
-	}
-
-	return watcher, nil
+	return this.getWatcher(newZKGroupDirs(this.config.Root, group).ConsumerRegistryDir)
 }
 
 func (this *ZookeeperCoordinator) getBlueGreenWatcher(group string) (<-chan zk.Event, error) {
-	Debugf(this, "Getting watcher for consumer group '%s' API", group)
-	zkPath := fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, BlueGreenDeploymentAPI)
-	_, _, watcher, err := this.zkConn.ChildrenW(zkPath)
-	if err != nil {
-		Debugf(this, "%v; path: %s", err, zkPath)
-		return nil, err
-	}
-
-	return watcher, nil
+	return this.getWatcher(fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, BlueGreenDeploymentAPI))
 }
 
-func (this *ZookeeperCoordinator) getTopicsWatcher() (watcher <-chan zk.Event, err error) {
-	zkPath := this.rootedPath(brokerTopicsPath)
-	_, _, watcher, err = this.zkConn.ChildrenW(zkPath)
-	if err != nil {
-		Debugf(this, "%v; path: %s", err, zkPath)
-		return nil, err
-	}
-	return
+func (this *ZookeeperCoordinator) getTopicsWatcher() (<-chan zk.Event, error) {
+	return this.getWatcher(this.rootedPath(brokerTopicsPath))
 }
 
 func (this *ZookeeperCoordinator) getBrokerInfo(brokerId int32) (*BrokerInfo, error) {
