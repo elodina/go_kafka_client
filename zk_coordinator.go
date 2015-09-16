@@ -486,7 +486,6 @@ func (this *ZookeeperCoordinator) SubscribeForChanges(Groupid string) (events <-
 
 func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan CoordinatorEvent, error) {
 	var groupWatch *GroupWatch
-	//	var changes chan CoordinatorEvent
 	if _, ok := this.watches[Groupid]; !ok {
 		groupWatch = &GroupWatch{
 			coordinatorEvents: make(chan CoordinatorEvent, 100),
