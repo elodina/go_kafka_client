@@ -54,9 +54,13 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
 		workers[i] = &Worker{
+			InputChannel: make(chan *TaskAndStrategy),
 			OutputChannel: make(chan WorkerResult),
+			HandlerInputChannel: make(chan *TaskAndStrategy),
+			HandlerOutputChannel: make(chan WorkerResult),
 			TaskTimeout:   config.WorkerTaskTimeout,
 		}
+		workers[i].Start()
 		availableWorkers <- workers[i]
 	}
 
@@ -138,6 +142,12 @@ func (wm *WorkerManager) Stop() chan bool {
 			Debug(wm, "Stopped failure counter")
 			finished <- true
 			Debug(wm, "Leaving manager stop")
+
+			Debug(wm, "Stopping workers")
+			for _, worker := range wm.workers {
+				worker.Stop()
+			}
+			Debug(wm, "Stopped all workers")
 		})
 		Debugf(wm, "Stopped workerManager")
 	}()
@@ -163,7 +173,7 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			if wm.shutdownDecision == nil {
 				wm.metrics.activeWorkers().Inc(1)
 				wm.metrics.pendingWMsTasks().Dec(1)
-				worker.Start(task, wm.config.Strategy)
+				worker.InputChannel <- &TaskAndStrategy{task, wm.config.Strategy}
 			} else {
 				return
 			}
@@ -293,7 +303,9 @@ func (wm *WorkerManager) processBatch() {
 					} else {
 						Debugf(wm, "Retrying worker task %s %dth time", result.Id(), task.Retries)
 						time.Sleep(wm.config.WorkerBackoff)
-						go task.Callee.Start(task, wm.config.Strategy)
+						go func() {
+							task.Callee.InputChannel <- &TaskAndStrategy{task, wm.config.Strategy}
+						}()
 					}
 				}
 
@@ -354,8 +366,17 @@ func (wm *WorkerManager) UpdateLargestOffset(offset int64) {
 
 // Represents a worker that is able to process a single message.
 type Worker struct {
+	// Channel to write tasks to.
+	InputChannel chan *TaskAndStrategy
+
 	// Channel to write processing results to.
 	OutputChannel chan WorkerResult
+
+	// Intermediate channel for pushing result to strategy handler
+	HandlerInputChannel chan *TaskAndStrategy
+
+	// Intermediate channel for pushing result from strategy handler
+	HandlerOutputChannel chan WorkerResult
 
 	// Timeout for a single worker task.
 	TaskTimeout time.Duration
@@ -370,37 +391,49 @@ func (w *Worker) String() string {
 
 // Starts processing a given task using given strategy with this worker.
 // Call to this method blocks until the task is done or timed out.
-func (w *Worker) Start(task *Task, strategy WorkerStrategy) {
-	task.Callee = w
+func (w *Worker) Start() {
+	handlerInterrupted := false
 	go func() {
-		shouldStop := false
-		resultChannel := make(chan WorkerResult)
-		go func() {
-			result := strategy(w, task.Msg, task.Id())
-			for !shouldStop {
+		for taskAndStrategy := range w.HandlerInputChannel {
+			result := taskAndStrategy.Strategy(w, taskAndStrategy.WorkerTask.Msg, taskAndStrategy.WorkerTask.Id())
+			Loop:
+			for !handlerInterrupted {
 				timeout := time.NewTimer(5 * time.Second)
 				select {
-				case resultChannel <- result:
+				case w.HandlerOutputChannel <- result:
 					timeout.Stop()
-					return
+					break Loop
 				case <-timeout.C:
 				}
 			}
-		}()
-		timeout := time.NewTimer(w.TaskTimeout)
-		select {
-		case result := <-resultChannel:
-			{
-				w.OutputChannel <- result
-			}
-		case <-timeout.C:
-			{
-				shouldStop = true
-				w.OutputChannel <- &TimedOutResult{task.Id()}
-			}
+			handlerInterrupted = false
 		}
-		timeout.Stop()
 	}()
+
+	go func() {
+		for taskAndStrategy := range w.InputChannel {
+			taskAndStrategy.WorkerTask.Callee = w
+			w.HandlerInputChannel <- taskAndStrategy
+			timeout := time.NewTimer(w.TaskTimeout)
+			select {
+			case result := <-w.HandlerOutputChannel:
+				{
+					w.OutputChannel <- result
+				}
+			case <-timeout.C:
+				{
+					handlerInterrupted = true
+					w.OutputChannel <- &TimedOutResult{taskAndStrategy.WorkerTask.Id()}
+				}
+			}
+			timeout.Stop()
+		}
+	}()
+}
+
+func (w *Worker) Stop() {
+	close(w.InputChannel)
+	close(w.HandlerInputChannel)
 }
 
 // Defines what to do with a single Kafka message. Returns a WorkerResult to distinguish successful and unsuccessful processings.
@@ -621,4 +654,9 @@ func (b *taskBatch) numOutstanding() int {
 
 func (b *taskBatch) done() bool {
 	return b.numOutstanding() == 0
+}
+
+type TaskAndStrategy struct {
+	WorkerTask *Task
+	Strategy WorkerStrategy
 }
