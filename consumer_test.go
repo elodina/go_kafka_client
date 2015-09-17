@@ -252,9 +252,9 @@ func TestGzipCompression(t *testing.T) {
 	testCompression(t, sarama.CompressionGZIP)
 }
 
-//func TestSnappyCompression(t *testing.T) {
-//	testCompression(t, sarama.CompressionSnappy)
-//}
+func TestSnappyCompression(t *testing.T) {
+	testCompression(t, sarama.CompressionSnappy)
+}
 
 func testCompression(t *testing.T, codec sarama.CompressionCodec) {
 	topic := fmt.Sprintf("test-compression-%d", time.Now().Unix())
