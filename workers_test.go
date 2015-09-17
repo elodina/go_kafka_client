@@ -16,7 +16,6 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
