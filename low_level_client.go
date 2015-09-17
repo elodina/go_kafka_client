@@ -17,9 +17,10 @@ package go_kafka_client
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/Shopify/sarama"
 	"github.com/stealthly/siesta"
-	"time"
 )
 
 // LowLevelClient is a low-level Kafka client that manages broker connections, responsible to fetch metadata and is able
@@ -257,7 +258,7 @@ func (this *SiestaClient) Initialize() error {
 	connectorConfig.WriteTimeout = this.config.SocketTimeout
 	connectorConfig.ConnectTimeout = this.config.SocketTimeout
 	connectorConfig.FetchSize = this.config.FetchMessageMaxBytes
-	connectorConfig.ClientId = this.config.Clientid
+	connectorConfig.ClientID = this.config.Clientid
 
 	this.connector, err = siesta.NewDefaultConnector(connectorConfig)
 	if err != nil {
@@ -311,7 +312,7 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 
 // Checks whether the given error indicates an OffsetOutOfRange error.
 func (this *SiestaClient) IsOffsetOutOfRange(err error) bool {
-	return err == siesta.OffsetOutOfRange
+	return err == siesta.ErrOffsetOutOfRange
 }
 
 // This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
@@ -326,13 +327,13 @@ func (this *SiestaClient) GetAvailableOffset(topic string, partition int32, offs
 // Gets the offset for a given group, topic and partition.
 // May return an error if fails to retrieve the offset.
 func (this *SiestaClient) GetOffset(group string, topic string, partition int32) (int64, error) {
-    return this.connector.GetOffset(group, topic, partition)
+	return this.connector.GetOffset(group, topic, partition)
 }
 
 // Commits the given offset for a given group, topic and partition.
 // May return an error if fails to commit the offset.
 func (this *SiestaClient) CommitOffset(group string, topic string, partition int32, offset int64) error {
-    return this.connector.CommitOffset(group, topic, partition, offset)
+	return this.connector.CommitOffset(group, topic, partition, offset)
 }
 
 // Gracefully shuts down this client.

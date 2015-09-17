@@ -59,7 +59,9 @@ func (mb *messageBuffer) autoFlush() {
 			{
 				go inLock(&mb.MessageLock, func() {
 					if !mb.stopSending {
-						Trace(mb, "Batch accumulation timed out. Flushing...")
+						if Logger.IsAllowed(TraceLevel) {
+							Trace(mb, "Batch accumulation timed out. Flushing...")
+						}
 						mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 						mb.flush()
 					}
@@ -71,20 +73,26 @@ func (mb *messageBuffer) autoFlush() {
 
 func (mb *messageBuffer) flush() {
 	if len(mb.Messages) > 0 {
-		Trace(mb, "Flushing")
+		if Logger.IsAllowed(TraceLevel) {
+			Trace(mb, "Flushing")
+		}
 		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
 	flushLoop:
 		for {
+			timeout := time.NewTimer(200 * time.Millisecond)
 			select {
 			case mb.OutputChannel <- mb.Messages:
+				timeout.Stop()
 				break flushLoop
-			case <-time.After(200 * time.Millisecond):
+			case <-timeout.C:
 				if mb.stopSending {
 					return
 				}
 			}
 		}
-		Trace(mb, "Flushed")
+		if Logger.IsAllowed(TraceLevel) {
+			Trace(mb, "Flushed")
+		}
 		mb.Messages = make([]*Message, 0)
 	}
 }
@@ -107,40 +115,56 @@ func (mb *messageBuffer) stop() {
 }
 
 func (mb *messageBuffer) addBatch(messages []*Message) {
-	Tracef(mb, "Adding batch of messages to message buffer %d", len(messages))
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(mb, "Adding batch of messages to message buffer %d", len(messages))
+	}
 	inLock(&mb.MessageLock, func() {
-		Trace(mb, "Trying to add messages to message buffer")
+		if Logger.IsAllowed(TraceLevel) {
+			Trace(mb, "Trying to add messages to message buffer")
+		}
 		if mb.stopSending {
 			Debug(mb, "Message buffer has been stopped, batch shall not be added.")
 			return
 		}
 
 		for _, message := range messages {
-			Tracef(mb, "Adding message to message buffer %v", message)
+			if Logger.IsAllowed(TraceLevel) {
+				Tracef(mb, "Adding message to message buffer %v", message)
+			}
 			mb.add(message)
 		}
 
-		Trace(mb, "Added messages")
+		if Logger.IsAllowed(TraceLevel) {
+			Trace(mb, "Added messages")
+		}
 
 	askNextLoop:
 		for !mb.stopSending {
+			timeout := time.NewTimer(mb.Config.RequeueAskNextBackoff)
 			select {
 			case mb.askNextBatch <- mb.TopicPartition:
 				{
-					Trace(mb, "Asking for next batch")
+					timeout.Stop()
+					if Logger.IsAllowed(TraceLevel) {
+						Trace(mb, "Asking for next batch")
+					}
 					break askNextLoop
 				}
-			case <-time.After(mb.Config.RequeueAskNextBackoff):
+			case <-timeout.C:
 			}
 		}
 	})
 }
 
 func (mb *messageBuffer) add(msg *Message) {
-	Tracef(mb, "Added message: %s", msg)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(mb, "Added message: %s", msg)
+	}
 	mb.Messages = append(mb.Messages, msg)
 	if len(mb.Messages) == mb.Config.FetchBatchSize {
-		Trace(mb, "Batch is ready. Flushing")
+		if Logger.IsAllowed(TraceLevel) {
+			Trace(mb, "Batch is ready. Flushing")
+		}
 		mb.flush()
 	}
 }

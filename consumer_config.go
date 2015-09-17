@@ -139,8 +139,8 @@ type ConsumerConfig struct {
 	/* Coordinator used to coordinate consumer's actions, e.g. trigger rebalance events, store offsets and consumer metadata etc. */
 	Coordinator ConsumerCoordinator
 
-    /* OffsetStorage is used to store and retrieve consumer offsets. */
-    OffsetStorage OffsetStorage
+	/* OffsetStorage is used to store and retrieve consumer offsets. */
+	OffsetStorage OffsetStorage
 
 	/* Indicates whether the client supports blue-green deployment.
 	This config entry is needed because blue-green deployment won't work with RoundRobin partition assignment strategy.
@@ -340,14 +340,14 @@ func (c *ConsumerConfig) Validate() error {
 		return errors.New("Please provide a Coordinator")
 	}
 
-    if c.OffsetStorage == nil {
-        // This is for folks who already use this client
-        if zookeeper, ok := c.Coordinator.(*ZookeeperCoordinator); ok {
-            c.OffsetStorage = zookeeper
-        } else {
-            return errors.New("Please provide an OffsetStorage")
-        }
-    }
+	if c.OffsetStorage == nil {
+		// This is for folks who already use this client
+		if zookeeper, ok := c.Coordinator.(*ZookeeperCoordinator); ok {
+			c.OffsetStorage = zookeeper
+		} else {
+			return errors.New("Please provide an OffsetStorage")
+		}
+	}
 
 	if c.BlueGreenDeploymentEnabled && c.PartitionAssignmentStrategy != RangeStrategy {
 		return errors.New("In order to use Blue-Green deployment Range partition assignment strategy should be used")

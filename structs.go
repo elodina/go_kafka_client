@@ -224,19 +224,22 @@ const (
 	// A regular coordinator event that should normally trigger consumer rebalance.
 	Regular CoordinatorEvent = "Regular"
 
+	// Coordinator event that should trigger consumer re-registrer
+	Reinitialize CoordinatorEvent = "Reinitialize"
+
 	// A coordinator event that informs a consumer group of new deployed topics.
 	BlueGreenRequest CoordinatorEvent = "BlueGreenRequest"
 )
 
 // OffsetStorage is used to store and retrieve consumer offsets.
 type OffsetStorage interface {
-    // Gets the offset for a given group, topic and partition.
-    // May return an error if fails to retrieve the offset.
-    GetOffset(group string, topic string, partition int32) (int64, error)
+	// Gets the offset for a given group, topic and partition.
+	// May return an error if fails to retrieve the offset.
+	GetOffset(group string, topic string, partition int32) (int64, error)
 
-    // Commits the given offset for a given group, topic and partition.
-    // May return an error if fails to commit the offset.
-    CommitOffset(group string, topic string, partition int32, offset int64) error
+	// Commits the given offset for a given group, topic and partition.
+	// May return an error if fails to commit the offset.
+	CommitOffset(group string, topic string, partition int32, offset int64) error
 }
 
 // Represents a consumer state snapshot.

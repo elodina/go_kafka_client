@@ -72,10 +72,14 @@ func TestWorker(t *testing.T) {
 
 	//test good case
 	worker := &Worker{
-		OutputChannel: outChannel,
-		TaskTimeout:   taskTimeout,
+		InputChannel:         make(chan *TaskAndStrategy),
+		OutputChannel:        outChannel,
+		HandlerInputChannel:  make(chan *TaskAndStrategy),
+		HandlerOutputChannel: make(chan WorkerResult),
+		TaskTimeout:          taskTimeout,
 	}
-	worker.Start(task, goodStrategy)
+	worker.Start()
+	worker.InputChannel <- &TaskAndStrategy{task, goodStrategy}
 
 	result := <-outChannel
 	if !result.Success() {
@@ -84,10 +88,14 @@ func TestWorker(t *testing.T) {
 
 	//test fail case
 	worker2 := &Worker{
-		OutputChannel: outChannel,
-		TaskTimeout:   taskTimeout,
+		InputChannel:         make(chan *TaskAndStrategy),
+		OutputChannel:        outChannel,
+		HandlerInputChannel:  make(chan *TaskAndStrategy),
+		HandlerOutputChannel: make(chan WorkerResult),
+		TaskTimeout:          taskTimeout,
 	}
-	worker2.Start(task, failStrategy)
+	worker2.Start()
+	worker2.InputChannel <- &TaskAndStrategy{task, failStrategy}
 	result = <-outChannel
 	if result.Success() {
 		t.Error("Worker result with fail strategy should be unsuccessful")
@@ -95,10 +103,14 @@ func TestWorker(t *testing.T) {
 
 	//test timeout
 	worker3 := &Worker{
-		OutputChannel: outChannel,
-		TaskTimeout:   taskTimeout,
+		InputChannel:         make(chan *TaskAndStrategy),
+		OutputChannel:        outChannel,
+		HandlerInputChannel:  make(chan *TaskAndStrategy),
+		HandlerOutputChannel: make(chan WorkerResult),
+		TaskTimeout:          taskTimeout,
 	}
-	worker3.Start(task, slowStrategy)
+	worker3.Start()
+	worker3.InputChannel <- &TaskAndStrategy{task, slowStrategy}
 	result = <-outChannel
 	if _, ok := result.(*TimedOutResult); !ok {
 		t.Error("Worker with slow strategy should time out")

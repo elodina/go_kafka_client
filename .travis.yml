@@ -57,7 +57,9 @@ before_install:
 - sed -r -i "s/^(log4j.rootLogger)=(.*)( stdout)/\\1=WARN\\3/g" $KAFKA_PATH/config/log4j.properties
 - $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
 - $REGISTRY_HOME/bin/schema-registry-start $REGISTRY_HOME/etc/schema-registry/schema-registry.properties &
-- gpm install
+- sleep 15
+
+install: gpm install
 
 script: go test -v -timeout 20m
 

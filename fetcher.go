@@ -222,7 +222,9 @@ func newConsumerFetcher(m *consumerFetcherManager, name string) *consumerFetcher
 func (f *consumerFetcherRoutine) start() {
 	Info(f, "Fetcher started")
 	for {
-		Trace(f, "Waiting for asknext or die")
+		if Logger.IsAllowed(TraceLevel) {
+			Trace(f, "Waiting for asknext or die")
+		}
 		ts := time.Now()
 		select {
 		case nextTopicPartition := <-f.askNext:
@@ -232,7 +234,6 @@ func (f *consumerFetcherRoutine) start() {
 				Debugf(f, "Received asknext for %s", &nextTopicPartition)
 				inReadLock(&f.lock, func() {
 					if !f.manager.shuttingDown {
-						Trace(f, "Next asked")
 						Debugf(f, "Partition map: %v", f.partitionMap)
 						if _, exists := f.partitionMap[nextTopicPartition]; !exists {
 							Warnf(f, "Message buffer for partition %s has been terminated. Aborting processing task...", nextTopicPartition)
@@ -252,7 +253,7 @@ func (f *consumerFetcherRoutine) start() {
 									Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
 									f.handleOffsetOutOfRange(&nextTopicPartition)
 								} else {
-									Warnf(f, "Got a fetch error: %s", err)
+									Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
 									//TODO new backoff type?
 									time.Sleep(1 * time.Second)
 								}
@@ -302,10 +303,12 @@ func (f *consumerFetcherRoutine) addPartitions(partitionTopicInfos map[TopicAndP
 		Debugf(f, "Sending ask next to %s for %s", f, topicAndPartition)
 	Loop:
 		for {
+			timeout := time.NewTimer(1 * time.Second)
 			select {
 			case askNext <- topicAndPartition:
+				timeout.Stop()
 				break Loop
-			case <-time.After(1 * time.Second):
+			case <-timeout.C:
 				{
 					if f.manager.shuttingDown {
 						return
@@ -318,13 +321,17 @@ func (f *consumerFetcherRoutine) addPartitions(partitionTopicInfos map[TopicAndP
 }
 
 func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAndPartition, messages []*Message) {
-	Trace(f, "Trying to acquire lock for partition processing")
-	Tracef(f, "Processing partition data for %s", topicAndPartition)
+	if Logger.IsAllowed(TraceLevel) {
+		Trace(f, "Trying to acquire lock for partition processing")
+		Tracef(f, "Processing partition data for %s", topicAndPartition)
+	}
 	if len(messages) > 0 {
 		f.partitionMap[topicAndPartition].FetchedOffset = messages[len(messages)-1].Offset + 1
 	}
 	go f.partitionMap[topicAndPartition].Buffer.addBatch(messages)
-	Debugf(f, "Sent partition data to %s", topicAndPartition)
+	if Logger.IsAllowed(TraceLevel) {
+		Tracef(f, "Sent partition data to %s", topicAndPartition)
+	}
 }
 
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) {
