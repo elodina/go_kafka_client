@@ -16,6 +16,7 @@ limitations under the License. */
 package go_kafka_client
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -72,9 +73,13 @@ func TestWorker(t *testing.T) {
 
 	//test good case
 	worker := &Worker{
-		OutputChannel: outChannel,
-		TaskTimeout:   taskTimeout,
+		InputChannel:         make(chan *TaskAndStrategy),
+		OutputChannel:        outChannel,
+		HandlerInputChannel:  make(chan *TaskAndStrategy),
+		HandlerOutputChannel: make(chan WorkerResult),
+		TaskTimeout:          taskTimeout,
 	}
+	worker.Start()
 	worker.InputChannel <- &TaskAndStrategy{task, goodStrategy}
 
 	result := <-outChannel
@@ -84,9 +89,13 @@ func TestWorker(t *testing.T) {
 
 	//test fail case
 	worker2 := &Worker{
-		OutputChannel: outChannel,
-		TaskTimeout:   taskTimeout,
+		InputChannel:         make(chan *TaskAndStrategy),
+		OutputChannel:        outChannel,
+		HandlerInputChannel:  make(chan *TaskAndStrategy),
+		HandlerOutputChannel: make(chan WorkerResult),
+		TaskTimeout:          taskTimeout,
 	}
+	worker2.Start()
 	worker2.InputChannel <- &TaskAndStrategy{task, failStrategy}
 	result = <-outChannel
 	if result.Success() {
@@ -95,9 +104,13 @@ func TestWorker(t *testing.T) {
 
 	//test timeout
 	worker3 := &Worker{
-		OutputChannel: outChannel,
-		TaskTimeout:   taskTimeout,
+		InputChannel:         make(chan *TaskAndStrategy),
+		OutputChannel:        outChannel,
+		HandlerInputChannel:  make(chan *TaskAndStrategy),
+		HandlerOutputChannel: make(chan WorkerResult),
+		TaskTimeout:          taskTimeout,
 	}
+	worker3.Start()
 	worker3.InputChannel <- &TaskAndStrategy{task, slowStrategy}
 	result = <-outChannel
 	if _, ok := result.(*TimedOutResult); !ok {
