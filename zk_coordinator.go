@@ -95,12 +95,12 @@ func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan
 		if event.State == zk.StateExpired && event.Type == zk.EventSession {
 			err := this.Connect()
 			if err != nil {
-				panic(err)
+				this.config.PanicHandler(err)
 			}
 			for groupId, watch := range this.watches {
 				_, err := this.SubscribeForChanges(groupId)
 				if err != nil {
-					panic(err)
+					this.config.PanicHandler(err)
 				}
 				watch <- Reinitialize
 			}
@@ -525,25 +525,25 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						Info(this, "Trying to renew watcher for consumer registry")
 						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 						Info(this, "Trying to renew watcher for consumer API dir")
 						blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else if strings.HasPrefix(e.Path, this.rootedPath(brokerTopicsPath)) {
 						Info(this, "Trying to renew watcher for consumer topic dir")
 						topicsWatcher, err = this.getTopicsWatcher()
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else if strings.HasPrefix(e.Path, this.rootedPath(brokerIdsPath)) {
 						Info(this, "Trying to renew watcher for brokers in cluster")
 						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else {
 						Warnf(this, "Unknown event path: %s", e.Path)
@@ -684,7 +684,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 			}
 
 			// Delete if this zk node has an expired timestamp
-			if time.Unix(t, 0).Before(time.Now().Add(-10*time.Minute)) {
+			if time.Unix(t, 0).Before(time.Now().Add(-10 * time.Minute)) {
 				// If the data is not a timestamp or is a timestamp but has reached expiration delete it
 				err = this.deleteNode(childPath)
 				if err != nil && err != zk.ErrNoNode {
@@ -698,7 +698,7 @@ func (this *ZookeeperCoordinator) tryRemoveOldApiRequests(group string, api Cons
 }
 
 func (this *ZookeeperCoordinator) AwaitOnStateBarrier(consumerId string, group string, barrierName string,
-barrierSize int, api string, timeout time.Duration) bool {
+	barrierSize int, api string, timeout time.Duration) bool {
 	barrierPath := fmt.Sprintf("%s/%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, api, barrierName)
 
 	var barrierExpiration time.Time
@@ -773,14 +773,14 @@ func (this *ZookeeperCoordinator) waitForMembersToJoin(barrierPath string, expec
 				go blackholeFunc(zkMemberJoinedWatcher)
 				return nil
 			}
-		// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
-				select {
-				case <-t.C:
-					go blackholeFunc(zkMemberJoinedWatcher)
-					return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
-				case <-zkMemberJoinedWatcher:
-					continue
-				}
+			// Haven't seen all expected consumers on this barrier path.  Watch for changes to the path...
+			select {
+			case <-t.C:
+				go blackholeFunc(zkMemberJoinedWatcher)
+				return fmt.Errorf("Timed out waiting for consensus on barrier path %s", barrierPath)
+			case <-zkMemberJoinedWatcher:
+				continue
+			}
 		}
 	}
 
@@ -1106,6 +1106,9 @@ type ZookeeperConfig struct {
 
 	/* kafka Root */
 	Root string
+
+	// PanicHandler is a function that will be called when unrecoverable error occurs to give the possibility to perform cleanups, recover from panic etc
+	PanicHandler func(error)
 }
 
 /* Created a new ZookeeperConfig with sane defaults. Default ZookeeperConnect points to localhost. */
@@ -1116,6 +1119,9 @@ func NewZookeeperConfig() *ZookeeperConfig {
 	config.MaxRequestRetries = 3
 	config.RequestBackoff = 150 * time.Millisecond
 	config.Root = ""
+	config.PanicHandler = func(e error) {
+		panic(e)
+	}
 
 	return config
 }
