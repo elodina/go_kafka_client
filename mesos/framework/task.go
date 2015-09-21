@@ -18,20 +18,22 @@ package framework
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/elodina/go-mesos-utils"
-	"github.com/golang/protobuf/proto"
-	mesos "github.com/mesos/mesos-go/mesosproto"
-	util "github.com/mesos/mesos-go/mesosutil"
 	"math"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	utils "github.com/elodina/go-mesos-utils"
+	"github.com/golang/protobuf/proto"
+	mesos "github.com/mesos/mesos-go/mesosproto"
+	util "github.com/mesos/mesos-go/mesosutil"
 )
 
 const (
 	TaskTypeMirrorMaker = "mirrormaker"
+	TaskTypeConsumer    = "consumer"
 )
 
 type TaskState string
@@ -234,12 +236,18 @@ func NewTaskFromRequest(taskType string, id string, r *http.Request) (Task, erro
 	switch taskType {
 	case TaskTypeMirrorMaker:
 		return NewMirrorMakerTask(id, r.URL.Query())
+	case TaskTypeConsumer:
+		return NewConsumerTask(id, r.URL.Query())
 	default:
 		return nil, fmt.Errorf("Unknown task type %s", taskType)
 	}
 }
 
 type MirrorMakerTask struct {
+	*TaskData
+}
+
+type ConsumerTask struct {
 	*TaskData
 }
 
@@ -262,6 +270,21 @@ func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, er
 	return &MirrorMakerTask{
 		TaskData: taskData,
 	}, nil
+}
+
+func NewConsumerTask(id string, queryParams url.Values) (*ConsumerTask, error) {
+	taskData := &TaskData{
+		ID:     id,
+		State:  TaskStateInactive,
+		Config: TaskConfig{},
+	}
+
+	err := taskData.Update(queryParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConsumerTask{TaskData: taskData}, nil
 }
 
 func (mm *MirrorMakerTask) Data() *TaskData {

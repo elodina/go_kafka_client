@@ -21,8 +21,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/stealthly/go_kafka_client/mesos/framework"
 	"math"
+
+	"github.com/stealthly/go_kafka_client/mesos/framework"
 )
 
 func main() {
@@ -259,6 +260,8 @@ func handleAdd() error {
 	switch addType {
 	case framework.TaskTypeMirrorMaker:
 		return handleAddMirrorMaker()
+	case framework.TaskTypeConsumer:
+		return handleAddConsumer()
 	default:
 		{
 			handleHelp("add")
@@ -294,6 +297,33 @@ func handleAddMirrorMaker() error {
 	request.PutFloat("cpu", cpu)
 	request.PutFloat("mem", mem)
 	request.PutString("constraints", constraints)
+
+	response := request.Get()
+
+	fmt.Println(response.Message)
+
+	return nil
+}
+
+func handleAddConsumer() error {
+	id := stripArgument()
+	if id == "" {
+		return errors.New("No task id supplied to add")
+	}
+	var (
+		api = flag.String("api", "", "API host:port")
+		cpu = flag.Float64("cpu", 0.1, "CPUs per task")
+		mem = flag.Float64("mem", 128, "Mem per task")
+	)
+	ParseFlags("add")
+	if err := resolveApi(*api); err != nil {
+		return err
+	}
+	request := framework.NewApiRequest(framework.Config.Api + "/api/add")
+	request.PutString("type", framework.TaskTypeConsumer)
+	request.PutString("id", id)
+	request.PutFloat("cpu", *cpu)
+	request.PutFloat("mem", *mem)
 
 	response := request.Get()
 
