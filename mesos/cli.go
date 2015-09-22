@@ -295,6 +295,10 @@ func handleAddMirrorMaker() error {
 		return err
 	}
 
+	if *executor == "" {
+		return errors.New("Executor name required")
+	}
+
 	request := framework.NewApiRequest(framework.Config.Api + "/api/add")
 	request.PutString("type", framework.TaskTypeMirrorMaker)
 	request.PutString("id", id)
@@ -324,6 +328,11 @@ func handleAddConsumer() error {
 	if err := resolveApi(*api); err != nil {
 		return err
 	}
+
+	if *executor == "" {
+		return errors.New("Executor name required")
+	}
+
 	request := framework.NewApiRequest(framework.Config.Api + "/api/add")
 	request.PutString("type", framework.TaskTypeConsumer)
 	request.PutString("id", id)

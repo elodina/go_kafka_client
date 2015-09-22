@@ -19,11 +19,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/elodina/go-mesos-utils"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	utils "github.com/elodina/go-mesos-utils"
 )
 
 type Cluster struct {
@@ -56,6 +57,7 @@ func (c *Cluster) Add(task Task) {
 	c.taskLock.Lock()
 	defer c.taskLock.Unlock()
 
+	fmt.Println(task.Data())
 	c.tasks[task.Data().ID] = task
 	Logger.Infof("Added task:\n%s", task)
 }
@@ -193,7 +195,7 @@ func (c *Cluster) Load() {
 		json.Unmarshal(rawTask["type"], &taskType)
 		switch taskType {
 		case TaskTypeMirrorMaker:
-			c.Add(&MirrorMakerTask{taskData})
+			c.Add(&MirrorMakerTask{CommonTask{TaskData: taskData}})
 		default:
 			panic(fmt.Errorf("Unknown task type %s", taskType))
 		}
