@@ -26,6 +26,8 @@ import (
 	"github.com/stealthly/go_kafka_client/mesos/framework"
 )
 
+var executor = flag.String("executor", "", "Executor binary name")
+
 func main() {
 	if err := exec(); err != nil {
 		fmt.Printf("Error: %s\n", err)
@@ -116,8 +118,10 @@ func handleHelpAdd() {
 
 Types:
     mirrormaker
+    consumer
 
 Options:
+		--executor: Executor binary name
     --api: API host:port for advertizing. Optional if GM_API env is set.
     --cpu: CPUs per task. Defaults to 0.5.
     --mem: Mem per task. Defaults to 512.
@@ -297,6 +301,7 @@ func handleAddMirrorMaker() error {
 	request.PutFloat("cpu", cpu)
 	request.PutFloat("mem", mem)
 	request.PutString("constraints", constraints)
+	request.PutString("executor", *executor)
 
 	response := request.Get()
 
@@ -324,6 +329,7 @@ func handleAddConsumer() error {
 	request.PutString("id", id)
 	request.PutFloat("cpu", *cpu)
 	request.PutFloat("mem", *mem)
+	request.PutString("executor", *executor)
 
 	response := request.Get()
 

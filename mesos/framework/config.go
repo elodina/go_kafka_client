@@ -19,8 +19,9 @@ import (
 	"fmt"
 	"regexp"
 
-	log "github.com/cihub/seelog"
 	"time"
+
+	log "github.com/cihub/seelog"
 )
 
 var Logger log.LoggerInterface
@@ -42,9 +43,9 @@ type config struct {
 	FrameworkRole    string
 	FrameworkTimeout time.Duration
 	User             string
-	Executor         string
-	LogLevel         string
-	Storage          string
+	// Executor         string
+	LogLevel string
+	Storage  string
 }
 
 func (c *config) String() string {
@@ -54,10 +55,9 @@ framework name:      %s
 framework role:      %s
 framework timeout    %s
 user:                %s
-executor:            %s
 log level:           %s
 storage:             %s
-`, c.Api, c.Master, c.FrameworkName, c.FrameworkRole, c.FrameworkTimeout, c.User, c.Executor, c.LogLevel, c.Storage)
+`, c.Api, c.Master, c.FrameworkName, c.FrameworkRole, c.FrameworkTimeout, c.User, c.LogLevel, c.Storage)
 }
 
 func InitLogging(level string) error {

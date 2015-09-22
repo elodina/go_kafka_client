@@ -291,6 +291,10 @@ func (mm *MirrorMakerTask) Data() *TaskData {
 	return mm.TaskData
 }
 
+func (mm *ConsumerTask) Data() *TaskData {
+	return mm.TaskData
+}
+
 func (mm *MirrorMakerTask) Matches(offer *mesos.Offer) string {
 	if mm.Cpu > getScalarResources(offer, "cpus") {
 		return "no cpus"
@@ -317,7 +321,55 @@ func (mm *MirrorMakerTask) Matches(offer *mesos.Offer) string {
 	return ""
 }
 
+func (mm *ConsumerTask) Matches(offer *mesos.Offer) string {
+	if mm.Cpu > getScalarResources(offer, "cpus") {
+		return "no cpus"
+	}
+
+	if mm.Mem > getScalarResources(offer, "mem") {
+		return "no mem"
+	}
+
+	//TODO this could potentially include checks whether producer.config and consumer.config files/uris are valid
+	// because if they are not Mesos executor failure messages are not intuitive at all.
+	if mm.Config["consumer.config"] == "" {
+		return "consumer.config not set"
+	}
+
+	if mm.Config["whitelist"] == "" && mm.Config["blacklist"] == "" {
+		return "Both whitelist and blacklist are not set"
+	}
+
+	return ""
+}
+
 func (mm *MirrorMakerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
+	taskName := fmt.Sprintf("mirrormaker-%s", mm.ID)
+	taskId := &mesos.TaskID{
+		Value: proto.String(fmt.Sprintf("%s-%s", taskName, uuid())),
+	}
+
+	data, err := json.Marshal(mm.Config)
+	if err != nil {
+		panic(err)
+	}
+
+	taskInfo := &mesos.TaskInfo{
+		Name:     proto.String(taskName),
+		TaskId:   taskId,
+		SlaveId:  offer.GetSlaveId(),
+		Executor: mm.createExecutor(),
+		Resources: []*mesos.Resource{
+			util.NewScalarResource("cpus", mm.Cpu),
+			util.NewScalarResource("mem", mm.Mem),
+		},
+		Data: data,
+	}
+
+	return taskInfo
+}
+
+func (mm *ConsumerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 	taskName := fmt.Sprintf("mirrormaker-%s", mm.ID)
 	taskId := &mesos.TaskID{
 		Value: proto.String(fmt.Sprintf("%s-%s", taskName, uuid())),
@@ -359,10 +411,16 @@ func (mm *MirrorMakerTask) MarshalJSON() ([]byte, error) {
 }
 
 func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
+	executor, err := mm.Config.GetString("executor")
+	if err != nil {
+		fmt.Println("Executor name required")
+		return nil
+	}
+
 	id := fmt.Sprintf("mirrormaker-%s", mm.ID)
 	uris := []*mesos.CommandInfo_URI{
 		&mesos.CommandInfo_URI{
-			Value:      proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, Config.Executor)),
+			Value:      proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, executor)),
 			Executable: proto.Bool(true),
 		},
 		toURI(mm.Config["producer.config"]),
@@ -376,7 +434,35 @@ func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 		ExecutorId: util.NewExecutorID(id),
 		Name:       proto.String(id),
 		Command: &mesos.CommandInfo{
-			Value: proto.String(fmt.Sprintf("./%s --log.level %s --type %s", Config.Executor, Config.LogLevel, TaskTypeMirrorMaker)),
+			Value: proto.String(fmt.Sprintf("./%s --log.level %s --type %s", executor, Config.LogLevel, TaskTypeMirrorMaker)),
+			Uris:  uris,
+		},
+	}
+}
+
+func (mm *ConsumerTask) createExecutor() *mesos.ExecutorInfo {
+	executor, err := mm.Config.GetString("executor")
+	if err != nil {
+		fmt.Println("Executor name required")
+		return nil
+	}
+	id := fmt.Sprintf("consumer-%s", mm.ID)
+	uris := []*mesos.CommandInfo_URI{
+		&mesos.CommandInfo_URI{
+			Value:      proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, executor)),
+			Executable: proto.Bool(true),
+		},
+	}
+
+	for _, consumerConfig := range strings.Split(mm.Config["consumer.config"], ",") {
+		uris = append(uris, toURI(consumerConfig))
+	}
+
+	return &mesos.ExecutorInfo{
+		ExecutorId: util.NewExecutorID(id),
+		Name:       proto.String(id),
+		Command: &mesos.CommandInfo{
+			Value: proto.String(fmt.Sprintf("./%s --log.level %s --type %s", executor, Config.LogLevel, TaskTypeMirrorMaker)),
 			Uris:  uris,
 		},
 	}
