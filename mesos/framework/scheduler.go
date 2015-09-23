@@ -23,7 +23,7 @@ import (
 
 	"time"
 
-	"github.com/elodina/go-mesos-utils"
+	utils "github.com/elodina/go-mesos-utils"
 	"github.com/elodina/go-mesos-utils/pretty"
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"

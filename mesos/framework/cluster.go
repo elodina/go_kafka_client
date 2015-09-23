@@ -195,7 +195,7 @@ func (c *Cluster) Load() {
 		json.Unmarshal(rawTask["type"], &taskType)
 		switch taskType {
 		case TaskTypeMirrorMaker:
-			c.Add(&MirrorMakerTask{CommonTask{TaskData: taskData}})
+			c.Add(&MirrorMakerTask{&CommonTask{TaskData: taskData}})
 		default:
 			panic(fmt.Errorf("Unknown task type %s", taskType))
 		}

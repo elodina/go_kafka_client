@@ -245,12 +245,12 @@ func NewTaskFromRequest(taskType string, id string, r *http.Request) (Task, erro
 
 type MirrorMakerTask struct {
 	// *TaskData
-	CommonTask
+	*CommonTask
 }
 
 type ConsumerTask struct {
 	// *TaskData
-	CommonTask
+	*CommonTask
 }
 
 func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, error) {
@@ -270,7 +270,7 @@ func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, er
 	}
 
 	return &MirrorMakerTask{
-		CommonTask{TaskData: taskData},
+		&CommonTask{TaskData: taskData},
 	}, nil
 }
 
@@ -286,7 +286,7 @@ func NewConsumerTask(id string, queryParams url.Values) (*ConsumerTask, error) {
 		return nil, err
 	}
 
-	return &ConsumerTask{CommonTask{TaskData: taskData}}, nil
+	return &ConsumerTask{&CommonTask{TaskData: taskData}}, nil
 }
 
 func (mm *MirrorMakerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
@@ -315,13 +315,13 @@ func (mm *MirrorMakerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 	return taskInfo
 }
 
-func (mm *ConsumerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
-	taskName := fmt.Sprintf("mirrormaker-%s", mm.ID)
+func (ct *ConsumerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
+	taskName := fmt.Sprintf("consumer-%s", ct.ID)
 	taskId := &mesos.TaskID{
 		Value: proto.String(fmt.Sprintf("%s-%s", taskName, uuid())),
 	}
 
-	data, err := json.Marshal(mm.Config)
+	data, err := json.Marshal(ct.Config)
 	if err != nil {
 		panic(err)
 	}
@@ -330,10 +330,10 @@ func (mm *ConsumerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
 		Name:     proto.String(taskName),
 		TaskId:   taskId,
 		SlaveId:  offer.GetSlaveId(),
-		Executor: mm.createExecutor(),
+		Executor: ct.createExecutor(),
 		Resources: []*mesos.Resource{
-			util.NewScalarResource("cpus", mm.Cpu),
-			util.NewScalarResource("mem", mm.Mem),
+			util.NewScalarResource("cpus", ct.Cpu),
+			util.NewScalarResource("mem", ct.Mem),
 		},
 		Data: data,
 	}
@@ -356,6 +356,14 @@ func (mm *MirrorMakerTask) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fields)
 }
 
+func (ct *ConsumerTask) MarshalJSON() ([]byte, error) {
+	fields := make(map[string]interface{})
+	fields["type"] = TaskTypeConsumer
+	fields["data"] = ct.TaskData
+
+	return json.Marshal(fields)
+}
+
 func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 	executor, err := mm.Config.GetString("executor")
 	if err != nil || executor == "" {
@@ -368,7 +376,6 @@ func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 		&mesos.CommandInfo_URI{
 			Value:      proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, executor)),
 			Executable: proto.Bool(true),
-			// Extract: proto.Bool(true),
 		},
 		toURI(mm.Config["producer.config"]),
 	}
@@ -409,7 +416,7 @@ func (mm *ConsumerTask) createExecutor() *mesos.ExecutorInfo {
 		ExecutorId: util.NewExecutorID(id),
 		Name:       proto.String(id),
 		Command: &mesos.CommandInfo{
-			Value: proto.String(fmt.Sprintf("./%s --log.level %s --type %s", executor, Config.LogLevel, TaskTypeMirrorMaker)),
+			Value: proto.String(fmt.Sprintf("./%s --log.level %s --type %s", executor, Config.LogLevel, TaskTypeConsumer)),
 			Uris:  uris,
 		},
 	}
