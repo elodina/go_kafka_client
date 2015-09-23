@@ -101,7 +101,7 @@ func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan
 		if event.State == zk.StateExpired && event.Type == zk.EventSession {
 			err := this.Connect()
 			if err != nil {
-				panic(err)
+				this.config.PanicHandler(err)
 			}
 			for groupId, watch := range this.watches {
 				watch.zkEvents <- zk.Event{
@@ -111,7 +111,7 @@ func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan
 				}
 				_, err := this.SubscribeForChanges(groupId)
 				if err != nil {
-					panic(err)
+					this.config.PanicHandler(err)
 				}
 				watch.coordinatorEvents <- Reinitialize
 			}
@@ -543,25 +543,25 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						Info(this, "Trying to renew watcher for consumer registry")
 						consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 						Info(this, "Trying to renew watcher for consumer API dir")
 						blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else if strings.HasPrefix(e.Path, this.rootedPath(brokerTopicsPath)) {
 						Info(this, "Trying to renew watcher for consumer topic dir")
 						topicsWatcher, err = this.getTopicsWatcher()
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else if strings.HasPrefix(e.Path, this.rootedPath(brokerIdsPath)) {
 						Info(this, "Trying to renew watcher for brokers in cluster")
 						brokersWatcher, err = this.getAllBrokersInClusterWatcher()
 						if err != nil {
-							panic(err)
+							this.config.PanicHandler(err)
 						}
 					} else {
 						Warnf(this, "Unknown event path: %s", e.Path)
@@ -1113,6 +1113,9 @@ type ZookeeperConfig struct {
 
 	/* kafka Root */
 	Root string
+
+	// PanicHandler is a function that will be called when unrecoverable error occurs to give the possibility to perform cleanups, recover from panic etc
+	PanicHandler func(error)
 }
 
 /* Created a new ZookeeperConfig with sane defaults. Default ZookeeperConnect points to localhost. */
@@ -1123,6 +1126,9 @@ func NewZookeeperConfig() *ZookeeperConfig {
 	config.MaxRequestRetries = 3
 	config.RequestBackoff = 150 * time.Millisecond
 	config.Root = ""
+	config.PanicHandler = func(e error) {
+		panic(e)
+	}
 
 	return config
 }
