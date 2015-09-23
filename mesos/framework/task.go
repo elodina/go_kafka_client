@@ -244,11 +244,13 @@ func NewTaskFromRequest(taskType string, id string, r *http.Request) (Task, erro
 }
 
 type MirrorMakerTask struct {
-	*TaskData
+	// *TaskData
+	CommonTask
 }
 
 type ConsumerTask struct {
-	*TaskData
+	// *TaskData
+	CommonTask
 }
 
 func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, error) {
@@ -268,7 +270,7 @@ func NewMirrorMakerTask(id string, queryParams url.Values) (*MirrorMakerTask, er
 	}
 
 	return &MirrorMakerTask{
-		TaskData: taskData,
+		CommonTask{TaskData: taskData},
 	}, nil
 }
 
@@ -284,63 +286,7 @@ func NewConsumerTask(id string, queryParams url.Values) (*ConsumerTask, error) {
 		return nil, err
 	}
 
-	return &ConsumerTask{TaskData: taskData}, nil
-}
-
-func (mm *MirrorMakerTask) Data() *TaskData {
-	return mm.TaskData
-}
-
-func (mm *ConsumerTask) Data() *TaskData {
-	return mm.TaskData
-}
-
-func (mm *MirrorMakerTask) Matches(offer *mesos.Offer) string {
-	if mm.Cpu > getScalarResources(offer, "cpus") {
-		return "no cpus"
-	}
-
-	if mm.Mem > getScalarResources(offer, "mem") {
-		return "no mem"
-	}
-
-	//TODO this could potentially include checks whether producer.config and consumer.config files/uris are valid
-	// because if they are not Mesos executor failure messages are not intuitive at all.
-	if mm.Config["producer.config"] == "" {
-		return "producer.config not set"
-	}
-
-	if mm.Config["consumer.config"] == "" {
-		return "consumer.config not set"
-	}
-
-	if mm.Config["whitelist"] == "" && mm.Config["blacklist"] == "" {
-		return "Both whitelist and blacklist are not set"
-	}
-
-	return ""
-}
-
-func (mm *ConsumerTask) Matches(offer *mesos.Offer) string {
-	if mm.Cpu > getScalarResources(offer, "cpus") {
-		return "no cpus"
-	}
-
-	if mm.Mem > getScalarResources(offer, "mem") {
-		return "no mem"
-	}
-
-	//TODO this could potentially include checks whether producer.config and consumer.config files/uris are valid
-	// because if they are not Mesos executor failure messages are not intuitive at all.
-	if mm.Config["consumer.config"] == "" {
-		return "consumer.config not set"
-	}
-
-	if mm.Config["whitelist"] == "" && mm.Config["blacklist"] == "" {
-		return "Both whitelist and blacklist are not set"
-	}
-
-	return ""
+	return &ConsumerTask{CommonTask{TaskData: taskData}}, nil
 }
 
 func (mm *MirrorMakerTask) NewTaskInfo(offer *mesos.Offer) *mesos.TaskInfo {
@@ -412,7 +358,7 @@ func (mm *MirrorMakerTask) MarshalJSON() ([]byte, error) {
 
 func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 	executor, err := mm.Config.GetString("executor")
-	if err != nil {
+	if err != nil || executor == "" {
 		fmt.Println("Executor name required")
 		return nil
 	}
@@ -422,6 +368,7 @@ func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 		&mesos.CommandInfo_URI{
 			Value:      proto.String(fmt.Sprintf("%s/resource/%s", Config.Api, executor)),
 			Executable: proto.Bool(true),
+			// Extract: proto.Bool(true),
 		},
 		toURI(mm.Config["producer.config"]),
 	}
@@ -442,7 +389,7 @@ func (mm *MirrorMakerTask) createExecutor() *mesos.ExecutorInfo {
 
 func (mm *ConsumerTask) createExecutor() *mesos.ExecutorInfo {
 	executor, err := mm.Config.GetString("executor")
-	if err != nil {
+	if err != nil || executor == "" {
 		fmt.Println("Executor name required")
 		return nil
 	}
