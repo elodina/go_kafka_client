@@ -121,7 +121,7 @@ Types:
     consumer
 
 Options:
-		--executor: Executor binary name
+    --executor: Executor binary name.
     --api: API host:port for advertizing. Optional if GM_API env is set.
     --cpu: CPUs per task. Defaults to 0.5.
     --mem: Mem per task. Defaults to 512.
@@ -150,6 +150,7 @@ Options:
     --preserve.order: E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.
     --prefix: Destination topic prefix.")
     --queue.size: Maximum number of messages that are buffered between the consumer and producer.
+    --options: Additional options for executor, separated by ';'.
     `)
 	printIDExprExamples()
 	printConstraintExamples()

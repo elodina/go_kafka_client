@@ -76,7 +76,7 @@ In order not to pass the API url to each CLI call lets export the URL as follows
 First lets start 1 mirror maker task with the default settings. Further in the readme you can see how to change these from the defaults.    
 
 ```
-# ./cli add mirrormaker 0
+# ./cli add mirrormaker 0 --executor=executor
 Added tasks 0
 
 cluster:
@@ -214,11 +214,12 @@ Types:
     mirrormaker
 
 Options:
+    --executor: Executor binary name.
     --api: API host:port for advertizing. Optional if GM_API env is set.
     --cpu: CPUs per task. Defaults to 0.5.
     --mem: Mem per task. Defaults to 512.
     --constraints: Constraints (hostname=like:^master$,rack=like:^1.*$).
-    
+
 id-expr examples:
     0      - task 0
     0,1    - tasks 0,1
@@ -261,6 +262,7 @@ Options:
     --preserve.order: E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.
     --prefix: Destination topic prefix.")
     --queue.size: Maximum number of messages that are buffered between the consumer and producer.
+    --options: Additional options for executor, separated by ';'.
     
 id-expr examples:
     0      - task 0
