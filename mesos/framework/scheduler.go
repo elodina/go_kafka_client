@@ -61,10 +61,6 @@ func (s *Scheduler) Start() error {
 	ctrlc := make(chan os.Signal, 1)
 	signal.Notify(ctrlc, os.Interrupt)
 
-	// if err := s.resolveDeps(); err != nil {
-	// 	return err
-	// }
-
 	s.cluster = NewCluster()
 	s.cluster.Load()
 
@@ -309,21 +305,6 @@ func (s *Scheduler) reconcileTasks(force bool) {
 		}
 	}
 }
-
-// func (s *Scheduler) resolveDeps() error {
-// 	files, _ := ioutil.ReadDir("./")
-// 	for _, file := range files {
-// 		if !file.IsDir() && executorMask.MatchString(file.Name()) {
-// 			Config.Executor = file.Name()
-// 		}
-// 	}
-
-// 	if Config.Executor == "" {
-// 		return fmt.Errorf("%s not found in current dir", executorMask)
-// 	}
-
-// 	return nil
-// }
 
 func getScalarResources(offer *mesos.Offer, resourceName string) float64 {
 	resources := 0.0

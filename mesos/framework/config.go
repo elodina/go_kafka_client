@@ -43,9 +43,8 @@ type config struct {
 	FrameworkRole    string
 	FrameworkTimeout time.Duration
 	User             string
-	// Executor         string
-	LogLevel string
-	Storage  string
+	LogLevel         string
+	Storage          string
 }
 
 func (c *config) String() string {
