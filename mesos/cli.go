@@ -441,6 +441,7 @@ func handleUpdate() error {
 	var prefix string
 	var channelSize int64
 	var constraints string
+	var options string
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
 	flag.Float64Var(&cpu, "cpu", math.SmallestNonzeroFloat64, "CPUs per task.")
@@ -456,6 +457,7 @@ func handleUpdate() error {
 	flag.StringVar(&prefix, "prefix", "", "Destination topic prefix.")
 	flag.Int64Var(&channelSize, "queue.size", math.MinInt64, "Maximum number of messages that are buffered between the consumer and producer.")
 	flag.StringVar(&constraints, "constraints", "", "Constraints (hostname=like:^master$,rack=like:^1.*$).")
+	flag.StringVar(&options, "options", "", "Additional options")
 	ParseFlags("update")
 
 	if err := resolveApi(api); err != nil {
@@ -481,6 +483,7 @@ func handleUpdate() error {
 	}
 	request.PutString("prefix", prefix)
 	request.PutInt("queue.size", channelSize)
+	request.PutString("options", options)
 
 	response := request.Get()
 
