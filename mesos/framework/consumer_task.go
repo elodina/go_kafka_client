@@ -64,6 +64,13 @@ func (ct *ConsumerTask) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fields)
 }
 
+func (ct *ConsumerTask) String() string {
+	response := "    type: consumer\n"
+	response += ct.TaskData.String()
+
+	return response
+}
+
 func (ct *ConsumerTask) createExecutor() *mesos.ExecutorInfo {
 	executor, err := ct.Config.GetString("executor")
 	if err != nil || executor == "" {
