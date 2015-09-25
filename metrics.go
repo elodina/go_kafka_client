@@ -44,8 +44,10 @@ type ConsumerMetrics struct {
 	numFetchedMessagesCounter  metrics.Counter
 	numConsumedMessagesCounter metrics.Counter
 	numAcksCounter             metrics.Counter
-	topicPartitionLagLock      sync.Mutex
 	topicPartitionLag          map[TopicAndPartition]metrics.Gauge
+
+	metricLock            sync.Mutex
+	reportingStopChannels []chan struct{}
 }
 
 func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
@@ -75,6 +77,8 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	kafkaMetrics.numConsumedMessagesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sConsumedMessages-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.numAcksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sAcks-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.topicPartitionLag = make(map[TopicAndPartition]metrics.Gauge)
+
+	kafkaMetrics.reportingStopChannels = make([]chan struct{}, 0)
 
 	return kafkaMetrics
 }
@@ -127,9 +131,12 @@ func (this *ConsumerMetrics) topicAndPartitionLag(topic string, partition int32)
 	topicAndPartition := TopicAndPartition{Topic: topic, Partition: partition}
 	lag, ok := this.topicPartitionLag[topicAndPartition]
 	if !ok {
-		inLock(&this.topicPartitionLagLock, func() {
-			this.topicPartitionLag[topicAndPartition] = metrics.NewRegisteredGauge(fmt.Sprintf("%sLag-%s-%s", this.prefix, this.consumerName, &topicAndPartition), this.registry)
-			lag = this.topicPartitionLag[topicAndPartition]
+		inLock(&this.metricLock, func() {
+			lag, ok = this.topicPartitionLag[topicAndPartition]
+			if !ok {
+				this.topicPartitionLag[topicAndPartition] = metrics.NewRegisteredGauge(fmt.Sprintf("%sLag-%s-%s", this.prefix, this.consumerName, &topicAndPartition), this.registry)
+				lag = this.topicPartitionLag[topicAndPartition]
+			}
 		})
 	}
 	return lag
@@ -187,9 +194,26 @@ func (this *ConsumerMetrics) Stats() map[string]map[string]float64 {
 }
 
 func (this *ConsumerMetrics) WriteJSON(reportingInterval time.Duration, writer io.Writer) {
-	metrics.WriteJSON(this.registry, reportingInterval, writer)
+	tick := time.Tick(reportingInterval)
+	stop := make(chan struct{})
+
+	inLock(&this.metricLock, func() {
+		this.reportingStopChannels = append(this.reportingStopChannels, stop)
+	})
+
+	for {
+		select {
+		case <-tick:
+			metrics.WriteJSONOnce(this.registry, writer)
+		case <-stop:
+			return
+		}
+	}
 }
 
 func (this *ConsumerMetrics) close() {
+	for _, ch := range this.reportingStopChannels {
+		ch <- struct{}{}
+	}
 	this.registry.UnregisterAll()
 }
