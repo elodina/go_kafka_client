@@ -191,13 +191,14 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 					Error(this, err.Error())
 				}
 				messages = append(messages, &Message{
-					Key:          wrapped.Msg.Key,
-					Value:        wrapped.Msg.Value,
-					DecodedKey:   decodedKey,
-					DecodedValue: decodedValue,
-					Topic:        topic,
-					Partition:    partition,
-					Offset:       wrapped.Offset,
+					Key:                 wrapped.Msg.Key,
+					Value:               wrapped.Msg.Value,
+					DecodedKey:          decodedKey,
+					DecodedValue:        decodedValue,
+					Topic:               topic,
+					Partition:           partition,
+					Offset:              wrapped.Offset,
+					HighwaterMarkOffset: partitionData.HighWaterMarkOffset,
 				})
 			}
 		} else {
@@ -212,13 +213,14 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 				Error(this, err.Error())
 			}
 			messages = append(messages, &Message{
-				Key:          message.Msg.Key,
-				Value:        message.Msg.Value,
-				DecodedKey:   decodedKey,
-				DecodedValue: decodedValue,
-				Topic:        topic,
-				Partition:    partition,
-				Offset:       message.Offset,
+				Key:                 message.Msg.Key,
+				Value:               message.Msg.Value,
+				DecodedKey:          decodedKey,
+				DecodedValue:        decodedValue,
+				Topic:               topic,
+				Partition:           partition,
+				Offset:              message.Offset,
+				HighwaterMarkOffset: partitionData.HighWaterMarkOffset,
 			})
 		}
 	}
@@ -297,13 +299,14 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 		}
 
 		messages = append(messages, &Message{
-			Key:          key,
-			Value:        value,
-			DecodedKey:   decodedKey,
-			DecodedValue: decodedValue,
-			Topic:        topic,
-			Partition:    partition,
-			Offset:       offset,
+			Key:                 key,
+			Value:               value,
+			DecodedKey:          decodedKey,
+			DecodedValue:        decodedValue,
+			Topic:               topic,
+			Partition:           partition,
+			Offset:              offset,
+			HighwaterMarkOffset: response.Data[topic][partition].HighwaterMarkOffset,
 		})
 	}
 
