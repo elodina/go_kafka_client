@@ -44,6 +44,9 @@ type Message struct {
 
 	// Message offset.
 	Offset int64
+
+	// HighwaterMarkOffset is an offset of the last message in this topic-partition.
+	HighwaterMarkOffset int64
 }
 
 func (m *Message) String() string {
