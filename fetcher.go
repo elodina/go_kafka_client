@@ -261,9 +261,9 @@ func (f *consumerFetcherRoutine) start() {
 								}
 							case ErrorTypeOther:
 								{
-									Warnf(f, "Got a fetch error: %s", err)
-									//TODO new backoff type?
-									time.Sleep(1 * time.Second)
+                                    Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
+                                    //TODO new backoff type?
+                                    time.Sleep(1 * time.Second)
 								}
 							}
 						}

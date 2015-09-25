@@ -62,7 +62,7 @@ func expectAskNext(t *testing.T, askNext chan TopicAndPartition, timeout time.Du
 func generateBatch(topicPartition TopicAndPartition, size int) []*Message {
 	messages := make([]*Message, 0)
 	for i := 0; i < size; i++ {
-		messages = append(messages, &Message{Key: nil, Value: []byte{}, Topic: topicPartition.Topic, Partition: topicPartition.Partition, Offset: int64(i)})
+		messages = append(messages, &Message{Key: nil, Value: []byte{}, Topic: topicPartition.Topic, Partition: topicPartition.Partition, Offset: int64(i), HighwaterMarkOffset: int64(size)})
 	}
 
 	return messages
