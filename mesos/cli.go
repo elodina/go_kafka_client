@@ -442,6 +442,7 @@ func handleUpdate() error {
 	var prefix string
 	var channelSize int64
 	var constraints string
+	var metricsTopic string
 	var options string
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
@@ -458,6 +459,7 @@ func handleUpdate() error {
 	flag.StringVar(&prefix, "prefix", "", "Destination topic prefix.")
 	flag.Int64Var(&channelSize, "queue.size", math.MinInt64, "Maximum number of messages that are buffered between the consumer and producer.")
 	flag.StringVar(&constraints, "constraints", "", "Constraints (hostname=like:^master$,rack=like:^1.*$).")
+	flag.StringVar(&metricsTopic, "metrics.topic", "", "Kafka topic to produce mirror maker consumer metrics to. Optional and turned off by default.")
 	flag.StringVar(&options, "options", "", "Additional options")
 	ParseFlags("update")
 
@@ -484,6 +486,7 @@ func handleUpdate() error {
 	}
 	request.PutString("prefix", prefix)
 	request.PutInt("queue.size", channelSize)
+	request.PutString("metrics.topic", metricsTopic)
 	request.PutString("options", options)
 
 	response := request.Get()

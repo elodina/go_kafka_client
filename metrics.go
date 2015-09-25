@@ -22,10 +22,13 @@ import (
 	"time"
 
 	metrics "github.com/rcrowley/go-metrics"
+	"sync"
 )
 
 type ConsumerMetrics struct {
-	registry metrics.Registry
+	registry     metrics.Registry
+	consumerName string
+	prefix       string
 
 	numFetchRoutinesCounter metrics.Counter
 	fetchersIdleTimer       metrics.Timer
@@ -37,6 +40,12 @@ type ConsumerMetrics struct {
 	taskTimeoutCounter     metrics.Counter
 	wmsBatchDurationTimer  metrics.Timer
 	wmsIdleTimer           metrics.Timer
+
+	numFetchedMessagesCounter  metrics.Counter
+	numConsumedMessagesCounter metrics.Counter
+	numAcksCounter             metrics.Counter
+	topicPartitionLagLock      sync.Mutex
+	topicPartitionLag          map[TopicAndPartition]metrics.Gauge
 }
 
 func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
@@ -49,6 +58,8 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	if prefix != "" && prefix[len(prefix)-1:] != "." {
 		prefix += "."
 	}
+	kafkaMetrics.consumerName = consumerName
+	kafkaMetrics.prefix = prefix
 
 	kafkaMetrics.fetchersIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sFetchersIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sFetchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
@@ -59,6 +70,11 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	kafkaMetrics.taskTimeoutCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sTaskTimeouts-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsBatchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
+
+	kafkaMetrics.numFetchedMessagesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sFetchedMessages-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.numConsumedMessagesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sConsumedMessages-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.numAcksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sAcks-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.topicPartitionLag = make(map[TopicAndPartition]metrics.Gauge)
 
 	return kafkaMetrics
 }
@@ -93,6 +109,30 @@ func (this *ConsumerMetrics) taskTimeouts() metrics.Counter {
 
 func (this *ConsumerMetrics) activeWorkers() metrics.Counter {
 	return this.activeWorkersCounter
+}
+
+func (this *ConsumerMetrics) numFetchedMessages() metrics.Counter {
+	return this.numFetchedMessagesCounter
+}
+
+func (this *ConsumerMetrics) numConsumedMessages() metrics.Counter {
+	return this.numConsumedMessagesCounter
+}
+
+func (this *ConsumerMetrics) numAcks() metrics.Counter {
+	return this.numAcksCounter
+}
+
+func (this *ConsumerMetrics) topicAndPartitionLag(topic string, partition int32) metrics.Gauge {
+	topicAndPartition := TopicAndPartition{Topic: topic, Partition: partition}
+	lag, ok := this.topicPartitionLag[topicAndPartition]
+	if !ok {
+		inLock(&this.topicPartitionLagLock, func() {
+			this.topicPartitionLag[topicAndPartition] = metrics.NewRegisteredGauge(fmt.Sprintf("%sLag-%s-%s", this.prefix, this.consumerName, &topicAndPartition), this.registry)
+			lag = this.topicPartitionLag[topicAndPartition]
+		})
+	}
+	return lag
 }
 
 func (this *ConsumerMetrics) Stats() map[string]map[string]float64 {

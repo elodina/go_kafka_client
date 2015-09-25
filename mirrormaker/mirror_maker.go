@@ -48,6 +48,7 @@ var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffe
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 var schemaRegistryUrl = flag.String("schema.registry.url", "", "Avro schema registry URL for message encoding/decoding")
 var timingsProducerConfig = flag.String("timings.producer.config", "", "Path to producer configuration file for timings.")
+var produceMetricsTopic = flag.String("metrics.topic", "", "Topic to produce mirror maker consumer metrics to. Optional. Turned off if left blank.")
 
 func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	flag.Var(&consumerConfig, "consumer.config", "Path to consumer configuration file.")
@@ -92,6 +93,7 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 		config.ValueDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
 	}
 	config.TimingsProducerConfig = *timingsProducerConfig
+	config.ProduceMetricsTopic = *produceMetricsTopic
 
 	return config
 }

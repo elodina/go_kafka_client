@@ -153,3 +153,21 @@ func (c *CodahaleKafkaReporter) fillRecord(record *avro.GenericRecord, schema *a
 		}
 	}
 }
+
+type KafkaMetricReporter struct {
+	topic    string
+	producer Producer
+}
+
+func NewKafkaMetricReporter(topic string, producerConfig *ProducerConfig) *KafkaMetricReporter {
+	return &KafkaMetricReporter{
+		topic:    topic,
+		producer: NewSaramaProducer(producerConfig),
+	}
+}
+
+func (k *KafkaMetricReporter) Write(bytes []byte) (n int, err error) {
+	k.producer.Input() <- &ProducerMessage{Topic: k.topic, Value: bytes}
+
+	return 0, nil
+}

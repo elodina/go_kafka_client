@@ -246,6 +246,7 @@ func (f *consumerFetcherRoutine) start() {
 						f.manager.metrics.fetchDuration().Time(func() {
 							messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset)
 						})
+						f.manager.metrics.numFetchedMessages().Inc(int64(len(messages)))
 
 						if err != nil {
 							switch f.manager.client.GetErrorType(err) {
@@ -261,9 +262,9 @@ func (f *consumerFetcherRoutine) start() {
 								}
 							case ErrorTypeOther:
 								{
-                                    Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
-                                    //TODO new backoff type?
-                                    time.Sleep(1 * time.Second)
+									Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
+									//TODO new backoff type?
+									time.Sleep(1 * time.Second)
 								}
 							}
 						}

@@ -196,6 +196,8 @@ func (c *Cluster) Load() {
 		switch taskType {
 		case TaskTypeMirrorMaker:
 			c.Add(&MirrorMakerTask{&CommonTask{TaskData: taskData}})
+		case TaskTypeConsumer:
+			c.Add(&ConsumerTask{&CommonTask{TaskData: taskData}})
 		default:
 			panic(fmt.Errorf("Unknown task type %s", taskType))
 		}
