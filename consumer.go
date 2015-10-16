@@ -682,7 +682,6 @@ func (c *Consumer) rebalance() {
 			if !success && !c.isShuttingdown {
 				panic(fmt.Sprintf("Failed to rebalance after %d retries", c.config.RebalanceMaxRetries))
 			} else {
-				c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, fmt.Sprintf("%s-ack", c.lastSuccessfulRebalanceHash), string(Rebalance))
 				c.lastSuccessfulRebalanceHash = stateHash
 				Info(c, "Rebalance has been successfully completed")
 			}
