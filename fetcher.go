@@ -280,29 +280,14 @@ func (f *consumerFetcherRoutine) start() {
 						f.manager.metrics.fetchDuration().Time(func() {
 							messages, err = f.manager.client.Fetch(nextTopicPartition.Topic, nextTopicPartition.Partition, offset)
 						})
-						f.manager.metrics.numFetchedMessages().Inc(int64(len(messages)))
 
 						if err != nil {
-							switch f.manager.client.GetErrorType(err) {
-							case ErrorTypeOffsetOutOfRange:
-								{
-									if Logger.IsAllowed(WarnLevel) {
-										Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
-									}
+							if offset > -1 { // Negative offsets are obviously out of range but don't spam the logs...
+								if f.manager.client.IsOffsetOutOfRange(err) {
+									Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
 									f.handleOffsetOutOfRange(&nextTopicPartition)
-								}
-							case ErrorTypeCorruptedResponse:
-								{
-									if Logger.IsAllowed(WarnLevel) {
-										Warnf(f, "Got a corrupted fetch response: %s", err)
-									}
-									f.partitionMap[nextTopicPartition].FetchedOffset = f.partitionMap[nextTopicPartition].FetchedOffset + 1
-								}
-							case ErrorTypeOther:
-								{
-									if Logger.IsAllowed(WarnLevel) {
-										Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
-									}
+								} else {
+									Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
 									//TODO new backoff type?
 									time.Sleep(1 * time.Second)
 								}
