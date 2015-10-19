@@ -54,11 +54,11 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
 		workers[i] = &Worker{
-			InputChannel: make(chan *TaskAndStrategy),
-			OutputChannel: make(chan WorkerResult),
-			HandlerInputChannel: make(chan *TaskAndStrategy),
+			InputChannel:         make(chan *TaskAndStrategy),
+			OutputChannel:        make(chan WorkerResult),
+			HandlerInputChannel:  make(chan *TaskAndStrategy),
 			HandlerOutputChannel: make(chan WorkerResult),
-			TaskTimeout:   config.WorkerTaskTimeout,
+			TaskTimeout:          config.WorkerTaskTimeout,
 		}
 		workers[i].Start()
 		availableWorkers <- workers[i]
@@ -157,6 +157,10 @@ func (wm *WorkerManager) Stop() chan bool {
 
 func (wm *WorkerManager) startBatch(batch []*Message) {
 	inLock(&wm.stopLock, func() {
+		last := batch[len(batch)-1]
+		lag := wm.metrics.topicAndPartitionLag(last.Topic, last.Partition)
+		lag.Update((last.HighwaterMarkOffset - last.Offset) - 1)
+
 		wm.currentBatch = newTaskBatch()
 		wm.batchOrder = make([]TaskId, 0)
 		for _, message := range batch {
@@ -173,6 +177,7 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			if wm.shutdownDecision == nil {
 				wm.metrics.activeWorkers().Inc(1)
 				wm.metrics.pendingWMsTasks().Dec(1)
+				wm.metrics.numConsumedMessages().Inc(1)
 				worker.InputChannel <- &TaskAndStrategy{task, wm.config.Strategy}
 			} else {
 				return
@@ -220,7 +225,7 @@ func (wm *WorkerManager) commitOffset() {
 			}
 			break
 		} else {
-			Warnf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
+			Debugf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
 		}
 	}
 
@@ -259,6 +264,7 @@ func (wm *WorkerManager) processBatch() {
 				}
 
 				if result.Success() {
+					wm.metrics.numAcks().Inc(1)
 					wm.taskSucceeded(result)
 				} else {
 					task := wm.currentBatch.get(result.Id())
@@ -396,7 +402,7 @@ func (w *Worker) Start() {
 	go func() {
 		for taskAndStrategy := range w.HandlerInputChannel {
 			result := taskAndStrategy.Strategy(w, taskAndStrategy.WorkerTask.Msg, taskAndStrategy.WorkerTask.Id())
-			Loop:
+		Loop:
 			for !handlerInterrupted {
 				timeout := time.NewTimer(5 * time.Second)
 				select {
@@ -658,5 +664,5 @@ func (b *taskBatch) done() bool {
 
 type TaskAndStrategy struct {
 	WorkerTask *Task
-	Strategy WorkerStrategy
+	Strategy   WorkerStrategy
 }

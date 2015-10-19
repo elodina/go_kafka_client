@@ -86,7 +86,9 @@ func roundRobinAssignor(context *assignmentContext) map[TopicAndPartition]Consum
 			}
 		}
 
-		fmt.Printf("%v\n", topicsAndPartitions)
+		if Logger.IsAllowed(DebugLevel) {
+			Debugf("%v", topicsAndPartitions)
+		}
 
 		sort.Sort(hashArray(topicsAndPartitions))
 		threadIdsIterator := circularIterator(&headThreadIds)
@@ -110,18 +112,26 @@ func rangeAssignor(context *assignmentContext) map[TopicAndPartition]ConsumerThr
 		consumersForTopic := context.ConsumersForTopic[topic]
 		partitionsForTopic := context.PartitionsForTopic[topic]
 
-		Debug(context.ConsumerId, partitionsForTopic)
+		if Logger.IsAllowed(DebugLevel) {
+			Debug(context.ConsumerId, partitionsForTopic)
+		}
 
-		Tracef(context.ConsumerId, "partitionsForTopic: %d, consumersForTopic: %d", len(partitionsForTopic), len(consumersForTopic))
+		if Logger.IsAllowed(TraceLevel) {
+			Tracef(context.ConsumerId, "partitionsForTopic: %d, consumersForTopic: %d", len(partitionsForTopic), len(consumersForTopic))
+		}
 
 		nPartsPerConsumer := len(partitionsForTopic) / len(consumersForTopic)
 		nConsumersWithExtraPart := len(partitionsForTopic) % len(consumersForTopic)
 
-		Tracef(context.ConsumerId, "nPartsPerConsumer: %d, nConsumersWithExtraPart: %d", nPartsPerConsumer, nConsumersWithExtraPart)
+		if Logger.IsAllowed(TraceLevel) {
+			Tracef(context.ConsumerId, "nPartsPerConsumer: %d, nConsumersWithExtraPart: %d", nPartsPerConsumer, nConsumersWithExtraPart)
+		}
 
 		for _, consumerThreadId := range consumerThreadIds {
 			myConsumerPosition := position(&consumersForTopic, consumerThreadId)
-			Tracef(context.ConsumerId, "myConsumerPosition: %d", myConsumerPosition)
+			if Logger.IsAllowed(TraceLevel) {
+				Tracef(context.ConsumerId, "myConsumerPosition: %d", myConsumerPosition)
+			}
 			if myConsumerPosition < 0 {
 				panic(fmt.Sprintf("There is no %s in consumers for topic %s", consumerThreadId, topic))
 			}
@@ -130,14 +140,21 @@ func rangeAssignor(context *assignmentContext) map[TopicAndPartition]ConsumerThr
 			if myConsumerPosition+1 <= nConsumersWithExtraPart {
 				nParts = nPartsPerConsumer + 1
 			}
-			Tracef(context.ConsumerId, "startPart: %d, nParts: %d", startPart, nParts)
+
+			if Logger.IsAllowed(TraceLevel) {
+				Tracef(context.ConsumerId, "startPart: %d, nParts: %d", startPart, nParts)
+			}
 
 			if nParts <= 0 {
-				Warnf(context.ConsumerId, "No broker partitions consumed by consumer thread %s for topic %s", consumerThreadId, topic)
+				if Logger.IsAllowed(WarnLevel) {
+					Warnf(context.ConsumerId, "No broker partitions consumed by consumer thread %s for topic %s", consumerThreadId, topic)
+				}
 			} else {
 				for i := startPart; i < startPart+nParts; i++ {
 					partition := partitionsForTopic[i]
-					Infof(context.ConsumerId, "%s attempting to claim %s", consumerThreadId, &TopicAndPartition{Topic: topic, Partition: partition})
+					if Logger.IsAllowed(InfoLevel) {
+						Infof(context.ConsumerId, "%s attempting to claim %s", consumerThreadId, &TopicAndPartition{Topic: topic, Partition: partition})
+					}
 					ownershipDecision[TopicAndPartition{Topic: topic, Partition: partition}] = consumerThreadId
 				}
 			}
