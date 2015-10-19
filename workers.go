@@ -259,7 +259,6 @@ func (wm *WorkerManager) processBatch() {
 				}
 
 				if result.Success() {
-					wm.metrics.numAcks().Inc(1)
 					wm.taskSucceeded(result)
 				} else {
 					task := wm.currentBatch.get(result.Id())
