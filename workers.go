@@ -54,11 +54,11 @@ func NewWorkerManager(id string, config *ConsumerConfig, topicPartition TopicAnd
 	availableWorkers := make(chan *Worker, config.NumWorkers)
 	for i := 0; i < config.NumWorkers; i++ {
 		workers[i] = &Worker{
-			InputChannel: make(chan *TaskAndStrategy),
-			OutputChannel: make(chan WorkerResult),
-			HandlerInputChannel: make(chan *TaskAndStrategy),
+			InputChannel:         make(chan *TaskAndStrategy),
+			OutputChannel:        make(chan WorkerResult),
+			HandlerInputChannel:  make(chan *TaskAndStrategy),
 			HandlerOutputChannel: make(chan WorkerResult),
-			TaskTimeout:   config.WorkerTaskTimeout,
+			TaskTimeout:          config.WorkerTaskTimeout,
 		}
 		workers[i].Start()
 		availableWorkers <- workers[i]
@@ -220,7 +220,7 @@ func (wm *WorkerManager) commitOffset() {
 			}
 			break
 		} else {
-			Warnf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
+			Debugf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
 		}
 	}
 
@@ -396,7 +396,7 @@ func (w *Worker) Start() {
 	go func() {
 		for taskAndStrategy := range w.HandlerInputChannel {
 			result := taskAndStrategy.Strategy(w, taskAndStrategy.WorkerTask.Msg, taskAndStrategy.WorkerTask.Id())
-			Loop:
+		Loop:
 			for !handlerInterrupted {
 				timeout := time.NewTimer(5 * time.Second)
 				select {
@@ -658,5 +658,5 @@ func (b *taskBatch) done() bool {
 
 type TaskAndStrategy struct {
 	WorkerTask *Task
-	Strategy WorkerStrategy
+	Strategy   WorkerStrategy
 }
