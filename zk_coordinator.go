@@ -588,9 +588,9 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 							if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
 								if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
 									newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
-									changes <- BlueGreenRequest
+									groupWatch.coordinatorEvents <- BlueGreenRequest
 								} else {
-									changes <- Regular
+									groupWatch.coordinatorEvents <- Regular
 								}
 							}
 						}
