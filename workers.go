@@ -225,7 +225,7 @@ func (wm *WorkerManager) commitOffset() {
 			}
 			break
 		} else {
-			Warnf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
+			Debugf(wm, "Failed to commit offset %d for %s; error: %s. Retrying...", largestOffset, &wm.topicPartition, err)
 		}
 	}
 
