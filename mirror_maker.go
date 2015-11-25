@@ -157,7 +157,8 @@ func (this *MirrorMaker) startConsumers() {
 		if err != nil {
 			panic(err)
 		}
-		config.NumWorkers = 1
+		//Let the NumWorkers be set via consumer configs
+		//config.NumWorkers = 1
 		config.AutoOffsetReset = SmallestOffset
 		config.Coordinator = NewZookeeperCoordinator(zkConfig)
 		config.WorkerFailureCallback = func(_ *WorkerManager) FailedDecision {
