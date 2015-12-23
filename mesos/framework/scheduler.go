@@ -132,7 +132,7 @@ func (s *Scheduler) ResourceOffers(driver scheduler.SchedulerDriver, offers []*m
 	for _, offer := range offers {
 		declineReason := s.acceptOffer(driver, offer)
 		if declineReason != "" {
-			driver.DeclineOffer(offer.GetId(), &mesos.Filters{RefuseSeconds: proto.Float64(1)})
+			driver.DeclineOffer(offer.GetId(), &mesos.Filters{RefuseSeconds: proto.Float64(10)})
 			Logger.Debugf("Declined offer: %s", declineReason)
 		}
 	}
@@ -225,7 +225,7 @@ func (s *Scheduler) launchTask(task Task, offer *mesos.Offer) {
 	task.Data().SlaveID = taskInfo.GetSlaveId().GetValue()
 	task.Data().TaskID = taskInfo.GetTaskId().GetValue()
 
-	s.driver.LaunchTasks([]*mesos.OfferID{offer.GetId()}, []*mesos.TaskInfo{taskInfo}, &mesos.Filters{RefuseSeconds: proto.Float64(1)})
+	s.driver.LaunchTasks([]*mesos.OfferID{offer.GetId()}, []*mesos.TaskInfo{taskInfo}, &mesos.Filters{RefuseSeconds: proto.Float64(10)})
 }
 
 func (s *Scheduler) onTaskStarted(id string, status *mesos.TaskStatus) {
