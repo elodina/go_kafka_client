@@ -31,7 +31,6 @@ var rfc3164message = `<34>Jan 12 06:30:00 1.2.3.4 some_server: 1.2.3.4 - - [12/J
 //<132>2014-12-30T11:51:47+02:00 localhost go_kafka_client[13128]: woohoo!
 
 func TestSyslogProducer(t *testing.T) {
-	Logger = NewDefaultLogger(TraceLevel)
 	topic := fmt.Sprintf("syslog-producer-%d", time.Now().Unix())
 
 	consumeMessages := 100

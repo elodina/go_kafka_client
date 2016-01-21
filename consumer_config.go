@@ -219,7 +219,7 @@ func DefaultConsumerConfig() *ConsumerConfig {
 	config.BlueGreenDeploymentEnabled = true
 	config.DeploymentTimeout = 0 * time.Second
 	config.BarrierTimeout = 30 * time.Second
-	config.LowLevelClient = NewSaramaClient(config)
+	config.LowLevelClient = NewSiestaClient(config)
 
 	config.KeyDecoder = &ByteDecoder{}
 	config.ValueDecoder = config.KeyDecoder
