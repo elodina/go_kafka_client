@@ -75,6 +75,9 @@ type MirrorMakerConfig struct {
 	// Defines whether add timings to message or not.
 	// Note: used only for avro encoded messages
 	TimingsProducerConfig string
+
+    // Flag to transform all incoming data to LogLines and add metadata to them
+    Transform bool
 }
 
 // Creates an empty MirrorMakerConfig.
@@ -145,11 +148,17 @@ func (this *MirrorMaker) Stop() {
 }
 
 func (this *MirrorMaker) startConsumers() {
-	for _, consumerConfigFile := range this.config.ConsumerConfigs {
+	for n, consumerConfigFile := range this.config.ConsumerConfigs {
 		config, err := ConsumerConfigFromFile(consumerConfigFile)
 		if err != nil {
 			panic(err)
 		}
+
+        if this.config.Transform {
+            consumerId := uuid()
+            config.Consumerid = fmt.Sprintf("%s-%d", consumerId, n)
+        }
+
 		config.KeyDecoder = this.config.KeyDecoder
 		config.ValueDecoder = this.config.ValueDecoder
 
@@ -178,6 +187,11 @@ func (this *MirrorMaker) startConsumers() {
 						return NewProcessingFailedResult(id)
 					}
 				}
+
+                if this.config.Transform {
+                    record := msg.DecodedValue.(*avro.GenericRecord)
+                    this.AddMetadata(record, msg.Topic, msg.Partition, config.Consumerid)
+                }
 
 				this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 
@@ -347,6 +361,37 @@ func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, tag string, now i
 	record.Set("timings", timings)
 
 	return record
+}
+
+func (this *MirrorMaker) AddMetadata(record *avro.GenericRecord, topic string, partition int32, consumerId string) {
+    consumed := time.Now().UnixNano() / int64(time.Millisecond)
+
+    var timings []interface{}
+    if record.Get("timings") == nil {
+        timings = make([]interface{}, 0)
+    } else {
+        timings = record.Get("timings").([]interface{})
+    }
+
+    timing := avro.NewGenericRecord(nil)
+    timing.Set("key", "consumed")
+    timing.Set("value", consumed)
+
+    timings = append(timings, timing)
+    record.Set("timings", timings)
+
+    var tags map[string]interface{}
+    if record.Get("tag") == nil {
+        tags = make(map[string]interface{})
+    } else {
+        tags = record.Get("tag").(map[string]interface{})
+    }
+
+    tags["topic"] = topic
+    tags["partition"] = fmt.Sprintf("%d", partition)
+    tags["consumerId"] = consumerId
+
+    record.Set("tag", tags)
 }
 
 func (this *MirrorMaker) Errors() <-chan *FailedMessage {
