@@ -23,6 +23,14 @@ import (
 	"github.com/stealthly/siesta"
 )
 
+type ErrorType int
+
+const (
+	ErrorTypeOffsetOutOfRange ErrorType = iota
+	ErrorTypeCorruptedResponse
+	ErrorTypeOther
+)
+
 // LowLevelClient is a low-level Kafka client that manages broker connections, responsible to fetch metadata and is able
 // to handle Fetch and Offset requests.
 //TODO not sure that's a good name for this interface
@@ -37,8 +45,8 @@ type LowLevelClient interface {
 	Fetch(topic string, partition int32, offset int64) ([]*Message, error)
 
 	// This will be called when call to Fetch returns an error. As every client has different error mapping we ask here explicitly
-	// whether the returned error is an OffsetOutOfRange error. Should return true if it is, false otherwise.
-	IsOffsetOutOfRange(error) bool
+	// what kind of error was returned.
+	GetErrorType(error) ErrorType
 
 	// This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
 	// Should return a corresponding offset value and an error if it occurred.
@@ -138,9 +146,19 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 	return messages, nil
 }
 
-// Checks whether the given error indicates an OffsetOutOfRange error.
-func (this *SaramaClient) IsOffsetOutOfRange(err error) bool {
-	return err == sarama.ErrOffsetOutOfRange
+// Tells the caller what kind of error it is.
+func (this *SaramaClient) GetErrorType(err error) ErrorType {
+	switch {
+	case err == sarama.ErrOffsetOutOfRange:
+		return ErrorTypeOffsetOutOfRange
+	default:
+		{
+			if _, ok := err.(sarama.PacketDecodingError); ok {
+				return ErrorTypeCorruptedResponse
+			}
+			return ErrorTypeOther
+		}
+	}
 }
 
 // This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
@@ -313,9 +331,16 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 	return messages, response.CollectMessages(collector)
 }
 
-// Checks whether the given error indicates an OffsetOutOfRange error.
-func (this *SiestaClient) IsOffsetOutOfRange(err error) bool {
-	return err == siesta.ErrOffsetOutOfRange
+// Tells the caller what kind of error it is.
+func (this *SiestaClient) GetErrorType(err error) ErrorType {
+	switch {
+	case err == siesta.ErrOffsetOutOfRange:
+		return ErrorTypeOffsetOutOfRange
+	case err == siesta.ErrEOF:
+		return ErrorTypeCorruptedResponse
+	default:
+		return ErrorTypeOther
+	}
 }
 
 // This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".

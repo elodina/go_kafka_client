@@ -157,6 +157,10 @@ func (wm *WorkerManager) Stop() chan bool {
 
 func (wm *WorkerManager) startBatch(batch []*Message) {
 	inLock(&wm.stopLock, func() {
+		last := batch[len(batch)-1]
+		lag := wm.metrics.topicAndPartitionLag(last.Topic, last.Partition)
+		lag.Update((last.HighwaterMarkOffset - last.Offset) - 1)
+
 		wm.currentBatch = newTaskBatch()
 		wm.batchOrder = make([]TaskId, 0)
 		for _, message := range batch {
@@ -173,6 +177,7 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 			if wm.shutdownDecision == nil {
 				wm.metrics.activeWorkers().Inc(1)
 				wm.metrics.pendingWMsTasks().Dec(1)
+				wm.metrics.numConsumedMessages().Inc(1)
 				worker.InputChannel <- &TaskAndStrategy{task, wm.config.Strategy}
 			} else {
 				return
@@ -259,6 +264,7 @@ func (wm *WorkerManager) processBatch() {
 				}
 
 				if result.Success() {
+					wm.metrics.numAcks().Inc(1)
 					wm.taskSucceeded(result)
 				} else {
 					task := wm.currentBatch.get(result.Id())

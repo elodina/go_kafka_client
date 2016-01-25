@@ -74,12 +74,12 @@ const (
 	CriticalLevel LogLevel = "critical"
 )
 
-var logLevelPriorities = map[LogLevel]int {
-	TraceLevel: 0,
-	DebugLevel: 1,
-	InfoLevel: 2,
-	WarnLevel: 3,
-	ErrorLevel: 4,
+var logLevelPriorities = map[LogLevel]int{
+	TraceLevel:    0,
+	DebugLevel:    1,
+	InfoLevel:     2,
+	WarnLevel:     3,
+	ErrorLevel:    4,
 	CriticalLevel: 5,
 }
 
@@ -158,7 +158,7 @@ func Criticalf(tag interface{}, message interface{}, params ...interface{}) {
 //Default implementation of KafkaLogger interface used in this client.
 type DefaultLogger struct {
 	logLevel LogLevel
-	logger log.LoggerInterface
+	logger   log.LoggerInterface
 }
 
 //Creates a new DefaultLogger that is configured to write messages to console with minimum log level Level.

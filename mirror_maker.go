@@ -75,17 +75,20 @@ type MirrorMakerConfig struct {
 	// Defines whether add timings to message or not.
 	// Note: used only for avro encoded messages
 	TimingsProducerConfig string
+
+	// ProduceMetricsTopic is a topic where all mirror maker consumer metrics will be produced to.
+	// Nothing will be produced if left blank.
+	ProduceMetricsTopic string
 }
 
 // Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
 	return &MirrorMakerConfig{
-		KeyEncoder:            &ByteEncoder{},
-		ValueEncoder:          &ByteEncoder{},
-		KeyDecoder:            &ByteDecoder{},
-		ValueDecoder:          &ByteDecoder{},
-		ProducerConstructor:   NewSaramaProducer,
-		TimingsProducerConfig: "",
+		KeyEncoder:          &ByteEncoder{},
+		ValueEncoder:        &ByteEncoder{},
+		KeyDecoder:          &ByteDecoder{},
+		ValueDecoder:        &ByteDecoder{},
+		ProducerConstructor: NewSaramaProducer,
 	}
 }
 
@@ -93,6 +96,7 @@ func NewMirrorMakerConfig() *MirrorMakerConfig {
 // It uses a Kafka consumer to consume messages from the source cluster, and re-publishes those messages to the target cluster.
 type MirrorMaker struct {
 	config          *MirrorMakerConfig
+	metricReporter  *KafkaMetricReporter
 	consumers       []*Consumer
 	producers       []Producer
 	messageChannels []chan *Message
@@ -100,6 +104,7 @@ type MirrorMaker struct {
 	logLineSchema   *avro.RecordSchema
 	evolutioned     *schemaSet
 	errors          chan *FailedMessage
+	stopped         chan struct{}
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
@@ -113,14 +118,17 @@ func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 		logLineSchema: logLineSchema,
 		evolutioned:   newSchemaSet(),
 		errors:        make(chan *FailedMessage),
+		stopped:       make(chan struct{}),
 	}
 }
 
 // Starts the MirrorMaker. This method is blocking and should probably be run in a separate goroutine.
 func (this *MirrorMaker) Start() {
 	this.initializeMessageChannels()
+	this.startMetricsProducer()
 	this.startConsumers()
 	this.startProducers()
+	<-this.stopped
 }
 
 // Gracefully stops the MirrorMaker.
@@ -142,6 +150,10 @@ func (this *MirrorMaker) Stop() {
 	for _, producer := range this.producers {
 		producer.Close()
 	}
+
+	Info("", "Sending stopped")
+	this.stopped <- struct{}{}
+	Info("", "Sent stopped")
 }
 
 func (this *MirrorMaker) startConsumers() {
@@ -200,6 +212,9 @@ func (this *MirrorMaker) startConsumers() {
 		} else {
 			panic("Consume pattern not specified")
 		}
+		if this.config.ProduceMetricsTopic != "" {
+			go consumer.Metrics().WriteJSON(time.Second, this.metricReporter)
+		}
 	}
 }
 
@@ -250,12 +265,25 @@ func (this *MirrorMaker) startProducers() {
 		if this.config.TimingsProducerConfig != "" {
 			go this.timingsRoutine(producer)
 		}
-		go this.failedRoutine(producer)
 		if this.config.PreserveOrder {
 			go this.produceRoutine(producer, i)
 		} else {
 			go this.produceRoutine(producer, 0)
 		}
+		go this.failedRoutine(producer)
+	}
+}
+
+func (this *MirrorMaker) startMetricsProducer() {
+	if this.config.ProduceMetricsTopic != "" {
+		conf, err := ProducerConfigFromFile(this.config.ProducerConfig)
+		if err != nil {
+			panic(err)
+		}
+		conf.Partitioner = NewRandomPartitioner
+		conf.KeyEncoder = &ByteEncoder{}
+		conf.ValueEncoder = &ByteEncoder{}
+		this.metricReporter = NewKafkaMetricReporter(this.config.ProduceMetricsTopic, conf)
 	}
 }
 
