@@ -6,8 +6,10 @@ import (
 	"testing"
 )
 
+const primitiveSchemaRaw = `{"type":"record","name":"Primitive","namespace":"example.avro","fields":[{"name":"booleanField","type":"boolean"},{"name":"intField","type":"int"},{"name":"longField","type":"long"},{"name":"floatField","type":"float"},{"name":"doubleField","type":"double"},{"name":"bytesField","type":"bytes"},{"name":"stringField","type":"string"},{"name":"nullField","type":"null"}]}`
+
 func TestSpecificDatumWriterPrimitives(t *testing.T) {
-	sch, err := ParseSchema(`{"type":"record","name":"Primitive","namespace":"example.avro","fields":[{"name":"booleanField","type":"boolean"},{"name":"intField","type":"int"},{"name":"longField","type":"long"},{"name":"floatField","type":"float"},{"name":"doubleField","type":"double"},{"name":"bytesField","type":"bytes"},{"name":"stringField","type":"string"},{"name":"nullField","type":"null"}]}`)
+	sch, err := ParseSchema(primitiveSchemaRaw)
 	assert(t, err, nil)
 
 	buffer := &bytes.Buffer{}
@@ -166,6 +168,74 @@ func TestSpecificDatumTags(t *testing.T) {
 	assert(t, out.Map, in.Map)
 }
 
+func TestGenericDatumWriterEmptyMap(t *testing.T) {
+	sch, err := ParseSchema(`{
+    "type": "record",
+    "name": "Rec",
+    "fields": [
+        {
+            "name": "map1",
+            "type": {
+                "type": "map",
+                "values": "string"
+            }
+        }
+    ]
+}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buffer := &bytes.Buffer{}
+	enc := NewBinaryEncoder(buffer)
+	w := NewGenericDatumWriter()
+	w.SetSchema(sch)
+
+	rec := NewGenericRecord(sch)
+	rec.Set("map1", map[string]string{})
+
+	err = w.Write(rec, enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert(t, buffer.Bytes(), []byte{0x00})
+}
+
+func TestGenericDatumWriterEmptyArray(t *testing.T) {
+	sch, err := ParseSchema(`{
+    "type": "record",
+    "name": "Rec",
+    "fields": [
+        {
+            "name": "arr",
+            "type": {
+                "type": "array",
+                "items": "string"
+            }
+        }
+    ]
+}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buffer := &bytes.Buffer{}
+	enc := NewBinaryEncoder(buffer)
+	w := NewGenericDatumWriter()
+	w.SetSchema(sch)
+
+	rec := NewGenericRecord(sch)
+	rec.Set("arr", []string{})
+
+	err = w.Write(rec, enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert(t, buffer.Bytes(), []byte{0x00})
+}
+
 func randomPrimitiveObject() *primitive {
 	p := &primitive{}
 	p.BooleanField = rand.Int()%2 == 0
@@ -194,6 +264,39 @@ func randomPrimitiveObject() *primitive {
 	p.StringField = randomString(rand.Intn(99) + 1)
 
 	return p
+}
+
+func BenchmarkEncodeVarint32(b *testing.B) {
+	enc := NewBinaryEncoder(nil)
+	for i := 0; i < b.N; i++ {
+		enc.encodeVarint32(int32(i))
+	}
+}
+
+func BenchmarkEncodeVarint64(b *testing.B) {
+	enc := NewBinaryEncoder(nil)
+	for i := 0; i < b.N; i++ {
+		enc.encodeVarint64(int64(i))
+	}
+}
+
+func BenchmarkSpecificDatumWriter(b *testing.B) {
+	var c = newComplex()
+	c.FixedField = []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+	w := NewSpecificDatumWriter()
+	w.SetSchema(c.Schema())
+	var buf bytes.Buffer
+	buf.Grow(10000)
+	err := w.Write(c, NewBinaryEncoder(&buf))
+	if err != nil {
+		panic(err)
+	}
+	buf.Reset()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		w.Write(c, NewBinaryEncoder(&buf))
+		buf.Reset()
+	}
 }
 
 type _complex struct {

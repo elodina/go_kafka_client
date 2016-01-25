@@ -16,33 +16,33 @@ limitations under the License. */
 package main
 
 import (
-	"github.com/stealthly/siesta"
 	"fmt"
+	"github.com/stealthly/siesta"
+	"io"
 	"net"
 	"time"
-	"io"
-//	"encoding/hex"
+	//	"encoding/hex"
 )
 
 func main() {
-//	b := make([]byte, 4)
-//	siesta.NewBinaryEncoder(b).WriteInt32(750693)
-//	fmt.Printf("bytes: % x\n", b)
+	//	b := make([]byte, 4)
+	//	siesta.NewBinaryEncoder(b).WriteInt32(750693)
+	//	fmt.Printf("bytes: % x\n", b)
 
-//	request := siesta.NewTopicMetadataRequest([]string{"logs1"})
-//	request := new(siesta.OffsetRequest)
-//	request.AddPartitionOffsetRequestInfo("test-2", 0, siesta.LatestTime, 1)
+	//	request := siesta.NewTopicMetadataRequest([]string{"logs1"})
+	//	request := new(siesta.OffsetRequest)
+	//	request.AddPartitionOffsetRequestInfo("test-2", 0, siesta.LatestTime, 1)
 
-//	request := new(siesta.FetchRequest)
-//	request.AddFetch("test-2", 0, 0, 50)
+	//	request := new(siesta.FetchRequest)
+	//	request.AddFetch("test-2", 0, 0, 50)
 
-//	request := siesta.NewConsumerMetadataRequest("go-consumer-group")
+	//	request := siesta.NewConsumerMetadataRequest("go-consumer-group")
 
-//	request := siesta.NewOffsetCommitRequest("other-go-group")
-//	request.AddOffset("test-2", 0, 7, 123456789, "h")
+	//	request := siesta.NewOffsetCommitRequest("other-go-group")
+	//	request.AddOffset("test-2", 0, 7, 123456789, "h")
 
-//	request := siesta.NewOffsetFetchRequest("other-go-group")
-//	request.AddOffset("test-2", 0)
+	//	request := siesta.NewOffsetFetchRequest("other-go-group")
+	//	request.AddOffset("test-2", 0)
 
 	request := new(siesta.ProduceRequest)
 	request.RequiredAcks = 1
@@ -62,7 +62,7 @@ func main() {
 }
 
 func openConnection(host string) net.Conn {
-	conn, err := net.DialTimeout("tcp", host, 2 * time.Second)
+	conn, err := net.DialTimeout("tcp", host, 2*time.Second)
 	if err != nil {
 		panic(err)
 	}
@@ -108,107 +108,105 @@ func readResponse(connection net.Conn) {
 	fmt.Printf("response: % x\n", response)
 
 	decoder = siesta.NewBinaryDecoder(response)
-//	metadataResponse := new(siesta.TopicMetadataResponse)
-//	metadataResponse := new(siesta.OffsetResponse)
-//	metadataResponse := new(siesta.FetchResponse)
-//	metadataResponse := new(siesta.ConsumerMetadataResponse)
-//	metadataResponse := new(siesta.OffsetCommitResponse)
-//	metadataResponse := new(siesta.OffsetFetchResponse)
+	//	metadataResponse := new(siesta.TopicMetadataResponse)
+	//	metadataResponse := new(siesta.OffsetResponse)
+	//	metadataResponse := new(siesta.FetchResponse)
+	//	metadataResponse := new(siesta.ConsumerMetadataResponse)
+	//	metadataResponse := new(siesta.OffsetCommitResponse)
+	//	metadataResponse := new(siesta.OffsetFetchResponse)
 	metadataResponse := new(siesta.ProduceResponse)
 	decodingErr := metadataResponse.Read(decoder)
 	if decodingErr != nil {
 		panic(decodingErr.Reason())
 	}
 
-
-//	fmt.Println("decoded: ", metadataResponse)
-//	for _, broker := range metadataResponse.Brokers {
-//		fmt.Println("broker", broker)
-//	}
-//
-//	for _, meta := range metadataResponse.TopicMetadata {
-//		fmt.Println("meta", meta)
-//		for _, pmeta := range meta.PartitionMetadata {
-//			fmt.Println("pmeta", pmeta)
-//		}
-//	}
-//	for _, message := range metadataResponse.GetMessages() {
-//		fmt.Printf("topic: %s, partition: %d, offset: %d, value: %s\n", message.Topic, message.Partition, message.Offset, string(message.Value))
-//	}
-//	fmt.Println("messages: ", metadataResponse.GetMessages())
-//	fmt.Println("offset", metadataResponse.Offsets["test-2"][0].Offsets[0])
+	//	fmt.Println("decoded: ", metadataResponse)
+	//	for _, broker := range metadataResponse.Brokers {
+	//		fmt.Println("broker", broker)
+	//	}
+	//
+	//	for _, meta := range metadataResponse.TopicMetadata {
+	//		fmt.Println("meta", meta)
+	//		for _, pmeta := range meta.PartitionMetadata {
+	//			fmt.Println("pmeta", pmeta)
+	//		}
+	//	}
+	//	for _, message := range metadataResponse.GetMessages() {
+	//		fmt.Printf("topic: %s, partition: %d, offset: %d, value: %s\n", message.Topic, message.Partition, message.Offset, string(message.Value))
+	//	}
+	//	fmt.Println("messages: ", metadataResponse.GetMessages())
+	//	fmt.Println("offset", metadataResponse.Offsets["test-2"][0].Offsets[0])
 
 	//consumer metadata
 	fmt.Printf("%v\n", metadataResponse)
 
-//	fmt.Println(metadataResponse.Offsets["test-2"][0].Error)
-//	fmt.Println(metadataResponse.Offsets["test-2"][0].Metadata)
-//	fmt.Println(metadataResponse.Offsets["test-2"][0].Offset)
+	//	fmt.Println(metadataResponse.Offsets["test-2"][0].Error)
+	//	fmt.Println(metadataResponse.Offsets["test-2"][0].Metadata)
+	//	fmt.Println(metadataResponse.Offsets["test-2"][0].Offset)
 
 	fmt.Println(metadataResponse.Status["siesta"][0].Error)
 	fmt.Println(metadataResponse.Status["siesta"][0].Offset)
 }
 
 func readResponse(rawResponse []byte) {
-    header := rawResponse[:8]
+	header := rawResponse[:8]
 
-    decoder := siesta.NewBinaryDecoder(header)
-    length, err := decoder.GetInt32()
-    if err != nil {
-        panic(err)
-    }
-    correlationId, err := decoder.GetInt32()
-    if err != nil {
-        panic(err)
-    }
+	decoder := siesta.NewBinaryDecoder(header)
+	length, err := decoder.GetInt32()
+	if err != nil {
+		panic(err)
+	}
+	correlationId, err := decoder.GetInt32()
+	if err != nil {
+		panic(err)
+	}
 
-    response := rawResponse[8:]
-    response := make([]byte, length-4)
-    _, err = io.ReadFull(connection, response)
-    if err != nil {
-        panic(err)
-    }
+	response := rawResponse[8:]
+	response := make([]byte, length-4)
+	_, err = io.ReadFull(connection, response)
+	if err != nil {
+		panic(err)
+	}
 
-    fmt.Printf("response: % x\n", response)
+	fmt.Printf("response: % x\n", response)
 
-    decoder = siesta.NewBinaryDecoder(response)
-    //	metadataResponse := new(siesta.TopicMetadataResponse)
-    //	metadataResponse := new(siesta.OffsetResponse)
-    //	metadataResponse := new(siesta.FetchResponse)
-    //	metadataResponse := new(siesta.ConsumerMetadataResponse)
-    //	metadataResponse := new(siesta.OffsetCommitResponse)
-    //	metadataResponse := new(siesta.OffsetFetchResponse)
-    metadataResponse := new(siesta.ProduceResponse)
-    decodingErr := metadataResponse.Read(decoder)
-    if decodingErr != nil {
-        panic(decodingErr.Reason())
-    }
+	decoder = siesta.NewBinaryDecoder(response)
+	//	metadataResponse := new(siesta.TopicMetadataResponse)
+	//	metadataResponse := new(siesta.OffsetResponse)
+	//	metadataResponse := new(siesta.FetchResponse)
+	//	metadataResponse := new(siesta.ConsumerMetadataResponse)
+	//	metadataResponse := new(siesta.OffsetCommitResponse)
+	//	metadataResponse := new(siesta.OffsetFetchResponse)
+	metadataResponse := new(siesta.ProduceResponse)
+	decodingErr := metadataResponse.Read(decoder)
+	if decodingErr != nil {
+		panic(decodingErr.Reason())
+	}
 
+	//	fmt.Println("decoded: ", metadataResponse)
+	//	for _, broker := range metadataResponse.Brokers {
+	//		fmt.Println("broker", broker)
+	//	}
+	//
+	//	for _, meta := range metadataResponse.TopicMetadata {
+	//		fmt.Println("meta", meta)
+	//		for _, pmeta := range meta.PartitionMetadata {
+	//			fmt.Println("pmeta", pmeta)
+	//		}
+	//	}
+	//	for _, message := range metadataResponse.GetMessages() {
+	//		fmt.Printf("topic: %s, partition: %d, offset: %d, value: %s\n", message.Topic, message.Partition, message.Offset, string(message.Value))
+	//	}
+	//	fmt.Println("messages: ", metadataResponse.GetMessages())
+	//	fmt.Println("offset", metadataResponse.Offsets["test-2"][0].Offsets[0])
 
-    //	fmt.Println("decoded: ", metadataResponse)
-    //	for _, broker := range metadataResponse.Brokers {
-    //		fmt.Println("broker", broker)
-    //	}
-    //
-    //	for _, meta := range metadataResponse.TopicMetadata {
-    //		fmt.Println("meta", meta)
-    //		for _, pmeta := range meta.PartitionMetadata {
-    //			fmt.Println("pmeta", pmeta)
-    //		}
-    //	}
-    //	for _, message := range metadataResponse.GetMessages() {
-    //		fmt.Printf("topic: %s, partition: %d, offset: %d, value: %s\n", message.Topic, message.Partition, message.Offset, string(message.Value))
-    //	}
-    //	fmt.Println("messages: ", metadataResponse.GetMessages())
-    //	fmt.Println("offset", metadataResponse.Offsets["test-2"][0].Offsets[0])
+	//consumer metadata
+	fmt.Printf("%v\n", metadataResponse)
 
-    //consumer metadata
-    fmt.Printf("%v\n", metadataResponse)
+	//	fmt.Println(metadataResponse.Offsets["test-2"][0].Error)
+	//	fmt.Println(metadataResponse.Offsets["test-2"][0].Metadata)
+	//	fmt.Println(metadataResponse.Offsets["test-2"][0].Offset)
 
-    //	fmt.Println(metadataResponse.Offsets["test-2"][0].Error)
-    //	fmt.Println(metadataResponse.Offsets["test-2"][0].Metadata)
-    //	fmt.Println(metadataResponse.Offsets["test-2"][0].Offset)
-
-    fmt.Println(metadataResponse.Status["siesta"][0].Error)
-    fmt.Println(metadataResponse.Status["siesta"][0].Offset)
+	fmt.Println(metadataResponse.Status["siesta"][0].Error)
+	fmt.Println(metadataResponse.Status["siesta"][0].Offset)
 }

@@ -4,9 +4,23 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 )
+
+// Support decoding the avro Object Container File format.
+// Spec: http://avro.apache.org/docs/1.7.7/spec.html#Object+Container+Files
+
+const objHeaderSchemaRaw = `{"type": "record", "name": "org.apache.avro.file.Header",
+ "fields" : [
+   {"name": "magic", "type": {"type": "fixed", "name": "Magic", "size": 4}},
+   {"name": "meta", "type": {"type": "map", "values": "bytes"}},
+   {"name": "sync", "type": {"type": "fixed", "name": "Sync", "size": 16}}
+  ]
+}`
+
+var objHeaderSchema = MustParseSchema(objHeaderSchemaRaw)
 
 const (
 	version    byte = 1
@@ -17,29 +31,30 @@ const (
 
 var magic []byte = []byte{'O', 'b', 'j', version}
 
-var syncBuffer = make([]byte, sync_size)
-
-// DataFileReader is a reader for Avro Object Container Files. More here: https://avro.apache.org/docs/current/spec.html#Object+Container+Files
+// DataFileReader is a reader for Avro Object Container Files.
+// More here: https://avro.apache.org/docs/current/spec.html#Object+Container+Files
 type DataFileReader struct {
 	data         []byte
-	header       *header
+	header       *objFileHeader
 	block        *DataBlock
 	dec          Decoder
 	blockDecoder Decoder
 	datum        DatumReader
 }
 
-type header struct {
-	meta map[string][]byte
-	sync []byte
+// The header for object container files
+type objFileHeader struct {
+	Magic []byte            `avro:"magic"`
+	Meta  map[string][]byte `avro:"meta"`
+	Sync  []byte            `avro:"sync"`
 }
 
-func newHeader() *header {
-	header := &header{}
-	header.meta = make(map[string][]byte)
-	header.sync = make([]byte, sync_size)
-
-	return header
+func readObjFileHeader(dec *BinaryDecoder) (*objFileHeader, error) {
+	reader := NewSpecificDatumReader()
+	reader.SetSchema(objHeaderSchema)
+	header := &objFileHeader{}
+	err := reader.Read(header, dec)
+	return header, err
 }
 
 // Creates a new DataFileReader for a given file and using the given DatumReader to read the data from that file.
@@ -48,65 +63,43 @@ func NewDataFileReader(filename string, datumReader DatumReader) (*DataFileReade
 	if buf, err := ioutil.ReadFile(filename); err != nil {
 		return nil, err
 	} else {
-		if len(buf) < len(magic) || !bytes.Equal(magic, buf[0:4]) {
-			return nil, NotAvroFile
-		}
-
-		dec := NewBinaryDecoder(buf)
-		blockDecoder := NewBinaryDecoder(nil)
-		reader := &DataFileReader{
-			data:         buf,
-			dec:          dec,
-			blockDecoder: blockDecoder,
-			datum:        datumReader,
-		}
-		reader.Seek(4) //skip the magic bytes
-
-		reader.header = newHeader()
-		if metaLength, err := dec.ReadMapStart(); err != nil {
-			return nil, err
-		} else {
-			for {
-				var i int64 = 0
-				for i < metaLength {
-					key, err := dec.ReadString()
-					if err != nil {
-						return nil, err
-					}
-
-					value, err := dec.ReadBytes()
-					if err != nil {
-						return nil, err
-					}
-					reader.header.meta[key] = value
-					i++
-				}
-				metaLength, err = dec.MapNext()
-				if err != nil {
-					return nil, err
-				} else if metaLength == 0 {
-					break
-				}
-			}
-		}
-		dec.ReadFixed(reader.header.sync)
-		//TODO codec?
-
-		schema, err := ParseSchema(string(reader.header.meta[schema_key]))
-		if err != nil {
-			return nil, err
-		}
-		reader.datum.SetSchema(schema)
-		reader.block = &DataBlock{}
-
-		if reader.hasNextBlock() {
-			if err := reader.NextBlock(); err != nil {
-				return nil, err
-			}
-		}
-
-		return reader, nil
+		return newDataFileReaderBytes(buf, datumReader)
 	}
+}
+
+// separated out mainly for testing currently, will be refactored later for io.Reader paradigm
+func newDataFileReaderBytes(buf []byte, datumReader DatumReader) (reader *DataFileReader, err error) {
+	if len(buf) < len(magic) || !bytes.Equal(magic, buf[0:4]) {
+		return nil, NotAvroFile
+	}
+
+	dec := NewBinaryDecoder(buf)
+	blockDecoder := NewBinaryDecoder(nil)
+	reader = &DataFileReader{
+		data:         buf,
+		dec:          dec,
+		blockDecoder: blockDecoder,
+		datum:        datumReader,
+	}
+
+	if reader.header, err = readObjFileHeader(dec); err != nil {
+		return nil, err
+	}
+
+	schema, err := ParseSchema(string(reader.header.Meta[schema_key]))
+	if err != nil {
+		return nil, err
+	}
+	reader.datum.SetSchema(schema)
+	reader.block = &DataBlock{}
+
+	if reader.hasNextBlock() {
+		if err := reader.NextBlock(); err != nil {
+			return nil, err
+		}
+	}
+
+	return reader, nil
 }
 
 // Switches the reading position in this DataFileReader to a provided value.
@@ -153,7 +146,6 @@ func (this *DataFileReader) Next(v interface{}) (bool, error) {
 			return false, nil
 		}
 	}
-	return false, nil
 }
 
 // Tells this DataFileReader to skip current block and move to next one.
@@ -177,12 +169,121 @@ func (this *DataFileReader) NextBlock() error {
 			block.NumEntries = blockCount
 			block.BlockSize = int(blockSize)
 			this.dec.ReadFixedWithBounds(block.Data, 0, int(block.BlockSize))
+			syncBuffer := make([]byte, sync_size)
 			this.dec.ReadFixed(syncBuffer)
-			if !bytes.Equal(syncBuffer, this.header.sync) {
+			if !bytes.Equal(syncBuffer, this.header.Sync) {
 				return InvalidSync
 			}
 			this.blockDecoder.SetBlock(this.block)
 		}
 	}
 	return nil
+}
+
+////////// DATA FILE WRITER
+
+// DataFileWriter lets you write object container files.
+type DataFileWriter struct {
+	output      io.Writer
+	outputEnc   *BinaryEncoder
+	datumWriter DatumWriter
+	sync        []byte
+
+	// current block is buffered until flush
+	blockBuf   *bytes.Buffer
+	blockCount int64
+	blockEnc   *BinaryEncoder
+}
+
+func NewDataFileWriter(output io.Writer, schema Schema, datumWriter DatumWriter) (writer *DataFileWriter, err error) {
+	encoder := NewBinaryEncoder(output)
+	datumWriter.SetSchema(schema)
+	sync := []byte("1234567890abcdef") // TODO come up with other sync value
+
+	header := &objFileHeader{
+		Magic: magic,
+		Meta: map[string][]byte{
+			schema_key: []byte(schema.String()),
+			codec_key:  []byte("null"),
+		},
+		Sync: sync,
+	}
+	headerWriter := NewSpecificDatumWriter()
+	headerWriter.SetSchema(objHeaderSchema)
+	if err = headerWriter.Write(header, encoder); err != nil {
+		return
+	}
+	blockBuf := &bytes.Buffer{}
+	writer = &DataFileWriter{
+		output:      output,
+		outputEnc:   encoder,
+		datumWriter: datumWriter,
+		sync:        sync,
+		blockBuf:    blockBuf,
+		blockEnc:    NewBinaryEncoder(blockBuf),
+	}
+
+	return
+}
+
+// Write out a single datum.
+//
+// Encoded datums are buffered internally and will not be written to the
+// underlying io.Writer until Flush() is called.
+func (w *DataFileWriter) Write(v interface{}) error {
+	w.blockCount++
+	err := w.datumWriter.Write(v, w.blockEnc)
+	return err
+}
+
+// Flush out any previously written datums to our underlying io.Writer.
+// Does nothing if no datums had previously been written.
+//
+// It's up to the library user to decide how often to flush; doing it
+// often will spend a lot of time on tiny I/O but save memory.
+func (w *DataFileWriter) Flush() error {
+	if w.blockCount > 0 {
+		return w.actuallyFlush()
+	}
+	return nil
+}
+
+func (w *DataFileWriter) actuallyFlush() error {
+	// Write the block count and length directly to output
+	w.outputEnc.WriteLong(w.blockCount)
+	w.outputEnc.WriteLong(int64(w.blockBuf.Len()))
+
+	// copy the buffer which is the block buf to output
+	_, err := io.Copy(w.output, w.blockBuf)
+	if err != nil {
+		return err
+	}
+
+	// write the sync bytes
+	_, err = w.output.Write(w.sync)
+	if err != nil {
+		return err
+	}
+
+	w.blockBuf.Reset() // allow blockbuf's internal memory to be reused
+	w.blockCount = 0
+	return nil
+}
+
+// Close this DataFileWriter.
+// This is required to finish out the data file format.
+// After Close() is called, this DataFileWriter cannot be used anymore.
+func (w *DataFileWriter) Close() error {
+	err := w.Flush() // flush anything remaining
+	if err == nil {
+		// Do an empty flush to signal end of data file format
+		err = w.actuallyFlush()
+
+		if err == nil {
+			// Clean up references.
+			w.output, w.outputEnc, w.datumWriter = nil, nil, nil
+			w.blockBuf, w.blockEnc = nil, nil
+		}
+	}
+	return err
 }

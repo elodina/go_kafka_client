@@ -114,10 +114,17 @@ func (this *BinaryDecoder) ReadInt() (int32, error) {
 	var value uint32
 	var b uint8
 	var offset int
+	bufLen := int64(len(this.buf))
+
 	for {
 		if offset == max_int_buf_size {
 			return 0, IntOverflow
 		}
+
+		if this.pos >= bufLen {
+			return 0, InvalidInt
+		}
+
 		b = this.buf[this.pos]
 		value |= uint32(b&0x7F) << uint(7*offset)
 		this.pos++
@@ -134,14 +141,22 @@ func (this *BinaryDecoder) ReadLong() (int64, error) {
 	var value uint64
 	var b uint8
 	var offset int
+	bufLen := int64(len(this.buf))
+
 	for {
 		if offset == max_long_buf_size {
 			return 0, LongOverflow
 		}
+
+		if this.pos >= bufLen {
+			return 0, InvalidLong
+		}
+
 		b = this.buf[this.pos]
 		value |= uint64(b&0x7F) << uint(7*offset)
 		this.pos++
 		offset++
+
 		if b&0x80 == 0 {
 			break
 		}

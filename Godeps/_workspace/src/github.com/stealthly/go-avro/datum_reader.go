@@ -166,7 +166,7 @@ func (this *SpecificDatumReader) readValue(field Schema, reflectField reflect.Va
 		return this.mapRecord(field.(*RecursiveSchema).Actual, reflectField, dec)
 	}
 
-	return reflect.ValueOf(nil), fmt.Errorf("Unknown field type: %s", field.Type())
+	return reflect.ValueOf(nil), fmt.Errorf("Unknown field type: %d", field.Type())
 }
 
 func (this *SpecificDatumReader) setValue(field *SchemaField, where reflect.Value, what reflect.Value) {
@@ -190,6 +190,10 @@ func (this *SpecificDatumReader) mapArray(field Schema, reflectField reflect.Val
 	} else {
 		array := reflect.MakeSlice(reflectField.Type(), 0, 0)
 		for {
+			if arrayLength == 0 {
+				break
+			}
+
 			arrayPart := reflect.MakeSlice(reflectField.Type(), int(arrayLength), int(arrayLength))
 			var i int64 = 0
 			for ; i < arrayLength; i++ {
@@ -215,8 +219,6 @@ func (this *SpecificDatumReader) mapArray(field Schema, reflectField reflect.Val
 			arrayLength, err = dec.ArrayNext()
 			if err != nil {
 				return reflect.ValueOf(arrayLength), err
-			} else if arrayLength == 0 {
-				break
 			}
 		}
 		return array, nil
@@ -229,6 +231,10 @@ func (this *SpecificDatumReader) mapMap(field Schema, reflectField reflect.Value
 	} else {
 		resultMap := reflect.MakeMap(reflectField.Type())
 		for {
+			if mapLength == 0 {
+				break
+			}
+
 			var i int64 = 0
 			for ; i < mapLength; i++ {
 				key, err := this.readValue(&StringSchema{}, reflectField, dec)
@@ -249,8 +255,6 @@ func (this *SpecificDatumReader) mapMap(field Schema, reflectField reflect.Value
 			mapLength, err = dec.MapNext()
 			if err != nil {
 				return reflect.ValueOf(mapLength), err
-			} else if mapLength == 0 {
-				break
 			}
 		}
 		return resultMap, nil
@@ -406,7 +410,7 @@ func (this *GenericDatumReader) readValue(field Schema, dec Decoder) (interface{
 		return this.mapRecord(field.(*RecursiveSchema).Actual, dec)
 	}
 
-	return nil, fmt.Errorf("Unknown field type: %s", field.Type())
+	return nil, fmt.Errorf("Unknown field type: %d", field.Type())
 }
 
 func (this *GenericDatumReader) mapArray(field Schema, dec Decoder) ([]interface{}, error) {
@@ -415,6 +419,9 @@ func (this *GenericDatumReader) mapArray(field Schema, dec Decoder) ([]interface
 	} else {
 		array := make([]interface{}, 0)
 		for {
+			if arrayLength == 0 {
+				break
+			}
 			arrayPart := make([]interface{}, arrayLength, arrayLength)
 			var i int64 = 0
 			for ; i < arrayLength; i++ {
@@ -432,8 +439,6 @@ func (this *GenericDatumReader) mapArray(field Schema, dec Decoder) ([]interface
 			arrayLength, err = dec.ArrayNext()
 			if err != nil {
 				return nil, err
-			} else if arrayLength == 0 {
-				break
 			}
 		}
 		return array, nil
@@ -456,6 +461,9 @@ func (this *GenericDatumReader) mapMap(field Schema, dec Decoder) (map[string]in
 	} else {
 		resultMap := make(map[string]interface{})
 		for {
+			if mapLength == 0 {
+				break
+			}
 			var i int64 = 0
 			for ; i < mapLength; i++ {
 				key, err := this.readValue(&StringSchema{}, dec)
@@ -464,7 +472,7 @@ func (this *GenericDatumReader) mapMap(field Schema, dec Decoder) (map[string]in
 				}
 				val, err := this.readValue(field.(*MapSchema).Values, dec)
 				if err != nil {
-					return nil, nil
+					return nil, err
 				}
 				resultMap[key.(string)] = val
 			}
@@ -472,8 +480,6 @@ func (this *GenericDatumReader) mapMap(field Schema, dec Decoder) (map[string]in
 			mapLength, err = dec.MapNext()
 			if err != nil {
 				return nil, err
-			} else if mapLength == 0 {
-				break
 			}
 		}
 		return resultMap, nil
@@ -484,8 +490,12 @@ func (this *GenericDatumReader) mapUnion(field Schema, dec Decoder) (interface{}
 	if unionType, err := dec.ReadInt(); err != nil {
 		return nil, err
 	} else {
-		union := field.(*UnionSchema).Types[unionType]
-		return this.readValue(union, dec)
+		if unionType >= 0 && unionType < int32(len(field.(*UnionSchema).Types)) {
+			union := field.(*UnionSchema).Types[unionType]
+			return this.readValue(union, dec)
+		} else {
+			return nil, errors.New("Union type overflow")
+		}
 	}
 }
 
@@ -502,7 +512,10 @@ func (this *GenericDatumReader) mapRecord(field Schema, dec Decoder) (*GenericRe
 
 	recordSchema := field.(*RecordSchema)
 	for i := 0; i < len(recordSchema.Fields); i++ {
-		this.findAndSet(record, recordSchema.Fields[i], dec)
+		err := this.findAndSet(record, recordSchema.Fields[i], dec)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return record, nil

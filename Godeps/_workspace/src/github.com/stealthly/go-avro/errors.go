@@ -17,6 +17,12 @@ var NegativeBytesLength = errors.New("Negative bytes length")
 // Happens when given value to decode as bool is neither 0x00 nor 0x01.
 var InvalidBool = errors.New("Invalid bool value")
 
+// Happens when given value to decode as a int is invalid
+var InvalidInt = errors.New("Invalid int value")
+
+// Happens when given value to decode as a long is invalid
+var InvalidLong = errors.New("Invalid long value")
+
 // Happens when given value to decode as string has either negative or undecodable length.
 var InvalidStringLength = errors.New("Invalid string length")
 

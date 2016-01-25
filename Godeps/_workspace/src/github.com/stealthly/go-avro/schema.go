@@ -798,6 +798,7 @@ func (this *UnionSchema) MarshalJSON() ([]byte, error) {
 
 // FixedSchema implements Schema and represents Avro fixed type.
 type FixedSchema struct {
+	Namespace  string
 	Name       string
 	Size       int
 	Properties map[string]string
@@ -850,6 +851,40 @@ func (this *FixedSchema) MarshalJSON() ([]byte, error) {
 		Size: this.Size,
 		Name: this.Name,
 	})
+}
+
+func GetFullName(schema Schema) string {
+	switch schema.Type() {
+	case Record:
+		{
+			recordSchema := schema.(*RecordSchema)
+			if recordSchema.Namespace == "" {
+				return recordSchema.GetName()
+			} else {
+				return fmt.Sprintf("%s.%s", recordSchema.Namespace, recordSchema.GetName())
+			}
+		}
+	case Enum:
+		{
+			enumSchema := schema.(*EnumSchema)
+			if enumSchema.Namespace == "" {
+				return enumSchema.GetName()
+			} else {
+				return fmt.Sprintf("%s.%s", enumSchema.Namespace, enumSchema.GetName())
+			}
+		}
+	case Fixed:
+		{
+			fixedSchema := schema.(*FixedSchema)
+			if fixedSchema.Namespace == "" {
+				return fixedSchema.GetName()
+			} else {
+				return fmt.Sprintf("%s.%s", fixedSchema.Namespace, fixedSchema.GetName())
+			}
+		}
+	default:
+		return schema.GetName()
+	}
 }
 
 // Parses a given file.
@@ -986,7 +1021,9 @@ func parseFixedSchema(v map[string]interface{}, registry map[string]Schema, name
 	if size, ok := v[schema_sizeField].(float64); !ok {
 		return nil, InvalidFixedSize
 	} else {
-		return addSchema(getFullName(v[schema_nameField].(string), namespace), &FixedSchema{Name: v[schema_nameField].(string), Size: int(size), Properties: getProperties(v)}, registry)
+		schema := &FixedSchema{Name: v[schema_nameField].(string), Size: int(size), Properties: getProperties(v)}
+		setOptionalField(&schema.Namespace, v, schema_namespaceField)
+		return addSchema(getFullName(v[schema_nameField].(string), namespace), schema, registry)
 	}
 }
 
@@ -1025,7 +1062,11 @@ func parseRecordSchema(v map[string]interface{}, registry map[string]Schema, nam
 func parseSchemaField(i interface{}, registry map[string]Schema, namespace string) (*SchemaField, error) {
 	switch v := i.(type) {
 	case map[string]interface{}:
-		schemaField := &SchemaField{Name: v[schema_nameField].(string)}
+		name, ok := v[schema_nameField].(string)
+		if !ok {
+			return nil, fmt.Errorf("Schema field name missing")
+		}
+		schemaField := &SchemaField{Name: name}
 		setOptionalField(&schemaField.Doc, v, schema_docField)
 		fieldType, err := schemaByType(v[schema_typeField], registry, namespace)
 		if err != nil {

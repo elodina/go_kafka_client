@@ -16,13 +16,12 @@ type NetworkClient struct {
 	connections             map[string]*net.TCPConn
 	requiredAcks            int
 	ackTimeoutMs            int32
-	metadataChan            chan *RecordMetadata
 }
 
 type NetworkClientConfig struct {
 }
 
-func NewNetworkClient(config NetworkClientConfig, connector Connector, producerConfig *ProducerConfig, metadataChan chan *RecordMetadata) *NetworkClient {
+func NewNetworkClient(config NetworkClientConfig, connector Connector, producerConfig *ProducerConfig) *NetworkClient {
 	client := &NetworkClient{}
 	client.connector = connector
 	client.requiredAcks = producerConfig.RequiredAcks
@@ -30,15 +29,14 @@ func NewNetworkClient(config NetworkClientConfig, connector Connector, producerC
 	selectorConfig := NewSelectorConfig(producerConfig)
 	client.selector = NewSelector(selectorConfig)
 	client.connections = make(map[string]*net.TCPConn, 0)
-	client.metadataChan = metadataChan
 	return client
 }
 
 func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRecord) {
 	leader, err := nc.connector.GetLeader(topic, partition)
 	if err != nil {
-		for i := 0; i < len(batch); i++ {
-			nc.metadataChan <- &RecordMetadata{Error: err}
+		for _, record := range batch {
+			record.metadataChan <- &RecordMetadata{Error: err}
 		}
 	}
 
@@ -51,11 +49,11 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 	responseChan := nc.selector.Send(leader, request)
 
 	if nc.requiredAcks > 0 {
-		go listenForResponse(topic, partition, batch, responseChan, nc.metadataChan)
+		go listenForResponse(topic, partition, batch, responseChan)
 	} else {
 		// acks = 0 case, just complete all requests
-		for i := 0; i < len(batch); i++ {
-			nc.metadataChan <- &RecordMetadata{
+		for _, record := range batch {
+			record.metadataChan <- &RecordMetadata{
 				Offset:    -1,
 				Topic:     topic,
 				Partition: partition,
@@ -65,11 +63,11 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 	}
 }
 
-func listenForResponse(topic string, partition int32, batch []*ProducerRecord, responseChan <-chan *rawResponseAndError, metadataChan chan *RecordMetadata) {
+func listenForResponse(topic string, partition int32, batch []*ProducerRecord, responseChan <-chan *rawResponseAndError) {
 	response := <-responseChan
 	if response.err != nil {
-		for i := 0; i < len(batch); i++ {
-			metadataChan <- &RecordMetadata{Error: response.err}
+		for _, record := range batch {
+			record.metadataChan <- &RecordMetadata{Error: response.err}
 		}
 	}
 
@@ -77,15 +75,15 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 	produceResponse := new(ProduceResponse)
 	decodingErr := produceResponse.Read(decoder)
 	if decodingErr != nil {
-		for i := 0; i < len(batch); i++ {
-			metadataChan <- &RecordMetadata{Error: decodingErr.err}
+		for _, record := range batch {
+			record.metadataChan <- &RecordMetadata{Error: decodingErr.err}
 		}
 	}
 
 	status := produceResponse.Status[topic][partition]
 	currentOffset := status.Offset
-	for i := 0; i < len(batch); i++ {
-		metadataChan <- &RecordMetadata{
+	for _, record := range batch {
+		record.metadataChan <- &RecordMetadata{
 			Topic:     topic,
 			Partition: partition,
 			Offset:    currentOffset,

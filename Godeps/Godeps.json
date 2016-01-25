@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/stealthly/go_kafka_client",
-	"GoVersion": "go1.4.2",
+	"GoVersion": "go1.5.1",
 	"Packages": [
 		"./..."
 	],
@@ -31,23 +31,24 @@
 		},
 		{
 			"ImportPath": "github.com/elodina/go-mesos-utils",
-			"Rev": "be43c61dc5748d160e9697695770703b8462f1db"
+			"Rev": "9e15bc5c8feccdd60b51ff4b82da1028e88e693f"
 		},
 		{
 			"ImportPath": "github.com/gogo/protobuf/proto",
-			"Rev": "8edb24c179ed858a38f18920d9005c2dde05ec17"
+			"Comment": "v0.1-112-g5a3eea0",
+			"Rev": "5a3eea08ce6834526a1526d6562d2004562505b1"
 		},
 		{
 			"ImportPath": "github.com/golang/glog",
-			"Rev": "d1c4472bf2efd3826f2b5bdcc02d8416798d678c"
+			"Rev": "fca8c8854093a154ff1eb580aae10276ad6b1b5f"
 		},
 		{
 			"ImportPath": "github.com/golang/protobuf/proto",
-			"Rev": "ab974be44dc3b7b8a1fb306fb32fe9b9f3864b3d"
+			"Rev": "2402d76f3d41f928c7902a765dfc872356dd3aad"
 		},
 		{
 			"ImportPath": "github.com/golang/snappy",
-			"Rev": "f4b10fa94214ba1b3d4068beeda8f920bf352cf0"
+			"Rev": "723cc1e459b8eea2dea4583200fd60757d40097a"
 		},
 		{
 			"ImportPath": "github.com/jimlawless/cfg",
@@ -95,46 +96,52 @@
 		},
 		{
 			"ImportPath": "github.com/pborman/uuid",
-			"Rev": "ca53cad383cad2479bbba7f7a1a05797ec1386e4"
+			"Rev": "dee7705ef7b324f27ceb85a121c61f2c2e8ce988"
 		},
 		{
 			"ImportPath": "github.com/rcrowley/go-metrics",
-			"Rev": "dee209f2455f101a5e4e593dea94872d2c62d85d"
+			"Rev": "1ce93efbc8f9c568886b2ef85ce305b2217b3de3"
 		},
 		{
 			"ImportPath": "github.com/samuel/go-zookeeper/zk",
-			"Rev": "d0e0d8e11f318e000a8cc434616d69e329edc374"
+			"Rev": "218e9c81c0dd8b3b18172b2bbfad92cc7d6db55f"
 		},
 		{
 			"ImportPath": "github.com/satori/go.uuid",
-			"Rev": "afe1e2ddf0f05b7c29d388a3f8e76cb15c2231ca"
+			"Rev": "d41af8bb6a7704f00bc3b7cba9355ae6a5a80048"
 		},
 		{
 			"ImportPath": "github.com/stealthly/go-avro",
-			"Rev": "c03139a9864e594a44e570f538d2331f42561347"
+			"Comment": "v0.1.0.0-41-g3938f0d",
+			"Rev": "3938f0d4e7eb7e0f66bb35c6d65c3c241072049c"
 		},
 		{
 			"ImportPath": "github.com/stealthly/siesta",
-			"Comment": "v0.1.0.0-47-g5b8a407",
-			"Rev": "5b8a407d4c1a00c5acbb75f204c41be94c74acf8"
+			"Comment": "v0.1.0.0-73-ge3b7a2b",
+			"Rev": "e3b7a2b73e030fcde5955923d0c0fa7f25908502"
 		},
 		{
 			"ImportPath": "github.com/stretchr/objx",
-			"Rev": "cbeaeb16a013161a98496fad62933b1d21786672"
+			"Rev": "1a9d0bb9f541897e62256577b352fdbc1fb4fd94"
 		},
 		{
 			"ImportPath": "github.com/stretchr/testify/assert",
-			"Comment": "v1.0-12-g7e4a149",
-			"Rev": "7e4a149930b09fe4c2b134c50ce637457ba6e966"
+			"Comment": "v1.0",
+			"Rev": "232e8563676cd15c3a36ba5e675ad4312ac4cb11"
 		},
 		{
 			"ImportPath": "github.com/stretchr/testify/mock",
-			"Comment": "v1.0-12-g7e4a149",
-			"Rev": "7e4a149930b09fe4c2b134c50ce637457ba6e966"
+			"Comment": "v1.0",
+			"Rev": "232e8563676cd15c3a36ba5e675ad4312ac4cb11"
 		},
 		{
 			"ImportPath": "golang.org/x/net/context",
-			"Rev": "cbcac7bb8415db9b6cb4d1ebab1dc9afbd688b97"
+			"Rev": "961116aeebe66bfb58bb4d51818c70d256acbbb8"
+		},
+		{
+			"ImportPath": "gopkg.in/cihub/seelog.v2",
+			"Comment": "go1.1",
+			"Rev": "791566c9a7e3d7342f2fc8bc017e1032c8df0e8f"
 		},
 		{
 			"ImportPath": "gopkg.in/fsnotify.v1",
