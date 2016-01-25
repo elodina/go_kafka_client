@@ -17,18 +17,18 @@ package framework
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
 
-	"github.com/elodina/go-mesos-utils"
+	"time"
+
+	utils "github.com/elodina/go-mesos-utils"
 	"github.com/elodina/go-mesos-utils/pretty"
 	"github.com/golang/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	util "github.com/mesos/mesos-go/mesosutil"
 	"github.com/mesos/mesos-go/scheduler"
-	"time"
 )
 
 const (
@@ -60,10 +60,6 @@ func (s *Scheduler) Start() error {
 
 	ctrlc := make(chan os.Signal, 1)
 	signal.Notify(ctrlc, os.Interrupt)
-
-	if err := s.resolveDeps(); err != nil {
-		return err
-	}
 
 	s.cluster = NewCluster()
 	s.cluster.Load()
@@ -136,7 +132,7 @@ func (s *Scheduler) ResourceOffers(driver scheduler.SchedulerDriver, offers []*m
 	for _, offer := range offers {
 		declineReason := s.acceptOffer(driver, offer)
 		if declineReason != "" {
-			driver.DeclineOffer(offer.GetId(), &mesos.Filters{RefuseSeconds: proto.Float64(1)})
+			driver.DeclineOffer(offer.GetId(), &mesos.Filters{RefuseSeconds: proto.Float64(10)})
 			Logger.Debugf("Declined offer: %s", declineReason)
 		}
 	}
@@ -229,7 +225,7 @@ func (s *Scheduler) launchTask(task Task, offer *mesos.Offer) {
 	task.Data().SlaveID = taskInfo.GetSlaveId().GetValue()
 	task.Data().TaskID = taskInfo.GetTaskId().GetValue()
 
-	s.driver.LaunchTasks([]*mesos.OfferID{offer.GetId()}, []*mesos.TaskInfo{taskInfo}, &mesos.Filters{RefuseSeconds: proto.Float64(1)})
+	s.driver.LaunchTasks([]*mesos.OfferID{offer.GetId()}, []*mesos.TaskInfo{taskInfo}, &mesos.Filters{RefuseSeconds: proto.Float64(10)})
 }
 
 func (s *Scheduler) onTaskStarted(id string, status *mesos.TaskStatus) {
@@ -308,21 +304,6 @@ func (s *Scheduler) reconcileTasks(force bool) {
 			}
 		}
 	}
-}
-
-func (s *Scheduler) resolveDeps() error {
-	files, _ := ioutil.ReadDir("./")
-	for _, file := range files {
-		if !file.IsDir() && executorMask.MatchString(file.Name()) {
-			Config.Executor = file.Name()
-		}
-	}
-
-	if Config.Executor == "" {
-		return fmt.Errorf("%s not found in current dir", executorMask)
-	}
-
-	return nil
 }
 
 func getScalarResources(offer *mesos.Offer, resourceName string) float64 {

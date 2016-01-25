@@ -21,9 +21,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/stealthly/go_kafka_client/mesos/framework"
 	"math"
+
+	"github.com/stealthly/go_kafka_client/mesos/framework"
 )
+
+var executor = flag.String("executor", "", "Executor binary name")
 
 func main() {
 	if err := exec(); err != nil {
@@ -115,8 +118,10 @@ func handleHelpAdd() {
 
 Types:
     mirrormaker
+    consumer
 
 Options:
+    --executor: Executor binary name.
     --api: API host:port for advertizing. Optional if GM_API env is set.
     --cpu: CPUs per task. Defaults to 0.5.
     --mem: Mem per task. Defaults to 512.
@@ -145,6 +150,7 @@ Options:
     --preserve.order: E.g. message sequence 1, 2, 3, 4, 5 will remain 1, 2, 3, 4, 5 in destination topic.
     --prefix: Destination topic prefix.")
     --queue.size: Maximum number of messages that are buffered between the consumer and producer.
+    --options: Additional options for executor, separated by ';'.
     `)
 	printIDExprExamples()
 	printConstraintExamples()
@@ -259,6 +265,8 @@ func handleAdd() error {
 	switch addType {
 	case framework.TaskTypeMirrorMaker:
 		return handleAddMirrorMaker()
+	case framework.TaskTypeConsumer:
+		return handleAddConsumer()
 	default:
 		{
 			handleHelp("add")
@@ -288,12 +296,50 @@ func handleAddMirrorMaker() error {
 		return err
 	}
 
+	if *executor == "" {
+		return errors.New("Executor name required")
+	}
+
 	request := framework.NewApiRequest(framework.Config.Api + "/api/add")
 	request.PutString("type", framework.TaskTypeMirrorMaker)
 	request.PutString("id", id)
 	request.PutFloat("cpu", cpu)
 	request.PutFloat("mem", mem)
 	request.PutString("constraints", constraints)
+	request.PutString("executor", *executor)
+
+	response := request.Get()
+
+	fmt.Println(response.Message)
+
+	return nil
+}
+
+func handleAddConsumer() error {
+	id := stripArgument()
+	if id == "" {
+		return errors.New("No task id supplied to add")
+	}
+	var (
+		api = flag.String("api", "", "API host:port")
+		cpu = flag.Float64("cpu", 0.1, "CPUs per task")
+		mem = flag.Float64("mem", 128, "Mem per task")
+	)
+	ParseFlags("add")
+	if err := resolveApi(*api); err != nil {
+		return err
+	}
+
+	if *executor == "" {
+		return errors.New("Executor name required")
+	}
+
+	request := framework.NewApiRequest(framework.Config.Api + "/api/add")
+	request.PutString("type", framework.TaskTypeConsumer)
+	request.PutString("id", id)
+	request.PutFloat("cpu", *cpu)
+	request.PutFloat("mem", *mem)
+	request.PutString("executor", *executor)
 
 	response := request.Get()
 
@@ -396,6 +442,8 @@ func handleUpdate() error {
 	var prefix string
 	var channelSize int64
 	var constraints string
+	var metricsTopic string
+	var options string
 
 	flag.StringVar(&api, "api", "", "API host:port for advertizing.")
 	flag.Float64Var(&cpu, "cpu", math.SmallestNonzeroFloat64, "CPUs per task.")
@@ -411,6 +459,8 @@ func handleUpdate() error {
 	flag.StringVar(&prefix, "prefix", "", "Destination topic prefix.")
 	flag.Int64Var(&channelSize, "queue.size", math.MinInt64, "Maximum number of messages that are buffered between the consumer and producer.")
 	flag.StringVar(&constraints, "constraints", "", "Constraints (hostname=like:^master$,rack=like:^1.*$).")
+	flag.StringVar(&metricsTopic, "metrics.topic", "", "Kafka topic to produce mirror maker consumer metrics to. Optional and turned off by default.")
+	flag.StringVar(&options, "options", "", "Additional options")
 	ParseFlags("update")
 
 	if err := resolveApi(api); err != nil {
@@ -436,6 +486,8 @@ func handleUpdate() error {
 	}
 	request.PutString("prefix", prefix)
 	request.PutInt("queue.size", channelSize)
+	request.PutString("metrics.topic", metricsTopic)
+	request.PutString("options", options)
 
 	response := request.Get()
 

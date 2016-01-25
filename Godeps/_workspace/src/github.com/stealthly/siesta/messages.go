@@ -158,7 +158,17 @@ func (md *Message) Read(decoder Decoder) *DecodingError {
 			md.Nested = messages
 		}
 	case CompressionSnappy:
-		panic("Not implemented yet")
+		{
+			unsnappied, err := snappyDecode(md.Value)
+			if err != nil {
+				return NewDecodingError(err, reasonMalformedSnappyData)
+			}
+			messages, decodingErr := ReadMessageSet(NewBinaryDecoder(unsnappied))
+			if decodingErr != nil {
+				return decodingErr
+			}
+			md.Nested = messages
+		}
 	case CompressionLZ4:
 		panic("Not implemented yet")
 	}
@@ -195,4 +205,5 @@ var (
 	reasonInvalidMessageValue           = "Invalid Message value"
 	reasonNoGzipData                    = "No data to uncompress for GZip encoded message"
 	reasonMalformedGzipData             = "Malformed GZip encoded message"
+	reasonMalformedSnappyData           = "Malformed Snappy encoded message"
 )

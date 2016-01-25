@@ -1,8 +1,6 @@
 # siesta
 A low level Apache Kafka library in Go
 
-*producer* branch is a raw draft
-
 [![Build Status](https://travis-ci.org/stealthly/siesta.svg?branch=master)](https://travis-ci.org/stealthly/siesta)
 
 ***Installation:***

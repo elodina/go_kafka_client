@@ -16,32 +16,31 @@ limitations under the License. */
 package main
 
 import (
-	"github.com/stealthly/siesta"
-	"time"
 	"fmt"
-    "os"
-    "strconv"
-    "strings"
+	"github.com/stealthly/siesta"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
-
 func main() {
-    args := os.Args
+	args := os.Args
 
-    if len(args) != 5 {
-        fmt.Println("USAGE: consumer <brokerlist> <topic> <partition> <duration (how many seconds to run)>")
-    }
+	if len(args) != 5 {
+		fmt.Println("USAGE: consumer <brokerlist> <topic> <partition> <duration (how many seconds to run)>")
+	}
 
-    brokerList := args[1]
+	brokerList := args[1]
 	topic := args[2]
 	partition, err := strconv.Atoi(args[3])
-    if err != nil {
-        panic(err)
-    }
+	if err != nil {
+		panic(err)
+	}
 	seconds, err := strconv.Atoi(args[4])
-    if err != nil {
-        panic(err)
-    }
+	if err != nil {
+		panic(err)
+	}
 
 	testSiesta(brokerList, topic, int32(partition), seconds)
 }
@@ -49,13 +48,13 @@ func main() {
 func testSiesta(brokerList string, topic string, partition int32, seconds int) {
 	stop := false
 
-    config := siesta.NewConnectorConfig()
-    config.BrokerList = strings.Split(brokerList, ",")
+	config := siesta.NewConnectorConfig()
+	config.BrokerList = strings.Split(brokerList, ",")
 
 	connector, err := siesta.NewDefaultConnector(config)
-    if err != nil {
-        panic(err)
-    }
+	if err != nil {
+		panic(err)
+	}
 
 	messageChannel := make(chan []*siesta.MessageAndMetadata, 10000)
 	count := 0
@@ -81,10 +80,10 @@ func testSiesta(brokerList string, topic string, partition int32, seconds int) {
 	offset := int64(0)
 	for !stop {
 		response, err := connector.Fetch(topic, partition, offset)
-        if err != nil {
-            panic(err)
-        }
-        messages, err := response.GetMessages()
+		if err != nil {
+			panic(err)
+		}
+		messages, err := response.GetMessages()
 		if err != nil {
 			panic(err)
 		}

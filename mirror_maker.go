@@ -75,17 +75,20 @@ type MirrorMakerConfig struct {
 	// Defines whether add timings to message or not.
 	// Note: used only for avro encoded messages
 	TimingsProducerConfig string
+
+	// ProduceMetricsTopic is a topic where all mirror maker consumer metrics will be produced to.
+	// Nothing will be produced if left blank.
+	ProduceMetricsTopic string
 }
 
 // Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
 	return &MirrorMakerConfig{
-		KeyEncoder:            &ByteEncoder{},
-		ValueEncoder:          &ByteEncoder{},
-		KeyDecoder:            &ByteDecoder{},
-		ValueDecoder:          &ByteDecoder{},
-		ProducerConstructor:   NewSaramaProducer,
-		TimingsProducerConfig: "",
+		KeyEncoder:          &ByteEncoder{},
+		ValueEncoder:        &ByteEncoder{},
+		KeyDecoder:          &ByteDecoder{},
+		ValueDecoder:        &ByteDecoder{},
+		ProducerConstructor: NewSaramaProducer,
 	}
 }
 
@@ -93,6 +96,7 @@ func NewMirrorMakerConfig() *MirrorMakerConfig {
 // It uses a Kafka consumer to consume messages from the source cluster, and re-publishes those messages to the target cluster.
 type MirrorMaker struct {
 	config          *MirrorMakerConfig
+	metricReporter  *KafkaMetricReporter
 	consumers       []*Consumer
 	producers       []Producer
 	messageChannels []chan *Message
@@ -121,6 +125,7 @@ func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
 // Starts the MirrorMaker. This method is blocking and should probably be run in a separate goroutine.
 func (this *MirrorMaker) Start() {
 	this.initializeMessageChannels()
+	this.startMetricsProducer()
 	this.startConsumers()
 	this.startProducers()
 	<-this.stopped
@@ -164,7 +169,8 @@ func (this *MirrorMaker) startConsumers() {
 		if err != nil {
 			panic(err)
 		}
-		config.NumWorkers = 1
+		//Let the NumWorkers be set via consumer configs
+		//config.NumWorkers = 1
 		config.AutoOffsetReset = SmallestOffset
 		config.Coordinator = NewZookeeperCoordinator(zkConfig)
 		config.WorkerFailureCallback = func(_ *WorkerManager) FailedDecision {
@@ -205,6 +211,9 @@ func (this *MirrorMaker) startConsumers() {
 			go consumer.StartWildcard(NewBlackList(this.config.Blacklist), this.config.NumStreams)
 		} else {
 			panic("Consume pattern not specified")
+		}
+		if this.config.ProduceMetricsTopic != "" {
+			go consumer.Metrics().WriteJSON(time.Second, this.metricReporter)
 		}
 	}
 }
@@ -262,6 +271,19 @@ func (this *MirrorMaker) startProducers() {
 			go this.produceRoutine(producer, 0)
 		}
 		go this.failedRoutine(producer)
+	}
+}
+
+func (this *MirrorMaker) startMetricsProducer() {
+	if this.config.ProduceMetricsTopic != "" {
+		conf, err := ProducerConfigFromFile(this.config.ProducerConfig)
+		if err != nil {
+			panic(err)
+		}
+		conf.Partitioner = NewRandomPartitioner
+		conf.KeyEncoder = &ByteEncoder{}
+		conf.ValueEncoder = &ByteEncoder{}
+		this.metricReporter = NewKafkaMetricReporter(this.config.ProduceMetricsTopic, conf)
 	}
 }
 

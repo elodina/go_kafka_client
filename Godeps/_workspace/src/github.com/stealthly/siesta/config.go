@@ -17,6 +17,7 @@ package siesta
 
 import (
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -63,4 +64,8 @@ func setInt32Config(where *int32, what string) error {
 		return err
 	}
 	return nil
+}
+
+func setStringsConfig(where *[]string, what string) {
+	*where = strings.Split(what, ",")
 }

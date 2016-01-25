@@ -171,6 +171,9 @@ type ConsumerConfig struct {
 	/* Config to skip corrupted messages. If set to true the consumer will increment the topic-partition offset by 1
 	   on each corrupted response until the corrupted part of data is over. Turned off by default. */
 	SkipCorruptedMessages bool
+
+	/* RoutinePoolSize defines the size of routine pools created within this consumer. */
+	RoutinePoolSize int
 }
 
 //DefaultConsumerConfig creates a ConsumerConfig with sane defaults. Note that several required config entries (like Strategy and callbacks) are still not set.
@@ -220,6 +223,8 @@ func DefaultConsumerConfig() *ConsumerConfig {
 
 	config.KeyDecoder = &ByteDecoder{}
 	config.ValueDecoder = config.KeyDecoder
+
+	config.RoutinePoolSize = 50
 
 	return config
 }
@@ -492,6 +497,15 @@ func ConsumerConfigFromFile(filename string) (*ConsumerConfig, error) {
 		return nil, err
 	}
 	if err := setDurationConfig(&config.FetchRequestBackoff, c["fetch.request.backoff"]); err != nil {
+		return nil, err
+	}
+	if err := setDurationConfig(&config.DeploymentTimeout, c["deployment.timeout"]); err != nil {
+		return nil, err
+	}
+	if err := setDurationConfig(&config.BarrierTimeout, c["barrier.timeout"]); err != nil {
+		return nil, err
+	}
+	if err := setIntConfig(&config.RoutinePoolSize, c["routine.pool.size"]); err != nil {
 		return nil, err
 	}
 	setBoolConfig(&config.BlueGreenDeploymentEnabled, c["blue.green.deployment.enabled"])

@@ -14,57 +14,58 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 package main
+
 import (
-    "github.com/stealthly/siesta"
-    "time"
-    "fmt"
+	"fmt"
+	"github.com/stealthly/siesta"
+	"time"
 )
 
 func main() {
-    config := siesta.NewConnectorConfig()
-    config.BrokerList = []string{"localhost:9092"}
+	config := siesta.NewConnectorConfig()
+	config.BrokerList = []string{"localhost:9092"}
 
-    connector, err := siesta.NewDefaultConnector(config)
-    if err != nil {
-        panic(err)
-    }
+	connector, err := siesta.NewDefaultConnector(config)
+	if err != nil {
+		panic(err)
+	}
 
-    producerConfig := &siesta.ProducerConfig{
-        BatchSize:       10000,
-        ClientID:        "siesta",
-        MaxRequests:     10,
-        SendRoutines:    10,
-        ReceiveRoutines: 10,
-        ReadTimeout:     5 * time.Second,
-        WriteTimeout:    5 * time.Second,
-        RequiredAcks:    1,
-        AckTimeoutMs:    2000,
-        Linger:          1 * time.Second,
-    }
-    producer := siesta.NewKafkaProducer(producerConfig, siesta.ByteSerializer, siesta.StringSerializer, connector)
+	producerConfig := &siesta.ProducerConfig{
+		BatchSize:       10000,
+		ClientID:        "siesta",
+		MaxRequests:     10,
+		SendRoutines:    10,
+		ReceiveRoutines: 10,
+		ReadTimeout:     5 * time.Second,
+		WriteTimeout:    5 * time.Second,
+		RequiredAcks:    1,
+		AckTimeoutMs:    2000,
+		Linger:          1 * time.Second,
+	}
+	producer := siesta.NewKafkaProducer(producerConfig, siesta.ByteSerializer, siesta.StringSerializer, connector)
 
-    metadataChannel := make(chan interface{}, 10000)
-    count := 0
-    start := time.Now()
+	metadataChannel := make(chan interface{}, 10000)
+	count := 0
+	start := time.Now()
 
-    for i := 0; i < 10; i++ {
-        go func() {
-            for {
-                <-metadataChannel
-                count++
+	for i := 0; i < 10; i++ {
+		go func() {
+			for {
+				<-metadataChannel
+				count++
 
-                elapsed := time.Since(start)
-                if elapsed.Seconds() >= 1 {
-                    fmt.Println(fmt.Sprintf("Per Second %d", count))
-                    count = 0
-                    start = time.Now()
-                }
-            }
-        }()
-    }
+				elapsed := time.Since(start)
+				if elapsed.Seconds() >= 1 {
+					fmt.Println(fmt.Sprintf("Per Second %d", count))
+					count = 0
+					start = time.Now()
+				}
+			}
+		}()
+	}
 
-    for {
-        producer.Send(&siesta.ProducerRecord{Topic: "pr1", Value: "hello world"})
-        metadataChannel <- nil
-    }
+	for {
+		producer.Send(&siesta.ProducerRecord{Topic: "pr1", Value: "hello world"})
+		metadataChannel <- nil
+	}
 }

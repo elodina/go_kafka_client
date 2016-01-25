@@ -121,6 +121,7 @@ func (e *MirrorMakerExecutor) startMirrorMaker() {
 	e.config.SetIntConfig("queue.size", &mmConfig.ChannelSize)
 	e.config.SetStringConfig("whitelist", &mmConfig.Whitelist)
 	e.config.SetStringConfig("blacklist", &mmConfig.Blacklist)
+	e.config.SetStringConfig("metrics.topic", &mmConfig.ProduceMetricsTopic)
 	mmConfig.ProducerConfig = producerConfig
 	mmConfig.ConsumerConfigs = consumerConfigs
 

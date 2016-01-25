@@ -18,7 +18,7 @@ package siesta
 import (
 	"fmt"
 
-	log "github.com/cihub/seelog"
+	log "gopkg.in/cihub/seelog.v2"
 )
 
 //Logger used by this client. Defaults to build-in logger with Info log level.

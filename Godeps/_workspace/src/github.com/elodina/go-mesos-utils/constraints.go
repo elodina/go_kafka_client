@@ -16,6 +16,7 @@ limitations under the License. */
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	"math"
@@ -23,6 +24,45 @@ import (
 	"strconv"
 	"strings"
 )
+
+type Constraints map[string][]Constraint
+
+func (c Constraints) MarshalJSON() ([]byte, error) {
+	constraintsMap := make(map[string][]string)
+	for attr, constraints := range c {
+		constraintsMap[attr] = make([]string, len(constraints))
+		for idx, constraint := range constraints {
+			constraintsMap[attr][idx] = fmt.Sprintf("%s", constraint)
+		}
+	}
+
+	return json.Marshal(constraintsMap)
+}
+
+func (c Constraints) UnmarshalJSON(data []byte) error {
+	if c == nil {
+		c = make(Constraints)
+	}
+
+	constraintsMap := make(map[string][]string)
+	err := json.Unmarshal(data, &constraintsMap)
+	if err != nil {
+		return err
+	}
+
+	for attr, constraints := range constraintsMap {
+		c[attr] = make([]Constraint, len(constraints))
+		for idx, constraintString := range constraints {
+			constraint, err := ParseConstraint(constraintString)
+			if err != nil {
+				return err
+			}
+			c[attr][idx] = constraint
+		}
+	}
+
+	return nil
+}
 
 type Constraint interface {
 	Matches(value string, values []string) bool

@@ -164,6 +164,11 @@ func (this *SpecificDatumWriter) writeArray(v reflect.Value, enc Encoder, s Sche
 		return fmt.Errorf("Invalid array value: %v", v.Interface())
 	}
 
+	if v.Len() == 0 {
+		enc.WriteArrayNext(0)
+		return nil
+	}
+
 	//TODO should probably write blocks of some length
 	enc.WriteArrayStart(int64(v.Len()))
 	for i := 0; i < v.Len(); i++ {
@@ -181,6 +186,10 @@ func (this *SpecificDatumWriter) writeMap(v reflect.Value, enc Encoder, s Schema
 		return fmt.Errorf("Invalid map value: %v", v.Interface())
 	}
 
+	if v.Len() == 0 {
+		enc.WriteMapNext(0)
+		return nil
+	}
 	//TODO should probably write blocks of some length
 	enc.WriteMapStart(int64(v.Len()))
 	for _, key := range v.MapKeys() {
@@ -392,6 +401,11 @@ func (this *GenericDatumWriter) writeArray(v interface{}, enc Encoder, s Schema)
 		return errors.New("Not a slice or array type")
 	}
 
+	if rv.Len() == 0 {
+		enc.WriteArrayNext(0)
+		return nil
+	}
+
 	//TODO should probably write blocks of some length
 	enc.WriteArrayStart(int64(rv.Len()))
 	for i := 0; i < rv.Len(); i++ {
@@ -406,6 +420,11 @@ func (this *GenericDatumWriter) writeMap(v interface{}, enc Encoder, s Schema) e
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Map {
 		return errors.New("Not a map type")
+	}
+
+	if rv.Len() == 0 {
+		enc.WriteMapNext(0)
+		return nil
 	}
 
 	//TODO should probably write blocks of some length
@@ -512,7 +531,10 @@ func (this *GenericDatumWriter) writeRecord(v interface{}, enc Encoder, s Schema
 				if field == nil {
 					field = schemaField.Default
 				}
-				this.write(field, enc, schemaField.Type)
+				err := this.write(field, enc, schemaField.Type)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	default:
