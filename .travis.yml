@@ -43,12 +43,6 @@ before_install:
 - cp $ZK_HOME/conf/zoo_sample.cfg $ZK_HOME/conf/zoo.cfg
 - wget -q $REGISTRY_URL -O /tmp/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tgz
 - tar xfz /tmp/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tgz -C /tmp
-- git clone https://github.com/pote/gpm.git 
-- cd gpm
-- git checkout v1.3.1 
-- ./configure 
-- sudo make install
-- cd ..
 - $ZK_HOME/bin/zkServer.sh start
 - sed -r -i "s/(zookeeper.connect)=(.*)/\\1=$ZK_PORT_2181_TCP_ADDR/g" $KAFKA_PATH/config/server.properties
 - sed -r -i "s/(broker.id)=(.*)/\\1=$BROKER_ID/g" $KAFKA_PATH/config/server.properties
@@ -58,8 +52,6 @@ before_install:
 - $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
 - $REGISTRY_HOME/bin/schema-registry-start $REGISTRY_HOME/etc/schema-registry/schema-registry.properties &
 - sleep 15
-
-install: gpm install
 
 script: go test -v -timeout 20m
 

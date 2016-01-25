@@ -1,0 +1,18 @@
+{
+    "type": "record",
+    "namespace": "test.public.avro.interop",
+    "name": "SubRecord1",
+    "fields": [
+        {
+            "name": "map1",
+            "type": {
+                "type": "map",
+                "values": "string"
+            }
+        },
+        {
+            "name": "string1",
+            "type": "string"
+        }
+    ]
+}
