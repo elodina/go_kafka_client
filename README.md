@@ -31,7 +31,7 @@ Our offset management is based on a per batch basis with each highest offset fro
 3. Install GPM [https://github.com/pote/gpm](https://github.com/pote/gpm)
 4. `mkdir -p $GOPATH/src/github.com/stealthly && cd $GOPATH/src/github.com/stealthly`
 5. `git clone https://github.com/stealthly/go_kafka_client.git && cd go_kafka_client`
-6. `gpm install`
+6. `godep restore`
 
 *Optional (for all tests to work):*
 
