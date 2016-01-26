@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	kafkaavro "github.com/elodina/go-kafka-avro"
-	"github.com/stealthly/go-avro"
+	"github.com/elodina/go-avro"
 	avroline "github.com/stealthly/go_kafka_client/avro"
 	"regexp"
 	"strings"
