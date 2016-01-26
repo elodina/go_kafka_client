@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/elodina/go-kafka-avro"
 	kafka "github.com/stealthly/go_kafka_client"
 	"os"
 	"os/signal"
@@ -87,10 +88,10 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	config.ProducerConfig = *producerConfig
 	config.TopicPrefix = *prefix
 	if *schemaRegistryUrl != "" {
-		config.KeyEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
-		config.ValueEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistryUrl)
-		config.KeyDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
-		config.ValueDecoder = kafka.NewKafkaAvroDecoder(*schemaRegistryUrl)
+		config.KeyEncoder = avro.NewKafkaAvroEncoder(*schemaRegistryUrl)
+		config.ValueEncoder = avro.NewKafkaAvroEncoder(*schemaRegistryUrl)
+		config.KeyDecoder = avro.NewKafkaAvroDecoder(*schemaRegistryUrl)
+		config.ValueDecoder = avro.NewKafkaAvroDecoder(*schemaRegistryUrl)
 	}
 	config.TimingsProducerConfig = *timingsProducerConfig
 	config.ProduceMetricsTopic = *produceMetricsTopic
