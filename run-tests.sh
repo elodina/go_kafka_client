@@ -32,9 +32,9 @@ $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
 echo 'Starting Schema Registry'
 $REGISTRY_HOME/bin/schema-registry-start $REGISTRY_HOME/etc/schema-registry/schema-registry.properties &
 
-mkdir -p $GOPATH/src/github.com/stealthly/go_kafka_client
-cp -r /go_kafka_client $GOPATH/src/github.com/stealthly
-cd $GOPATH/src/github.com/stealthly/go_kafka_client
+mkdir -p $GOPATH/src/github.com/elodina/go_kafka_client
+cp -r /go_kafka_client $GOPATH/src/github.com/elodina
+cd $GOPATH/src/github.com/elodina/go_kafka_client
 
 echo 'Updating dependencies'
 gpm install

@@ -17,8 +17,8 @@ package go_kafka_client
 
 import (
 	"fmt"
+	"github.com/elodina/go-avro"
 	kafkaavro "github.com/elodina/go-kafka-avro"
-	"github.com/stealthly/go-avro"
 	"io/ioutil"
 	"net/http"
 	"strings"

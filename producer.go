@@ -180,7 +180,7 @@ func (this *FixedPartitioner) Partition(key []byte, numPartitions int32) (int32,
 	var partition int32
 	buf := bytes.NewBuffer(key)
 	binary.Read(buf, binary.LittleEndian, &partition)
-	if (partition < 0) {
+	if partition < 0 {
 		return -1, errors.New("Partition turned to be -1 (too big to be int32 little endian?)")
 	}
 

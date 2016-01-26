@@ -18,9 +18,9 @@ package go_kafka_client
 import (
 	"encoding/json"
 	"fmt"
-	kafkaavro "github.com/elodina/go-kafka-avro"
 	"github.com/elodina/go-avro"
-	avroline "github.com/stealthly/go_kafka_client/avro"
+	kafkaavro "github.com/elodina/go-kafka-avro"
+	avroline "github.com/elodina/go_kafka_client/avro"
 	"regexp"
 	"strings"
 )
@@ -58,7 +58,7 @@ func (c *CodahaleKafkaReporter) parseSchema(metrics map[string]interface{}) (avr
 	lookupNames := make(map[string]string)
 	schema := &avro.RecordSchema{
 		Name:      "Metrics",
-		Namespace: "ly.stealth",
+		Namespace: "net.elodina",
 		Fields:    make([]*avro.SchemaField, 0),
 	}
 	for name, v := range metrics {
@@ -100,7 +100,7 @@ func (c *CodahaleKafkaReporter) parseRecordField(name string, v map[string]inter
 	lookupNames[lookupRecordName] = name
 	record := &avro.RecordSchema{
 		Name:      lookupRecordName,
-		Namespace: "ly.stealth",
+		Namespace: "net.elodina",
 		Fields:    make([]*avro.SchemaField, 0),
 	}
 
