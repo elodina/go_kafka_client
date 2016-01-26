@@ -13,7 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-package go_kafka_client
+package avro
 
 import (
 	"encoding/json"
@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	avro "github.com/stealthly/go-avro"
+	avro "github.com/elodina/go-avro"
 )
 
 const (

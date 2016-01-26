@@ -30,6 +30,15 @@
 			"Rev": "ded5959c0d4e360646dc9e9908cff48666781367"
 		},
 		{
+			"ImportPath": "github.com/elodina/go-avro",
+			"Comment": "v0.1.0.0-42-g9e3567c",
+			"Rev": "9e3567cefe72605318d7dd537c7f3f4d31cfbbf2"
+		},
+		{
+			"ImportPath": "github.com/elodina/go-kafka-avro",
+			"Rev": "6a786d9eb925838f3017637b91ad057a71d4e23d"
+		},
+		{
 			"ImportPath": "github.com/golang/protobuf/proto",
 			"Rev": "2402d76f3d41f928c7902a765dfc872356dd3aad"
 		},

@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	kafkaavro "github.com/elodina/go-kafka-avro"
 	"github.com/golang/protobuf/proto"
 	"github.com/stealthly/go-avro"
 	kafka "github.com/stealthly/go_kafka_client"
@@ -91,14 +92,14 @@ func produceLogLineProtobuf() {
 func produceAvro() {
 	config1 := kafka.DefaultProducerConfig()
 	config1.BrokerList = strings.Split(*brokerList, ",")
-	config1.ValueEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistry)
+	config1.ValueEncoder = kafkaavro.NewKafkaAvroEncoder(*schemaRegistry)
 	config1.AckSuccesses = true
 
 	producer1 := kafka.NewSaramaProducer(config1)
 
 	config2 := kafka.DefaultProducerConfig()
 	config2.BrokerList = strings.Split(*brokerList, ",")
-	config2.ValueEncoder = kafka.NewKafkaAvroEncoder(*schemaRegistry)
+	config2.ValueEncoder = kafkaavro.NewKafkaAvroEncoder(*schemaRegistry)
 	producer2 := kafka.NewSaramaProducer(config2)
 
 	avroSchema, err := avro.ParseSchemaFile(*avroSchema)
@@ -106,12 +107,12 @@ func produceAvro() {
 		panic(err)
 	}
 
-    _, err = kafka.NewCachedSchemaRegistryClient(*schemaRegistry).Register(avroSchema.GetName() + "-value", avroSchema)
-    if err != nil {
-        panic(err)
-    }
+	_, err = kafkaavro.NewCachedSchemaRegistryClient(*schemaRegistry).Register(avroSchema.GetName()+"-value", avroSchema)
+	if err != nil {
+		panic(err)
+	}
 
-	decoder := kafka.NewKafkaAvroDecoder(*schemaRegistry)
+	decoder := kafkaavro.NewKafkaAvroDecoder(*schemaRegistry)
 	go func() {
 		for message := range producer1.Successes() {
 			rawRecord, err := decoder.Decode(message.Value.([]byte))
@@ -120,7 +121,7 @@ func produceAvro() {
 			}
 			record := rawRecord.(*avro.GenericRecord)
 			timings := record.Get("timings").([]interface{})
-			timings = append(timings, time.Now().UnixNano() / int64(time.Millisecond))
+			timings = append(timings, time.Now().UnixNano()/int64(time.Millisecond))
 			record.Set("timings", timings)
 
 			producer2.Input() <- &kafka.ProducerMessage{Topic: *topic2, Value: record}
@@ -149,12 +150,12 @@ func parseAndValidateArgs() {
 		os.Exit(1)
 	}
 
-    if *schemaRegistry != "" {
-	    protobuf = false
-        if *avroSchema == "" {
-            fmt.Println("Avro schema is required")
-            os.Exit(1)
-        }
+	if *schemaRegistry != "" {
+		protobuf = false
+		if *avroSchema == "" {
+			fmt.Println("Avro schema is required")
+			os.Exit(1)
+		}
 	}
 
 	if *perSecond <= 0 {

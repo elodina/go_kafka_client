@@ -17,6 +17,7 @@ package go_kafka_client
 
 import (
 	"fmt"
+	kafkaavro "github.com/elodina/go-kafka-avro"
 	"github.com/stealthly/go_kafka_client/avro"
 	"time"
 )
@@ -98,7 +99,7 @@ type KafkaLogEmitter struct {
 
 // NewKafkaLogEmitter creates a new KafkaLogEmitter with a provided configuration.
 func NewKafkaLogEmitter(config *KafkaLogEmitterConfig) *KafkaLogEmitter {
-	config.ProducerConfig.ValueEncoder = NewKafkaAvroEncoder(config.SchemaRegistryUrl)
+	config.ProducerConfig.ValueEncoder = kafkaavro.NewKafkaAvroEncoder(config.SchemaRegistryUrl)
 	emitter := &KafkaLogEmitter{
 		config:   config,
 		producer: NewSaramaProducer(config.ProducerConfig),

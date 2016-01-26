@@ -17,6 +17,7 @@ package go_kafka_client
 
 import (
 	"fmt"
+	kafkaavro "github.com/elodina/go-kafka-avro"
 	"github.com/stealthly/go-avro"
 	"io/ioutil"
 	"net/http"
@@ -92,7 +93,7 @@ func (this *MarathonEventProducer) startHTTPServer() {
 
 func (this *MarathonEventProducer) startProducer() {
 	if this.config.SchemaRegistryUrl != "" {
-		this.config.ProducerConfig.KeyEncoder = NewKafkaAvroEncoder(this.config.SchemaRegistryUrl)
+		this.config.ProducerConfig.KeyEncoder = kafkaavro.NewKafkaAvroEncoder(this.config.SchemaRegistryUrl)
 		this.config.ProducerConfig.ValueEncoder = this.config.ProducerConfig.KeyEncoder
 	}
 	this.config.ProducerConfig.BrokerList = strings.Split(this.config.BrokerList, ",")

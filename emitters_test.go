@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+var schemaRepositoryUrl = "http://localhost:8081"
+
 func TestLogEmitter(t *testing.T) {
 	partitions := 1
 	topic := fmt.Sprintf("testLogEmitter-%d", time.Now().Unix())

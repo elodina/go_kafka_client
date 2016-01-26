@@ -18,7 +18,8 @@ package go_kafka_client
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/stealthly/go-avro"
+	kafkaavro "github.com/elodina/go-kafka-avro"
+	"github.com/elodina/go-avro"
 	avroline "github.com/stealthly/go_kafka_client/avro"
 	"regexp"
 	"strings"
@@ -30,7 +31,7 @@ type CodahaleKafkaReporter struct {
 }
 
 func NewCodahaleKafkaReporter(topic string, schemaRegistryUrl string, producerConfig *ProducerConfig) *CodahaleKafkaReporter {
-	producerConfig.ValueEncoder = NewKafkaAvroEncoder(schemaRegistryUrl)
+	producerConfig.ValueEncoder = kafkaavro.NewKafkaAvroEncoder(schemaRegistryUrl)
 
 	return &CodahaleKafkaReporter{
 		topic:    topic,

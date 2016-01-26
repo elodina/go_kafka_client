@@ -13,16 +13,17 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-package go_kafka_client
+package avro
 
 import (
-	"github.com/stealthly/go-avro"
+	"github.com/elodina/go-avro"
+	"reflect"
 	"testing"
 )
 
 const (
 	schemaRepositoryUrl = "http://localhost:8081"
-	rawMetricsSchema    = `{"namespace": "ly.stealth.kafka.metrics","type": "record","name": "Timings","fields": [{"name": "id", "type": "long"},{"name": "timings",  "type": {"type":"array", "items": "long"} }]}`
+	rawMetricsSchema    = `{"namespace": "net.elodina.kafka.metrics","type": "record","name": "Timings","fields": [{"name": "id", "type": "long"},{"name": "timings",  "type": {"type":"array", "items": "long"} }]}`
 )
 
 func TestAvroKafkaEncoderDecoder(t *testing.T) {
@@ -47,4 +48,16 @@ func TestAvroKafkaEncoderDecoder(t *testing.T) {
 
 	assert(t, decodedRecord.Get("id"), record.Get("id"))
 	assert(t, decodedRecord.Get("timings"), []interface{}{int64(123456), int64(654321)})
+}
+
+func assert(t *testing.T, actual interface{}, expected interface{}) {
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, actual %v", expected, actual)
+	}
+}
+
+func assertNot(t *testing.T, actual interface{}, expected interface{}) {
+	if reflect.DeepEqual(actual, expected) {
+		t.Errorf("%v should not be %v", actual, expected)
+	}
 }
