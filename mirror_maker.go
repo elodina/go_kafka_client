@@ -18,6 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	avro "github.com/elodina/go-avro"
+	"github.com/elodina/siesta"
 	"hash/fnv"
 	"io/ioutil"
 	"reflect"
@@ -276,14 +277,17 @@ func (this *MirrorMaker) startProducers() {
 
 func (this *MirrorMaker) startMetricsProducer() {
 	if this.config.ProduceMetricsTopic != "" {
-		conf, err := ProducerConfigFromFile(this.config.ProducerConfig)
+		conf, err := siesta.ProducerConfigFromFile(this.config.ProducerConfig)
 		if err != nil {
 			panic(err)
 		}
-		conf.Partitioner = NewRandomPartitioner
-		conf.KeyEncoder = &ByteEncoder{}
-		conf.ValueEncoder = &ByteEncoder{}
-		this.metricReporter = NewKafkaMetricReporter(this.config.ProduceMetricsTopic, conf)
+		connectorConfig := siesta.NewConnectorConfig()
+		connectorConfig.BrokerList = conf.BrokerList
+
+		this.metricReporter, err = NewKafkaMetricReporter(this.config.ProduceMetricsTopic, conf, connectorConfig)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 

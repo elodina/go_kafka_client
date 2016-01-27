@@ -17,6 +17,8 @@ package go_kafka_client
 
 import (
 	"fmt"
+	"github.com/elodina/siesta"
+	"github.com/elodina/syslog-service/syslog"
 	"net"
 	"testing"
 	"time"
@@ -31,7 +33,6 @@ var rfc3164message = `<34>Jan 12 06:30:00 1.2.3.4 some_server: 1.2.3.4 - - [12/J
 //<132>2014-12-30T11:51:47+02:00 localhost go_kafka_client[13128]: woohoo!
 
 func TestSyslogProducer(t *testing.T) {
-	Logger = NewDefaultLogger(TraceLevel)
 	topic := fmt.Sprintf("syslog-producer-%d", time.Now().Unix())
 
 	consumeMessages := 100
@@ -41,14 +42,13 @@ func TestSyslogProducer(t *testing.T) {
 	CreateMultiplePartitionsTopic(localZk, topic, 1)
 	EnsureHasLeader(localZk, topic)
 
-	config := NewSyslogProducerConfig()
-	config.ProducerConfig = DefaultProducerConfig()
+	config := syslog.NewSyslogProducerConfig()
+	config.ProducerConfig = siesta.NewProducerConfig()
 	config.BrokerList = localBroker
-	config.ChannelSize = 5
 	config.NumProducers = 1
 	config.TCPAddr = tcpAddr
 	config.Topic = topic
-	syslogProducer := NewSyslogProducer(config)
+	syslogProducer := syslog.NewSyslogProducer(config)
 	go syslogProducer.Start()
 
 	time.Sleep(2 * time.Second)

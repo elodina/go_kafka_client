@@ -18,9 +18,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/Shopify/sarama"
 	kafka "github.com/elodina/go_kafka_client"
 	sp "github.com/elodina/go_kafka_client/syslog/syslog_proto"
+	"github.com/elodina/siesta"
+	"github.com/elodina/syslog-service/syslog"
 	"github.com/golang/protobuf/proto"
 	"math"
 	"os"
@@ -69,7 +70,7 @@ var source = flag.String("source", "", "")
 var tag tags
 var logtypeid = flag.Int64("log.type.id", math.MinInt64, "")
 
-func parseAndValidateArgs() *kafka.SyslogProducerConfig {
+func parseAndValidateArgs() *syslog.SyslogProducerConfig {
 	tag = make(map[string]string)
 	flag.Var(tag, "tag", "")
 	flag.Parse()
@@ -92,27 +93,22 @@ func parseAndValidateArgs() *kafka.SyslogProducerConfig {
 		os.Exit(1)
 	}
 
-	config := kafka.NewSyslogProducerConfig()
-	conf, err := kafka.ProducerConfigFromFile(*producerConfig)
+	config := syslog.NewSyslogProducerConfig()
+	conf, err := siesta.ProducerConfigFromFile(*producerConfig)
 	useFile := true
 	if err != nil {
 		//we dont have a producer configuraiton which is ok
 		useFile = false
-	} else {
-		if err = conf.Validate(); err != nil {
-			panic(err)
-		}
 	}
 
 	if useFile {
 		config.ProducerConfig = conf
 	} else {
-		config.ProducerConfig = kafka.DefaultProducerConfig()
-		config.ProducerConfig.Acks = *requiredAcks
-		config.ProducerConfig.Timeout = time.Duration(*acksTimeout) * time.Millisecond
+		config.ProducerConfig = siesta.NewProducerConfig()
+		config.ProducerConfig.RequiredAcks = *requiredAcks
+		config.ProducerConfig.AckTimeoutMs = int32(*acksTimeout)
 	}
 	config.NumProducers = *numProducers
-	config.ChannelSize = *queueSize
 	config.Topic = *topic
 	config.BrokerList = *brokerList
 	config.TCPAddr = fmt.Sprintf("%s:%s", *tcpHost, *tcpPort)
@@ -133,13 +129,13 @@ func setLogLevel() {
 	case "debug":
 		level = kafka.DebugLevel
 	case "info":
-		level = kafka.DebugLevel
+		level = kafka.InfoLevel
 	case "warn":
-		level = kafka.DebugLevel
+		level = kafka.WarnLevel
 	case "error":
-		level = kafka.DebugLevel
+		level = kafka.ErrorLevel
 	case "critical":
-		level = kafka.DebugLevel
+		level = kafka.CriticalLevel
 	default:
 		{
 			fmt.Printf("Invalid log level: %s\n", *logLevel)
@@ -151,7 +147,7 @@ func setLogLevel() {
 
 func main() {
 	config := parseAndValidateArgs()
-	producer := kafka.NewSyslogProducer(config)
+	producer := syslog.NewSyslogProducer(config)
 	go producer.Start()
 
 	ctrlc := make(chan os.Signal, 1)
@@ -160,7 +156,7 @@ func main() {
 	producer.Stop()
 }
 
-func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.ProducerMessage {
+func protobufTransformer(msg *syslog.SyslogMessage, topic string) *siesta.ProducerRecord {
 	line := &sp.LogLine{}
 
 	line.Line = proto.String(msg.Message)
@@ -178,5 +174,5 @@ func protobufTransformer(msg *kafka.SyslogMessage, topic string) *sarama.Produce
 		kafka.Errorf("protobuf-transformer", "Failed to marshal %s as Protocol Buffer", msg)
 	}
 
-	return &sarama.ProducerMessage{Topic: topic, Key: sarama.StringEncoder(*source), Value: sarama.ByteEncoder(protobuf)}
+	return &siesta.ProducerRecord{Topic: topic, Key: []byte(*source), Value: protobuf}
 }
