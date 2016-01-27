@@ -19,8 +19,9 @@ import (
 	"flag"
 	"fmt"
 	kafka "github.com/elodina/go_kafka_client"
-	"github.com/elodina/syslog-service/syslog"
 	sp "github.com/elodina/go_kafka_client/syslog/syslog_proto"
+	"github.com/elodina/siesta"
+	"github.com/elodina/syslog-service/syslog"
 	"github.com/golang/protobuf/proto"
 	"math"
 	"os"
@@ -28,7 +29,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-"github.com/elodina/siesta"
 )
 
 type tags map[string]string

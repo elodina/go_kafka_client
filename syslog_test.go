@@ -17,11 +17,11 @@ package go_kafka_client
 
 import (
 	"fmt"
+	"github.com/elodina/siesta"
+	"github.com/elodina/syslog-service/syslog"
 	"net"
 	"testing"
 	"time"
-"github.com/elodina/syslog-service/syslog"
-"github.com/elodina/siesta"
 )
 
 var tcpAddr = "0.0.0.0:5140"
