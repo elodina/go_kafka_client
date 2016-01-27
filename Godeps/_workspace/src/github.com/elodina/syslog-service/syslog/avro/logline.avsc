@@ -1,0 +1,56 @@
+{
+    "type": "record",
+    "name": "logLine",
+    "fields": [
+        {
+            "name": "line",
+            "type": ["null", "string"],
+            "default": null
+        },
+        {
+            "name": "source",
+            "type": ["null", "string"],
+            "default": null
+        },
+        {
+            "name": "tag",
+            "type": [
+                "null",
+                {
+                    "type": "map",
+                    "values": "string"
+                }
+            ],
+            "default": null
+        },
+        {
+            "name": "logtypeid",
+            "type": ["null", "long"],
+            "default": null
+        },
+        {
+            "name": "timings",
+            "type": [
+                "null",
+                {
+                    "type": "array",
+                    "items": {
+                    	"type": "record",
+    					"name": "Timing",
+    					"fields": [
+    						{
+    							"name": "eventName",
+    							"type": "string"
+    						},
+    						{
+    							"name": "value",
+    							"type": "long"
+    						}
+    					]
+                    }
+                }
+            ],
+            "default": null
+        }
+    ]
+}
