@@ -37,8 +37,8 @@ func TestLogEmitter(t *testing.T) {
 	loggerConfig.Source = "go_kafka_client.log.emitter"
 	loggerConfig.Tags = map[string]string{"origin": topic}
 	loggerConfig.ProducerConfig = siesta.NewProducerConfig()
-	loggerConfig.ProducerConfig.BrokerList = []string{localBroker}
 	loggerConfig.ConnectorConfig = siesta.NewConnectorConfig()
+	loggerConfig.ConnectorConfig.BrokerList = []string{localBroker}
 
 	logger, err := NewKafkaLogEmitter(loggerConfig)
 	assert(t, err, nil)
@@ -72,8 +72,8 @@ func TestMetricsEmitter(t *testing.T) {
 	delayTimeout := 10 * time.Second
 
 	metricsProducerConfig := siesta.NewProducerConfig()
-	metricsProducerConfig.BrokerList = []string{localBroker}
 	connectorConfig := siesta.NewConnectorConfig()
+	connectorConfig.BrokerList = []string{localBroker}
 	reporter, err := NewCodahaleKafkaReporter(topic, schemaRepositoryUrl, metricsProducerConfig, connectorConfig)
 	assert(t, err, nil)
 
