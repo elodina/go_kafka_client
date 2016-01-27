@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"github.com/elodina/go-avro"
 	kafka "github.com/elodina/go_kafka_client"
+	"github.com/elodina/siesta"
 	"os"
 	"os/signal"
 	"runtime"
 	"strings"
-	"time"
 )
 
 var logLevel = flag.String("log.level", "info", "Log level for built-in logger.")
@@ -67,23 +67,19 @@ func parseAndValidateArgs() *kafka.MarathonEventProducerConfig {
 	}
 
 	config := kafka.NewMarathonEventProducerConfig()
-	conf, err := kafka.ProducerConfigFromFile(*producerConfig)
+	conf, err := siesta.ProducerConfigFromFile(*producerConfig)
 	useFile := true
 	if err != nil {
 		//we dont have a producer configuraiton which is ok
 		useFile = false
-	} else {
-		if err = conf.Validate(); err != nil {
-			panic(err)
-		}
 	}
 
 	if useFile {
 		config.ProducerConfig = conf
 	} else {
-		config.ProducerConfig = kafka.DefaultProducerConfig()
-		config.ProducerConfig.Acks = *requiredAcks
-		config.ProducerConfig.Timeout = time.Duration(*acksTimeout) * time.Millisecond
+		config.ProducerConfig = siesta.NewProducerConfig()
+		config.ProducerConfig.RequiredAcks = *requiredAcks
+		config.ProducerConfig.AckTimeoutMs = int32(*acksTimeout)
 	}
 
 	config.Topic = *topic
@@ -100,6 +96,8 @@ func parseAndValidateArgs() *kafka.MarathonEventProducerConfig {
 		}
 		config.AvroSchema = schema
 	}
+
+	config.ConnectorConfig = siesta.NewConnectorConfig()
 
 	return config
 }

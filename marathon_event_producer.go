@@ -19,15 +19,14 @@ import (
 	"fmt"
 	"github.com/elodina/go-avro"
 	kafkaavro "github.com/elodina/go-kafka-avro"
+	"github.com/elodina/siesta"
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type MarathonEventProducerConfig struct {
-	// Marathon event producer config.
-	ProducerConfig *ProducerConfig
-
 	// Destination topic for all incoming messages.
 	Topic string
 
@@ -46,14 +45,20 @@ type MarathonEventProducerConfig struct {
 	// Avro schema to use when producing messages in Avro format.
 	AvroSchema avro.Schema
 
-	// Function that generates producer instances
-	ProducerConstructor ProducerConstructor
+	// Producer config that will be used by this emitter. Note that ValueEncoder WILL BE replaced by KafkaAvroEncoder.
+	ProducerConfig *siesta.ProducerConfig
+
+	// Siesta connector config that will be used by this emitter
+	ConnectorConfig *siesta.ConnectorConfig
+
+	// ProducerCloseTimeout is the maximum time to wait until the producer closes gracefully
+	ProducerCloseTimeout time.Duration
 }
 
 // Creates an empty MarathonEventProducerConfig.
 func NewMarathonEventProducerConfig() *MarathonEventProducerConfig {
 	return &MarathonEventProducerConfig{
-		ProducerConstructor: NewSaramaProducer,
+		ProducerCloseTimeout: 2 * time.Second,
 	}
 }
 
@@ -61,7 +66,7 @@ type MarathonEventProducer struct {
 	config   *MarathonEventProducerConfig
 	incoming chan interface{}
 
-	producer Producer
+	producer siesta.Producer
 }
 
 func NewMarathonEventProducer(config *MarathonEventProducerConfig) *MarathonEventProducer {
@@ -92,13 +97,18 @@ func (this *MarathonEventProducer) startHTTPServer() {
 }
 
 func (this *MarathonEventProducer) startProducer() {
+	var encoder siesta.Serializer = siesta.ByteSerializer
 	if this.config.SchemaRegistryUrl != "" {
-		this.config.ProducerConfig.KeyEncoder = kafkaavro.NewKafkaAvroEncoder(this.config.SchemaRegistryUrl)
-		this.config.ProducerConfig.ValueEncoder = this.config.ProducerConfig.KeyEncoder
+		encoder = kafkaavro.NewKafkaAvroEncoder(this.config.SchemaRegistryUrl).Encode
 	}
 	this.config.ProducerConfig.BrokerList = strings.Split(this.config.BrokerList, ",")
 
-	this.producer = this.config.ProducerConstructor(this.config.ProducerConfig)
+	connector, err := siesta.NewDefaultConnector(this.config.ConnectorConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	this.producer = siesta.NewKafkaProducer(this.config.ProducerConfig, encoder, encoder, connector)
 	go this.produceRoutine()
 }
 
@@ -107,12 +117,15 @@ func (this *MarathonEventProducer) Stop() {
 
 	close(this.incoming)
 
-	this.producer.Close()
+	this.producer.Close(this.config.ProducerCloseTimeout)
 }
 
 func (this *MarathonEventProducer) produceRoutine() {
 	for msg := range this.incoming {
-		this.producer.Input() <- &ProducerMessage{Topic: this.config.Topic, Value: msg}
+		this.producer.Send(&siesta.ProducerRecord{
+			Topic: this.config.Topic,
+			Value: msg,
+		})
 	}
 }
 

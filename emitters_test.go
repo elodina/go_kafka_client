@@ -17,6 +17,7 @@ package go_kafka_client
 
 import (
 	"fmt"
+	"github.com/elodina/siesta"
 	"testing"
 	"time"
 )
@@ -35,10 +36,12 @@ func TestLogEmitter(t *testing.T) {
 	loggerConfig.Topic = topic
 	loggerConfig.Source = "go_kafka_client.log.emitter"
 	loggerConfig.Tags = map[string]string{"origin": topic}
-	loggerConfig.ProducerConfig = DefaultProducerConfig()
+	loggerConfig.ProducerConfig = siesta.NewProducerConfig()
 	loggerConfig.ProducerConfig.BrokerList = []string{localBroker}
+	loggerConfig.ConnectorConfig = siesta.NewConnectorConfig()
 
-	logger := NewKafkaLogEmitter(loggerConfig)
+	logger, err := NewKafkaLogEmitter(loggerConfig)
+	assert(t, err, nil)
 	logger.Info("Message sent at %d", time.Now().Unix())
 
 	consumeMessages := 1
@@ -68,9 +71,11 @@ func TestMetricsEmitter(t *testing.T) {
 	consumeStatus := make(chan int)
 	delayTimeout := 10 * time.Second
 
-	metricsProducerConfig := DefaultProducerConfig()
+	metricsProducerConfig := siesta.NewProducerConfig()
 	metricsProducerConfig.BrokerList = []string{localBroker}
-	reporter := NewCodahaleKafkaReporter(topic, schemaRepositoryUrl, metricsProducerConfig)
+	connectorConfig := siesta.NewConnectorConfig()
+	reporter, err := NewCodahaleKafkaReporter(topic, schemaRepositoryUrl, metricsProducerConfig, connectorConfig)
+	assert(t, err, nil)
 
 	config := testConsumerConfig()
 	config.Strategy = newCountingStrategy(t, consumeMessages, consumeTimeout, consumeStatus)

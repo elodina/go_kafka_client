@@ -21,22 +21,27 @@ import (
 	"github.com/elodina/go-avro"
 	kafkaavro "github.com/elodina/go-kafka-avro"
 	avroline "github.com/elodina/go_kafka_client/avro"
+	"github.com/elodina/siesta"
 	"regexp"
 	"strings"
 )
 
 type CodahaleKafkaReporter struct {
 	topic    string
-	producer Producer
+	producer siesta.Producer
 }
 
-func NewCodahaleKafkaReporter(topic string, schemaRegistryUrl string, producerConfig *ProducerConfig) *CodahaleKafkaReporter {
-	producerConfig.ValueEncoder = kafkaavro.NewKafkaAvroEncoder(schemaRegistryUrl)
+func NewCodahaleKafkaReporter(topic string, schemaRegistryUrl string, producerConfig *siesta.ProducerConfig, connectorConfig *siesta.ConnectorConfig) (*CodahaleKafkaReporter, error) {
+	encoder := kafkaavro.NewKafkaAvroEncoder(schemaRegistryUrl)
+	connector, err := siesta.NewDefaultConnector(connectorConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	return &CodahaleKafkaReporter{
 		topic:    topic,
-		producer: NewSaramaProducer(producerConfig),
-	}
+		producer: siesta.NewKafkaProducer(producerConfig, siesta.ByteSerializer, encoder.Encode, connector),
+	}, nil
 }
 
 func (c *CodahaleKafkaReporter) Write(bytes []byte) (n int, err error) {
@@ -49,7 +54,10 @@ func (c *CodahaleKafkaReporter) Write(bytes []byte) (n int, err error) {
 	record := avro.NewGenericRecord(schema)
 	c.fillRecord(record, schema.(*avro.RecordSchema), metrics, lookupNames)
 
-	c.producer.Input() <- &ProducerMessage{Topic: c.topic, Value: record}
+	c.producer.Send(&siesta.ProducerRecord{
+		Topic: c.topic,
+		Value: record,
+	})
 
 	return 0, nil
 }
@@ -157,18 +165,26 @@ func (c *CodahaleKafkaReporter) fillRecord(record *avro.GenericRecord, schema *a
 
 type KafkaMetricReporter struct {
 	topic    string
-	producer Producer
+	producer siesta.Producer
 }
 
-func NewKafkaMetricReporter(topic string, producerConfig *ProducerConfig) *KafkaMetricReporter {
+func NewKafkaMetricReporter(topic string, producerConfig *siesta.ProducerConfig, connectorConfig *siesta.ConnectorConfig) (*KafkaMetricReporter, error) {
+	connector, err := siesta.NewDefaultConnector(connectorConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return &KafkaMetricReporter{
 		topic:    topic,
-		producer: NewSaramaProducer(producerConfig),
-	}
+		producer: siesta.NewKafkaProducer(producerConfig, siesta.ByteSerializer, siesta.ByteSerializer, connector),
+	}, nil
 }
 
 func (k *KafkaMetricReporter) Write(bytes []byte) (n int, err error) {
-	k.producer.Input() <- &ProducerMessage{Topic: k.topic, Value: bytes}
+	k.producer.Send(&siesta.ProducerRecord{
+		Topic: k.topic,
+		Value: bytes,
+	})
 
-	return 0, nil
+	return len(bytes), nil
 }

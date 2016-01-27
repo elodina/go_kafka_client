@@ -68,7 +68,7 @@ func NewSiestaClient(config *ConsumerConfig) *SiestaClient {
 	}
 }
 
-// Returns a string representation of this SaramaClient.
+// Returns a string representation of this SiestaClient.
 func (this *SiestaClient) String() string {
 	return "Siesta client"
 }
