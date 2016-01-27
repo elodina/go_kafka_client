@@ -1,6 +1,9 @@
 package siesta
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 type RecordAccumulatorConfig struct {
 	batchSize         int
@@ -15,11 +18,16 @@ type RecordAccumulatorConfig struct {
 	networkClient     *NetworkClient
 }
 
+type RecordBatch struct {
+	sync.RWMutex
+	batch []*ProducerRecord
+}
+
 type RecordAccumulator struct {
 	config        *RecordAccumulatorConfig
 	networkClient *NetworkClient
 	batchSize     int
-	batches       map[string]map[int32][]*ProducerRecord
+	batches       map[string]map[int32]*RecordBatch
 
 	addChan      chan *ProducerRecord
 	closing      chan bool
@@ -33,7 +41,7 @@ func NewRecordAccumulator(config *RecordAccumulatorConfig, metadataChan chan *Re
 	accumulator.config = config
 	accumulator.batchSize = config.batchSize
 	accumulator.addChan = make(chan *ProducerRecord, 100) //TODO config
-	accumulator.batches = make(map[string]map[int32][]*ProducerRecord)
+	accumulator.batches = make(map[string]map[int32]*RecordBatch)
 	accumulator.networkClient = config.networkClient
 	accumulator.closing = make(chan bool)
 	accumulator.closed = make(chan bool)
@@ -74,7 +82,7 @@ func (ra *RecordAccumulator) cleanup() {
 
 func (ra *RecordAccumulator) addRecord(record *ProducerRecord) {
 	if ra.batches[record.Topic] == nil {
-		ra.batches[record.Topic] = make(map[int32][]*ProducerRecord)
+		ra.batches[record.Topic] = make(map[int32]*RecordBatch)
 	}
 	if ra.batches[record.Topic][record.partition] == nil {
 		ra.createBatch(record.Topic, record.partition)
@@ -83,7 +91,8 @@ func (ra *RecordAccumulator) addRecord(record *ProducerRecord) {
 }
 
 func (ra *RecordAccumulator) createBatch(topic string, partition int32) {
-	ra.batches[topic][partition] = make([]*ProducerRecord, 0, ra.batchSize)
+	batch := make([]*ProducerRecord, 0, ra.batchSize)
+	ra.batches[topic][partition] = &RecordBatch{batch: batch}
 	if ra.records[topic] == nil {
 		ra.records[topic] = make(map[int32]chan *ProducerRecord)
 	}
@@ -96,7 +105,10 @@ func (ra *RecordAccumulator) watcher(topic string, partition int32) {
 	for {
 		select {
 		case record := <-ra.records[topic][partition]:
-			ra.batches[record.Topic][record.partition] = append(ra.batches[record.Topic][record.partition], record)
+			batch := ra.batches[record.Topic][record.partition]
+			batch.Lock()
+			batch.batch = append(batch.batch, record)
+			batch.Unlock()
 		case <-timeout.C:
 			ra.flush(topic, partition)
 			timeout.Reset(ra.config.linger)
@@ -105,7 +117,11 @@ func (ra *RecordAccumulator) watcher(topic string, partition int32) {
 			timeout.Stop()
 			return
 		}
-		if len(ra.batches[topic][partition]) >= ra.batchSize {
+		batch := ra.batches[topic][partition]
+		batch.RLock()
+		lenght := len(batch.batch)
+		batch.RUnlock()
+		if lenght >= ra.batchSize {
 			ra.flush(topic, partition)
 			timeout.Reset(ra.config.linger)
 		}
@@ -114,9 +130,12 @@ func (ra *RecordAccumulator) watcher(topic string, partition int32) {
 }
 
 func (ra *RecordAccumulator) flush(topic string, partition int32) {
-	if len(ra.batches[topic][partition]) > 0 {
-		ra.networkClient.send(topic, partition, ra.batches[topic][partition])
-		ra.batches[topic][partition] = make([]*ProducerRecord, 0, ra.batchSize)
+	batch := ra.batches[topic][partition]
+	batch.Lock()
+	defer batch.Unlock()
+	if len(ra.batches[topic][partition].batch) > 0 {
+		ra.networkClient.send(topic, partition, batch.batch)
+		batch.batch = make([]*ProducerRecord, 0, ra.batchSize)
 	}
 }
 

@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/stealthly/go_kafka_client",
+	"ImportPath": "github.com/elodina/go_kafka_client",
 	"GoVersion": "go1.5.1",
 	"Packages": [
 		"./..."
@@ -31,12 +31,17 @@
 		},
 		{
 			"ImportPath": "github.com/elodina/go-avro",
-			"Comment": "v0.1.0.0-42-g9e3567c",
-			"Rev": "9e3567cefe72605318d7dd537c7f3f4d31cfbbf2"
+			"Comment": "v0.1.0.0-43-g82176dd",
+			"Rev": "82176ddaa8b7e54eb4512e252abb34c33dee3c16"
 		},
 		{
 			"ImportPath": "github.com/elodina/go-kafka-avro",
 			"Rev": "6a786d9eb925838f3017637b91ad057a71d4e23d"
+		},
+		{
+			"ImportPath": "github.com/elodina/siesta",
+			"Comment": "v0.1.0.0-80-g973ad9e",
+			"Rev": "973ad9e9701fbedc1dae7e94fd83663b3ddb2662"
 		},
 		{
 			"ImportPath": "github.com/golang/protobuf/proto",
@@ -61,16 +66,6 @@
 		{
 			"ImportPath": "github.com/satori/go.uuid",
 			"Rev": "d41af8bb6a7704f00bc3b7cba9355ae6a5a80048"
-		},
-		{
-			"ImportPath": "github.com/stealthly/go-avro",
-			"Comment": "v0.1.0.0-41-g3938f0d",
-			"Rev": "3938f0d4e7eb7e0f66bb35c6d65c3c241072049c"
-		},
-		{
-			"ImportPath": "github.com/stealthly/siesta",
-			"Comment": "v0.1.0.0-73-ge3b7a2b",
-			"Rev": "e3b7a2b73e030fcde5955923d0c0fa7f25908502"
 		},
 		{
 			"ImportPath": "gopkg.in/cihub/seelog.v2",
