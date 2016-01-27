@@ -104,7 +104,7 @@ type Producer interface {
 
 	// Tries to close the producer cleanly within the specified timeout. If the close does not complete within the
 	// timeout, fail any pending send requests and force close the producer.
-	Close(timeout int)
+	Close(timeout time.Duration)
 }
 
 type KafkaProducer struct {

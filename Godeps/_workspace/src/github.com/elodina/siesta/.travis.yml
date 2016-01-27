@@ -17,7 +17,7 @@ before_install:
 - export BROKER_ID=0
 - export HOST_IP=localhost
 - export PORT=9092
-- export ZK_VERSION=3.4.7
+- export ZK_VERSION=3.4.6
 - export ZK_RELEASE=zookeeper-$ZK_VERSION
 - export ZK_URL=http://apache.ip-connect.vn.ua/zookeeper/zookeeper-$ZK_VERSION/$ZK_RELEASE.tar.gz
 - export ZK_HOME=/tmp/$ZK_RELEASE

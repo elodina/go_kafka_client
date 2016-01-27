@@ -771,6 +771,7 @@ type BrokerLink interface {
 }
 
 type brokerLink struct {
+	sync.RWMutex
 	broker                    *Broker
 	connectionPool            *connectionPool
 	lastConnectTime           time.Time
@@ -796,11 +797,15 @@ func newBrokerLink(broker *Broker, keepAlive bool, keepAliveTimeout time.Duratio
 }
 
 func (bl *brokerLink) Failed() {
+	bl.Lock()
+	defer bl.Unlock()
 	bl.lastConnectTime = time.Now()
 	bl.failedAttempts++
 }
 
 func (bl *brokerLink) Succeeded() {
+	bl.Lock()
+	defer bl.Unlock()
 	timestamp := time.Now()
 	bl.lastConnectTime = timestamp
 	bl.lastSuccessfulConnectTime = timestamp
