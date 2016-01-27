@@ -53,7 +53,7 @@ func createDispatcher(formatter *formatter, receivers []interface{}) (*dispatche
 		return nil, errors.New("formatter cannot be nil")
 	}
 	if receivers == nil || len(receivers) == 0 {
-		return nil, errors.New("Receivers cannot be nil or empty")
+		return nil, errors.New("receivers cannot be nil or empty")
 	}
 
 	disp := &dispatcher{formatter, make([]*formattedWriter, 0), make([]dispatcherInterface, 0)}
@@ -66,7 +66,7 @@ func createDispatcher(formatter *formatter, receivers []interface{}) (*dispatche
 
 		ioWriter, ok := receiver.(io.Writer)
 		if ok {
-			writer, err := newFormattedWriter(ioWriter, disp.formatter)
+			writer, err := NewFormattedWriter(ioWriter, disp.formatter)
 			if err != nil {
 				return nil, err
 			}
@@ -80,7 +80,7 @@ func createDispatcher(formatter *formatter, receivers []interface{}) (*dispatche
 			continue
 		}
 
-		return nil, errors.New("Method can receive either io.Writer or dispatcherInterface")
+		return nil, errors.New("method can receive either io.Writer or dispatcherInterface")
 	}
 
 	return disp, nil
