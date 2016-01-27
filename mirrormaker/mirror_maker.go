@@ -19,7 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/elodina/go-kafka-avro"
-	kafka "github.com/stealthly/go_kafka_client"
+	kafka "github.com/elodina/go_kafka_client"
 	"os"
 	"os/signal"
 	"runtime"

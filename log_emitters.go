@@ -18,7 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	kafkaavro "github.com/elodina/go-kafka-avro"
-	"github.com/stealthly/go_kafka_client/avro"
+	"github.com/elodina/go_kafka_client/avro"
 	"time"
 )
 

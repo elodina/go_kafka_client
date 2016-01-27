@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/stealthly/siesta"
+	"github.com/elodina/siesta"
 )
 
 type ErrorType int
@@ -246,7 +246,7 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 	return messages
 }
 
-// SiestaClient implements LowLevelClient and OffsetStorage and uses github.com/stealthly/siesta as underlying implementation.
+// SiestaClient implements LowLevelClient and OffsetStorage and uses github.com/elodina/siesta as underlying implementation.
 type SiestaClient struct {
 	config    *ConsumerConfig
 	connector siesta.Connector

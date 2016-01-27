@@ -15,13 +15,13 @@
 
 FROM golang:1.4
 
-MAINTAINER stealthly
+MAINTAINER elodina
 
 #Get and build
-RUN git clone https://github.com/pote/gpm.git && cd gpm && git checkout v1.3.1 && ./configure && make install
-RUN mkdir -p $GOPATH/src/github.com/stealthly/ && cd $GOPATH/src/github.com/stealthly && git clone https://github.com/stealthly/go_kafka_client.git && cd go_kafka_client && gpm install
-RUN cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog && go build
+RUN go get github.com/tools/godep
+RUN mkdir -p $GOPATH/src/github.com/elodina/ && cd $GOPATH/src/github.com/elodina && git clone https://github.com/elodina/go_kafka_client.git && cd go_kafka_client && godep restore
+RUN cd $GOPATH/src/github.com/elodina/go_kafka_client/syslog && go build
 
-RUN cp $GOPATH/src/github.com/stealthly/go_kafka_client/syslog/syslog /usr/bin/syslogproducer
+RUN cp $GOPATH/src/github.com/elodina/go_kafka_client/syslog/syslog /usr/bin/syslogproducer
 
 ENTRYPOINT ["syslogproducer"]

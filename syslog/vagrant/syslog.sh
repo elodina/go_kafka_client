@@ -41,8 +41,8 @@ export HOST_IP_ADDR=192.168.66.66
 source /vagrant/vagrant/prep.sh
 
 #Build syslog binary
-cd $GOPATH/src/github.com/stealthly/go_kafka_client && gpm install
-cd $GOPATH/src/github.com/stealthly/go_kafka_client/syslog && go build
+cd $GOPATH/src/github.com/elodina/go_kafka_client && godep restore
+cd $GOPATH/src/github.com/elodina/go_kafka_client/syslog && go build
 
 #Start Zookeeper
 echo 'Starting Zookeeper'
@@ -58,6 +58,6 @@ $KAFKA_PATH/bin/kafka-server-start.sh $KAFKA_PATH/config/server.properties &
 # let Zookeeper and Kafka start normally
 sleep 5
 $KAFKA_PATH/bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic $TOPIC
-$GOPATH/src/github.com/stealthly/go_kafka_client/syslog/syslog $SYSLOG_ARGS --broker.list $HOST_IP_ADDR:9092 &
+$GOPATH/src/github.com/elodina/go_kafka_client/syslog/syslog $SYSLOG_ARGS --broker.list $HOST_IP_ADDR:9092 &
 
 exitscript

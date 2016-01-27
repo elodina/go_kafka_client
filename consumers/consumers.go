@@ -19,8 +19,8 @@ package main
 
 import (
 	"fmt"
+	kafkaClient "github.com/elodina/go_kafka_client"
 	metrics "github.com/rcrowley/go-metrics"
-	kafkaClient "github.com/stealthly/go_kafka_client"
 	"net"
 	"os"
 	"os/signal"
@@ -115,19 +115,19 @@ func resolveConfig() (*kafkaClient.ConsumerConfig, string, int, string, time.Dur
 func setLogLevel(logLevel string) {
 	var level kafkaClient.LogLevel
 	switch strings.ToLower(logLevel) {
-		case "trace":
+	case "trace":
 		level = kafkaClient.TraceLevel
-		case "debug":
+	case "debug":
 		level = kafkaClient.DebugLevel
-		case "info":
+	case "info":
 		level = kafkaClient.InfoLevel
-		case "warn":
+	case "warn":
 		level = kafkaClient.WarnLevel
-		case "error":
+	case "error":
 		level = kafkaClient.ErrorLevel
-		case "critical":
+	case "critical":
 		level = kafkaClient.CriticalLevel
-		default:
+	default:
 		level = kafkaClient.InfoLevel
 	}
 	kafkaClient.Logger = kafkaClient.NewDefaultLogger(level)

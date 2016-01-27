@@ -17,9 +17,8 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/samuel/go-zookeeper/zk"
-	//	"github.com/stealthly/go-kafka/producer"
 	"github.com/Shopify/sarama"
+	"github.com/samuel/go-zookeeper/zk"
 	"os"
 	"os/exec"
 	"reflect"

@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,14 +18,14 @@
 package main
 
 import (
-  "github.com/aybabtme/tailf"
-  "github.com/Shopify/sarama"
-  "strings"
-  "bufio"
-  "flag"
-  "log"
-  "os"
-    "time"
+	"bufio"
+	"flag"
+	"github.com/Shopify/sarama"
+	"github.com/aybabtme/tailf"
+	"log"
+	"os"
+	"strings"
+	"time"
 )
 
 func main() {
@@ -35,12 +35,12 @@ func main() {
 	var brokerList = flag.String("brokerList", "127.0.0.1:9092", "Kafka broker list, comma-delimited.")
 	var verbose = flag.Bool("verbose", false, "Verbose output")
 	flag.Parse()
-	if len(flag.Args()) != 1 { 
-	    flag.Usage()
-	    os.Exit(1)
+	if len(flag.Args()) != 1 {
+		flag.Usage()
+		os.Exit(1)
 	}
 	var filename = flag.Arg(0)
-	
+
 	follower, err := tailf.Follow(filename, *fromStart)
 	if err != nil {
 		log.Fatalf("couldn't follow %q: %v", filename, err)
@@ -49,7 +49,7 @@ func main() {
 
 	clientConfig := sarama.NewConfig()
 	clientConfig.ClientID = *clientId
-    clientConfig.Producer.Timeout = 10 * time.Second
+	clientConfig.Producer.Timeout = 10 * time.Second
 	client, err := sarama.NewClient(strings.Split(*brokerList, ","), clientConfig)
 	if err != nil {
 		panic(err)
@@ -69,7 +69,7 @@ func main() {
 			log.Println("Produced message:", scanner.Text())
 		}
 	}
-    if err := scanner.Err(); err != nil {
-        log.Fatalf("scanner error: %v", err)
-    }
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("scanner error: %v", err)
+	}
 }
