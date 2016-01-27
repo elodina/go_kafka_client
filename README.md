@@ -1,9 +1,9 @@
 Go Kafka Client
 ===============
 
-The Apache Kafka Client Library for Go is sponsored by [CrowdStrike] (http://www.crowdstrike.com/) and developed by [Big Data Open Source Security LLC] (http://stealth.ly)
+The Apache Kafka Client Library for Go is sponsored by [CrowdStrike] (http://www.crowdstrike.com/) and [Elodina Inc] (http://elodina.net)
 
-[![Build Status](https://travis-ci.org/stealthly/go_kafka_client.svg?branch=master)](https://travis-ci.org/stealthly/go_kafka_client)
+[![Build Status](https://travis-ci.org/elodina/go_kafka_client.svg?branch=master)](https://travis-ci.org/elodina/go_kafka_client)
 
 ***Ideas and goals behind the Go Kafka Client:***
  
@@ -29,16 +29,16 @@ Our offset management is based on a per batch basis with each highest offset fro
 1. Install Golang [http://golang.org/doc/install](http://golang.org/doc/install)
 2. Make sure env variables GOPATH and GOROOT exist and point to correct places
 3. Install GPM [https://github.com/pote/gpm](https://github.com/pote/gpm)
-4. `mkdir -p $GOPATH/src/github.com/stealthly && cd $GOPATH/src/github.com/stealthly`
-5. `git clone https://github.com/stealthly/go_kafka_client.git && cd go_kafka_client`
+4. `mkdir -p $GOPATH/src/github.com/elodina && cd $GOPATH/src/github.com/elodina`
+5. `git clone https://github.com/elodina/go_kafka_client.git && cd go_kafka_client`
 6. `godep restore`
 
 *Optional (for all tests to work):*
 
 1. Install Docker [https://docs.docker.com/installation/#installation](https://docs.docker.com/installation/#installation)
-2. `cd $GOPATH/src/github.com/stealthly/go_kafka_client`
-3. Build docker image: `docker build -t stealthly/go_kafka_client .`
-4. `docker run -v $(pwd):/go_kafka_client stealthly/go_kafka_client`
+2. `cd $GOPATH/src/github.com/elodina/go_kafka_client`
+3. Build docker image: `docker build -t elodina/go_kafka_client .`
+4. `docker run -v $(pwd):/go_kafka_client elodina/go_kafka_client`
 
 After this is done you're ready to write some code!
 
@@ -46,5 +46,5 @@ For email support https://groups.google.com/forum/#!forum/kafka-clients
 
 ***Related docs:***
 
-1. [Offset Storage configuration](https://github.com/stealthly/go_kafka_client/blob/master/docs/offset_storage.md).
-2. [Log and metrics emitters](https://github.com/stealthly/go_kafka_client/blob/master/docs/emitters.md).
+1. [Offset Storage configuration](https://github.com/elodina/go_kafka_client/blob/master/docs/offset_storage.md).
+2. [Log and metrics emitters](https://github.com/elodina/go_kafka_client/blob/master/docs/emitters.md).
