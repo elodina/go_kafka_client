@@ -25,26 +25,26 @@
 package seelog
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
-// VerbSymbol is a special symbol used in config files to mark special format aliases.
+// FormatterSymbol is a special symbol used in config files to mark special format aliases.
 const (
-	VerbSymbol = '%'
-)
-const (
-	verbSymbolString   = "%"
-	verbParameterStart = '('
-	verbParameterEnd   = ')'
+	FormatterSymbol = '%'
 )
 
-// These are the time and date formats that are used when %Date or %Time format aliases are used.
+const (
+	formatterParameterStart = '('
+	formatterParameterEnd   = ')'
+)
+
+// Time and date formats used for %Date and %Time aliases.
 const (
 	DateDefaultFormat = "2006-01-02"
 	TimeFormat        = "15:04:05"
@@ -52,46 +52,91 @@ const (
 
 var DefaultMsgFormat = "%Ns [%Level] %Msg%n"
 
-var defaultformatter *formatter
-var msgonlyformatter *formatter
+var (
+	DefaultFormatter *formatter
+	msgonlyformatter *formatter
+)
 
 func init() {
 	var err error
-	defaultformatter, err = newFormatter(DefaultMsgFormat)
-	if err != nil {
-		fmt.Println("Error during defaultformatter creation: " + err.Error())
+	if DefaultFormatter, err = NewFormatter(DefaultMsgFormat); err != nil {
+		reportInternalError(fmt.Errorf("error during creating DefaultFormatter: %s", err))
 	}
-	msgonlyformatter, err = newFormatter("%Msg")
-	if err != nil {
-		fmt.Println("Error during msgonlyformatter creation: " + err.Error())
+	if msgonlyformatter, err = NewFormatter("%Msg"); err != nil {
+		reportInternalError(fmt.Errorf("error during creating msgonlyformatter: %s", err))
 	}
 }
 
-type verbFunc func(message string, level LogLevel, context LogContextInterface) interface{}
-type verbFuncCreator func(param string) verbFunc
+// FormatterFunc represents one formatter object that starts with '%' sign in the 'format' attribute
+// of the 'format' config item. These special symbols are replaced with context values or special
+// strings when message is written to byte receiver.
+//
+// Check https://github.com/cihub/seelog/wiki/Formatting for details.
+// Full list (with descriptions) of formatters: https://github.com/cihub/seelog/wiki/Format-reference
+//
+// FormatterFunc takes raw log message, level, log context and returns a string, number (of any type) or any object
+// that can be evaluated as string.
+type FormatterFunc func(message string, level LogLevel, context LogContextInterface) interface{}
 
-var verbFuncs = map[string]verbFunc{
-	"Level":     verbLevel,
-	"Lev":       verbLev,
-	"LEVEL":     verbLEVEL,
-	"LEV":       verbLEV,
-	"l":         verbl,
-	"Msg":       verbMsg,
-	"FullPath":  verbFullPath,
-	"File":      verbFile,
-	"RelFile":   verbRelFile,
-	"Func":      verbFunction,
-	"FuncShort": verbFunctionShort,
-	"Line":      verbLine,
-	"Time":      verbTime,
-	"Ns":        verbNs,
-	"n":         verbn,
-	"t":         verbt,
+// FormatterFuncCreator is a factory of FormatterFunc objects. It is used to generate parameterized
+// formatters (such as %Date or %EscM) and custom user formatters.
+type FormatterFuncCreator func(param string) FormatterFunc
+
+var formatterFuncs = map[string]FormatterFunc{
+	"Level":     formatterLevel,
+	"Lev":       formatterLev,
+	"LEVEL":     formatterLEVEL,
+	"LEV":       formatterLEV,
+	"l":         formatterl,
+	"Msg":       formatterMsg,
+	"FullPath":  formatterFullPath,
+	"File":      formatterFile,
+	"RelFile":   formatterRelFile,
+	"Func":      FormatterFunction,
+	"FuncShort": FormatterFunctionShort,
+	"Line":      formatterLine,
+	"Time":      formatterTime,
+	"UTCTime":   formatterUTCTime,
+	"Ns":        formatterNs,
+	"UTCNs":     formatterUTCNs,
+	"n":         formattern,
+	"t":         formattert,
 }
 
-var verbFuncsParametrized = map[string]verbFuncCreator{
-	"Date": createDateTimeVerbFunc,
-	"EscM": createANSIEscapeFunc,
+var formatterFuncsParameterized = map[string]FormatterFuncCreator{
+	"Date":    createDateTimeFormatterFunc,
+	"UTCDate": createUTCDateTimeFormatterFunc,
+	"EscM":    createANSIEscapeFunc,
+}
+
+func errorAliasReserved(name string) error {
+	return fmt.Errorf("cannot use '%s' as custom formatter name. Name is reserved", name)
+}
+
+// RegisterCustomFormatter registers a new custom formatter factory with a given name. If returned error is nil,
+// then this name (prepended by '%' symbol) can be used in 'format' attributes in configuration and
+// it will be treated like the standard parameterized formatter identifiers.
+//
+// RegisterCustomFormatter needs to be called before creating a logger for it to take effect. The general recommendation
+// is to call it once in 'init' func of your application or any initializer func.
+//
+// For usage examples, check https://github.com/cihub/seelog/wiki/Custom-formatters.
+//
+// Name must only consist of letters (unicode.IsLetter).
+//
+// Name must not be one of the already registered standard formatter names
+// (https://github.com/cihub/seelog/wiki/Format-reference) and previously registered
+// custom format names. To avoid any potential name conflicts (in future releases), it is recommended
+// to start your custom formatter name with a namespace (e.g. 'MyCompanySomething') or a 'Custom' keyword.
+func RegisterCustomFormatter(name string, creator FormatterFuncCreator) error {
+	if _, ok := formatterFuncs[name]; ok {
+		return errorAliasReserved(name)
+	}
+	if _, ok := formatterFuncsParameterized[name]; ok {
+		return errorAliasReserved(name)
+	}
+	formatterFuncsParameterized[name] = creator
+	return nil
 }
 
 // formatter is used to write messages in a specific format, inserting such additional data
@@ -99,75 +144,72 @@ var verbFuncsParametrized = map[string]verbFuncCreator{
 type formatter struct {
 	fmtStringOriginal string
 	fmtString         string
-	verbFuncs         []verbFunc
+	formatterFuncs    []FormatterFunc
 }
 
-// newFormatter creates a new formatter using a format string
-func newFormatter(formatString string) (*formatter, error) {
-	newformatter := new(formatter)
-	newformatter.fmtStringOriginal = formatString
-
-	err := newformatter.buildVerbFuncs()
-	if err != nil {
+// NewFormatter creates a new formatter using a format string
+func NewFormatter(formatString string) (*formatter, error) {
+	fmtr := new(formatter)
+	fmtr.fmtStringOriginal = formatString
+	if err := buildFormatterFuncs(fmtr); err != nil {
 		return nil, err
 	}
-
-	return newformatter, nil
+	return fmtr, nil
 }
 
-func (formatter *formatter) buildVerbFuncs() error {
-	formatter.verbFuncs = make([]verbFunc, 0)
-	var fmtString string
-	for i := 0; i < len(formatter.fmtStringOriginal); i++ {
-		char := formatter.fmtStringOriginal[i]
-		if char != VerbSymbol {
-			fmtString += string(char)
+func buildFormatterFuncs(formatter *formatter) error {
+	var (
+		fsbuf  = new(bytes.Buffer)
+		fsolm1 = len(formatter.fmtStringOriginal) - 1
+	)
+	for i := 0; i <= fsolm1; i++ {
+		if char := formatter.fmtStringOriginal[i]; char != FormatterSymbol {
+			fsbuf.WriteByte(char)
 			continue
 		}
-
-		isEndOfStr := i == len(formatter.fmtStringOriginal)-1
-		if isEndOfStr {
-			return errors.New(fmt.Sprintf("Format error: %v - last symbol", verbSymbolString))
+		// Check if the index is at the end of the string.
+		if i == fsolm1 {
+			return fmt.Errorf("format error: %c cannot be last symbol", FormatterSymbol)
 		}
-
-		isDoubledVerbSymbol := formatter.fmtStringOriginal[i+1] == VerbSymbol
-		if isDoubledVerbSymbol {
-			fmtString += verbSymbolString
+		// Check if the formatter symbol is doubled and skip it as nonmatching.
+		if formatter.fmtStringOriginal[i+1] == FormatterSymbol {
+			fsbuf.WriteRune(FormatterSymbol)
 			i++
 			continue
 		}
-
-		function, nextI, err := formatter.extractVerbFunc(i + 1)
+		function, ni, err := formatter.extractFormatterFunc(i + 1)
 		if err != nil {
 			return err
 		}
-
-		fmtString += "%v"
-		i = nextI
-		formatter.verbFuncs = append(formatter.verbFuncs, function)
+		// Append formatting string "%v".
+		fsbuf.Write([]byte{37, 118})
+		i = ni
+		formatter.formatterFuncs = append(formatter.formatterFuncs, function)
 	}
-
-	formatter.fmtString = fmtString
+	formatter.fmtString = fsbuf.String()
 	return nil
 }
 
-func (formatter *formatter) extractVerbFunc(index int) (verbFunc, int, error) {
+func (formatter *formatter) extractFormatterFunc(index int) (FormatterFunc, int, error) {
 	letterSequence := formatter.extractLetterSequence(index)
 	if len(letterSequence) == 0 {
-		return nil, 0, errors.New(fmt.Sprintf("Format error: lack of verb after %v. At %v", verbSymbolString, index))
+		return nil, 0, fmt.Errorf("format error: lack of formatter after %c at %d", FormatterSymbol, index)
 	}
 
-	function, verbLength, ok := formatter.findVerbFunc(letterSequence)
+	function, formatterLength, ok := formatter.findFormatterFunc(letterSequence)
 	if ok {
-		return function, index + verbLength - 1, nil
+		return function, index + formatterLength - 1, nil
 	}
 
-	function, verbLength, ok = formatter.findVerbFuncParametrized(letterSequence, index)
+	function, formatterLength, ok, err := formatter.findFormatterFuncParametrized(letterSequence, index)
+	if err != nil {
+		return nil, 0, err
+	}
 	if ok {
-		return function, index + verbLength - 1, nil
+		return function, index + formatterLength - 1, nil
 	}
 
-	return nil, 0, errors.New("Format error: unrecognized verb at " + strconv.Itoa(index) + ": " + letterSequence)
+	return nil, 0, errors.New("format error: unrecognized formatter at " + strconv.Itoa(index) + ": " + letterSequence)
 }
 
 func (formatter *formatter) extractLetterSequence(index int) string {
@@ -188,10 +230,10 @@ func (formatter *formatter) extractLetterSequence(index int) string {
 	return letters
 }
 
-func (formatter *formatter) findVerbFunc(letters string) (verbFunc, int, bool) {
+func (formatter *formatter) findFormatterFunc(letters string) (FormatterFunc, int, bool) {
 	currentVerb := letters
 	for i := 0; i < len(letters); i++ {
-		function, ok := verbFuncs[currentVerb]
+		function, ok := formatterFuncs[currentVerb]
 		if ok {
 			return function, len(currentVerb), ok
 		}
@@ -201,55 +243,60 @@ func (formatter *formatter) findVerbFunc(letters string) (verbFunc, int, bool) {
 	return nil, 0, false
 }
 
-func (formatter *formatter) findVerbFuncParametrized(letters string, lettersStartIndex int) (verbFunc, int, bool) {
+func (formatter *formatter) findFormatterFuncParametrized(letters string, lettersStartIndex int) (FormatterFunc, int, bool, error) {
 	currentVerb := letters
 	for i := 0; i < len(letters); i++ {
-		functionCreator, ok := verbFuncsParametrized[currentVerb]
+		functionCreator, ok := formatterFuncsParameterized[currentVerb]
 		if ok {
-			paramter := ""
+			parameter := ""
 			parameterLen := 0
-			isVerbEqualsLetters := i == 0 // if not, then letter goes after verb, and verb is parameterless
+			isVerbEqualsLetters := i == 0 // if not, then letter goes after formatter, and formatter is parameterless
 			if isVerbEqualsLetters {
-				userParamter := ""
-				userParamter, parameterLen, ok = formatter.findparameter(lettersStartIndex + len(currentVerb))
+				userParameter := ""
+				var err error
+				userParameter, parameterLen, ok, err = formatter.findparameter(lettersStartIndex + len(currentVerb))
 				if ok {
-					paramter = userParamter
+					parameter = userParameter
+				} else if err != nil {
+					return nil, 0, false, err
 				}
 			}
 
-			return functionCreator(paramter), len(currentVerb) + parameterLen, true
+			return functionCreator(parameter), len(currentVerb) + parameterLen, true, nil
 		}
 
 		currentVerb = currentVerb[:len(currentVerb)-1]
 	}
 
-	return nil, 0, false
+	return nil, 0, false, nil
 }
 
-func (formatter *formatter) findparameter(startIndex int) (string, int, bool) {
-	if len(formatter.fmtStringOriginal) == startIndex || formatter.fmtStringOriginal[startIndex] != verbParameterStart {
-		return "", 0, false
+func (formatter *formatter) findparameter(startIndex int) (string, int, bool, error) {
+	if len(formatter.fmtStringOriginal) == startIndex || formatter.fmtStringOriginal[startIndex] != formatterParameterStart {
+		return "", 0, false, nil
 	}
 
-	endIndex := strings.Index(formatter.fmtStringOriginal[startIndex:], string(verbParameterEnd)) + startIndex
+	endIndex := strings.Index(formatter.fmtStringOriginal[startIndex:], string(formatterParameterEnd))
 	if endIndex == -1 {
-		return "", 0, false
+		return "", 0, false, fmt.Errorf("Unmatched parenthesis or invalid parameter at %d: %s",
+			startIndex, formatter.fmtStringOriginal[startIndex:])
 	}
+	endIndex += startIndex
 
 	length := endIndex - startIndex + 1
 
-	return formatter.fmtStringOriginal[startIndex+1 : endIndex], length, true
+	return formatter.fmtStringOriginal[startIndex+1 : endIndex], length, true, nil
 }
 
-// Format processes a message with special verbs, log level, and context. Returns formatted string
-// with all verb identifiers changed to appropriate values.
+// Format processes a message with special formatters, log level, and context. Returns formatted string
+// with all formatter identifiers changed to appropriate values.
 func (formatter *formatter) Format(message string, level LogLevel, context LogContextInterface) string {
-	if len(formatter.verbFuncs) == 0 {
+	if len(formatter.formatterFuncs) == 0 {
 		return formatter.fmtString
 	}
 
-	params := make([]interface{}, len(formatter.verbFuncs))
-	for i, function := range formatter.verbFuncs {
+	params := make([]interface{}, len(formatter.formatterFuncs))
+	for i, function := range formatter.formatterFuncs {
 		params[i] = function(message, level, context)
 	}
 
@@ -297,7 +344,7 @@ var levelToShortestString = map[LogLevel]string{
 	Off:         "o",
 }
 
-func verbLevel(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterLevel(message string, level LogLevel, context LogContextInterface) interface{} {
 	levelStr, ok := levelToString[level]
 	if !ok {
 		return wrongLogLevel
@@ -305,7 +352,7 @@ func verbLevel(message string, level LogLevel, context LogContextInterface) inte
 	return levelStr
 }
 
-func verbLev(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterLev(message string, level LogLevel, context LogContextInterface) interface{} {
 	levelStr, ok := levelToShortString[level]
 	if !ok {
 		return wrongLogLevel
@@ -313,15 +360,15 @@ func verbLev(message string, level LogLevel, context LogContextInterface) interf
 	return levelStr
 }
 
-func verbLEVEL(message string, level LogLevel, context LogContextInterface) interface{} {
-	return strings.ToTitle(verbLevel(message, level, context).(string))
+func formatterLEVEL(message string, level LogLevel, context LogContextInterface) interface{} {
+	return strings.ToTitle(formatterLevel(message, level, context).(string))
 }
 
-func verbLEV(message string, level LogLevel, context LogContextInterface) interface{} {
-	return strings.ToTitle(verbLev(message, level, context).(string))
+func formatterLEV(message string, level LogLevel, context LogContextInterface) interface{} {
+	return strings.ToTitle(formatterLev(message, level, context).(string))
 }
 
-func verbl(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterl(message string, level LogLevel, context LogContextInterface) interface{} {
 	levelStr, ok := levelToShortestString[level]
 	if !ok {
 		return wrongLogLevel
@@ -329,63 +376,81 @@ func verbl(message string, level LogLevel, context LogContextInterface) interfac
 	return levelStr
 }
 
-func verbMsg(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterMsg(message string, level LogLevel, context LogContextInterface) interface{} {
 	return message
 }
 
-func verbFullPath(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterFullPath(message string, level LogLevel, context LogContextInterface) interface{} {
 	return context.FullPath()
 }
 
-func verbFile(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterFile(message string, level LogLevel, context LogContextInterface) interface{} {
 	return context.FileName()
 }
 
-func verbRelFile(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterRelFile(message string, level LogLevel, context LogContextInterface) interface{} {
 	return context.ShortPath()
 }
 
-func verbFunction(message string, level LogLevel, context LogContextInterface) interface{} {
+func FormatterFunction(message string, level LogLevel, context LogContextInterface) interface{} {
 	return context.Func()
 }
 
-func verbFunctionShort(message string, level LogLevel, context LogContextInterface) interface{} {
+func FormatterFunctionShort(message string, level LogLevel, context LogContextInterface) interface{} {
 	f := context.Func()
 	spl := strings.Split(f, ".")
 	return spl[len(spl)-1]
 }
 
-func verbLine(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterLine(message string, level LogLevel, context LogContextInterface) interface{} {
 	return context.Line()
 }
 
-func verbTime(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterTime(message string, level LogLevel, context LogContextInterface) interface{} {
 	return context.CallTime().Format(TimeFormat)
 }
 
-func verbNs(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterUTCTime(message string, level LogLevel, context LogContextInterface) interface{} {
+	return context.CallTime().UTC().Format(TimeFormat)
+}
+
+func formatterNs(message string, level LogLevel, context LogContextInterface) interface{} {
 	return context.CallTime().UnixNano()
 }
 
-func verbn(message string, level LogLevel, context LogContextInterface) interface{} {
+func formatterUTCNs(message string, level LogLevel, context LogContextInterface) interface{} {
+	return context.CallTime().UTC().UnixNano()
+}
+
+func formattern(message string, level LogLevel, context LogContextInterface) interface{} {
 	return "\n"
 }
 
-func verbt(message string, level LogLevel, context LogContextInterface) interface{} {
+func formattert(message string, level LogLevel, context LogContextInterface) interface{} {
 	return "\t"
 }
 
-func createDateTimeVerbFunc(dateTimeFormat string) verbFunc {
+func createDateTimeFormatterFunc(dateTimeFormat string) FormatterFunc {
 	format := dateTimeFormat
 	if format == "" {
 		format = DateDefaultFormat
 	}
 	return func(message string, level LogLevel, context LogContextInterface) interface{} {
-		return time.Now().Format(format)
+		return context.CallTime().Format(format)
 	}
 }
 
-func createANSIEscapeFunc(escapeCodeString string) verbFunc {
+func createUTCDateTimeFormatterFunc(dateTimeFormat string) FormatterFunc {
+	format := dateTimeFormat
+	if format == "" {
+		format = DateDefaultFormat
+	}
+	return func(message string, level LogLevel, context LogContextInterface) interface{} {
+		return context.CallTime().UTC().Format(format)
+	}
+}
+
+func createANSIEscapeFunc(escapeCodeString string) FormatterFunc {
 	return func(message string, level LogLevel, context LogContextInterface) interface{} {
 		if len(escapeCodeString) == 0 {
 			return wrongEscapeCode

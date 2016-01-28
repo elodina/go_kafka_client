@@ -38,7 +38,7 @@ type fileWriter struct {
 }
 
 // Creates a new file and a corresponding writer. Returns error, if the file couldn't be created.
-func newFileWriter(fileName string) (writer *fileWriter, err error) {
+func NewFileWriter(fileName string) (writer *fileWriter, err error) {
 	newWriter := new(fileWriter)
 	newWriter.fileName = fileName
 
@@ -78,12 +78,7 @@ func (fw *fileWriter) createFile() error {
 	}
 
 	// If exists
-	_, err = os.Lstat(fw.fileName)
-	if nil == err {
-		fw.innerWriter, err = os.OpenFile(fw.fileName, os.O_WRONLY|os.O_APPEND, defaultFilePermissions)
-	} else {
-		fw.innerWriter, err = os.Create(fw.fileName)
-	}
+	fw.innerWriter, err = os.OpenFile(fw.fileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, defaultFilePermissions)
 
 	if err != nil {
 		return err

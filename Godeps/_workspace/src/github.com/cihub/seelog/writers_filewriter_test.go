@@ -41,13 +41,13 @@ var bytesFileTest = []byte(strings.Repeat("A", messageLen))
 
 func TestSimpleFileWriter(t *testing.T) {
 	t.Logf("Starting file writer tests")
-	newFileWriterTester(simplefileWriterTests, simplefileWriterGetter, t).test()
+	NewFileWriterTester(simplefileWriterTests, simplefileWriterGetter, t).test()
 }
 
 //===============================================================
 
 func simplefileWriterGetter(testCase *fileWriterTestCase) (io.WriteCloser, error) {
-	return newFileWriter(testCase.fileName)
+	return NewFileWriter(testCase.fileName)
 }
 
 //===============================================================
@@ -60,10 +60,11 @@ type fileWriterTestCase struct {
 	datePattern string
 	writeCount  int
 	resFiles    []string
+	nameMode    rollingNameMode
 }
 
 func createSimplefileWriterTestCase(fileName string, writeCount int) *fileWriterTestCase {
-	return &fileWriterTestCase{[]string{}, fileName, rollingTypeSize, 0, 0, "", writeCount, []string{fileName}}
+	return &fileWriterTestCase{[]string{}, fileName, rollingTypeSize, 0, 0, "", writeCount, []string{fileName}, 0}
 }
 
 var simplefileWriterTests = []*fileWriterTestCase{
@@ -80,7 +81,7 @@ type fileWriterTester struct {
 	t            *testing.T
 }
 
-func newFileWriterTester(
+func NewFileWriterTester(
 	testCases []*fileWriterTestCase,
 	writerGetter func(*fileWriterTestCase) (io.WriteCloser, error),
 	t *testing.T) *fileWriterTester {

@@ -36,7 +36,7 @@ func TestCustomDispatcher_Message(t *testing.T) {
 	recName := "TestCustomDispatcher_Message"
 	RegisterReceiver(recName, &testCustomDispatcherMessageReceiver{})
 
-	customDispatcher, err := newCustomReceiverDispatcher(onlyMessageFormatForTest, recName, CustomReceiverInitArgs{
+	customDispatcher, err := NewCustomReceiverDispatcher(onlyMessageFormatForTest, recName, CustomReceiverInitArgs{
 		XmlCustomAttrs: map[string]string{
 			"test": "testdata",
 		},
@@ -46,7 +46,7 @@ func TestCustomDispatcher_Message(t *testing.T) {
 		return
 	}
 
-	context, err := currentContext()
+	context, err := currentContext(nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -61,15 +61,15 @@ func TestCustomDispatcher_Message(t *testing.T) {
 		return
 	}
 	if cout.dataPassed != "testdata" {
-		t.Errorf("Wrong data passed: '%s'", cout.dataPassed)
+		t.Errorf("wrong data passed: '%s'", cout.dataPassed)
 		return
 	}
 	if cout.messageOutput != string(bytes) {
-		t.Errorf("Wrong message output: '%s'", cout.messageOutput)
+		t.Errorf("wrong message output: '%s'", cout.messageOutput)
 		return
 	}
 	if cout.levelOutput != TraceLvl {
-		t.Errorf("Wrong log level: '%s'", cout.levelOutput)
+		t.Errorf("wrong log level: '%s'", cout.levelOutput)
 		return
 	}
 	if cout.flushed {
@@ -90,7 +90,7 @@ func TestCustomDispatcher_Flush(t *testing.T) {
 	recName := "TestCustomDispatcher_Flush"
 	RegisterReceiver(recName, &testCustomDispatcherFlushReceiver{})
 
-	customDispatcher, err := newCustomReceiverDispatcher(onlyMessageFormatForTest, recName, CustomReceiverInitArgs{
+	customDispatcher, err := NewCustomReceiverDispatcher(onlyMessageFormatForTest, recName, CustomReceiverInitArgs{
 		XmlCustomAttrs: map[string]string{
 			"test": "testdata",
 		},
@@ -108,15 +108,15 @@ func TestCustomDispatcher_Flush(t *testing.T) {
 		return
 	}
 	if cout.dataPassed != "testdata" {
-		t.Errorf("Wrong data passed: '%s'", cout.dataPassed)
+		t.Errorf("wrong data passed: '%s'", cout.dataPassed)
 		return
 	}
 	if cout.messageOutput != "" {
-		t.Errorf("Wrong message output: '%s'", cout.messageOutput)
+		t.Errorf("wrong message output: '%s'", cout.messageOutput)
 		return
 	}
 	if cout.levelOutput != TraceLvl {
-		t.Errorf("Wrong log level: '%s'", cout.levelOutput)
+		t.Errorf("wrong log level: '%s'", cout.levelOutput)
 		return
 	}
 	if !cout.flushed {
@@ -137,7 +137,7 @@ func TestCustomDispatcher_Close(t *testing.T) {
 	recName := "TestCustomDispatcher_Close"
 	RegisterReceiver(recName, &testCustomDispatcherCloseReceiver{})
 
-	customDispatcher, err := newCustomReceiverDispatcher(onlyMessageFormatForTest, recName, CustomReceiverInitArgs{
+	customDispatcher, err := NewCustomReceiverDispatcher(onlyMessageFormatForTest, recName, CustomReceiverInitArgs{
 		XmlCustomAttrs: map[string]string{
 			"test": "testdata",
 		},
@@ -155,15 +155,15 @@ func TestCustomDispatcher_Close(t *testing.T) {
 		return
 	}
 	if cout.dataPassed != "testdata" {
-		t.Errorf("Wrong data passed: '%s'", cout.dataPassed)
+		t.Errorf("wrong data passed: '%s'", cout.dataPassed)
 		return
 	}
 	if cout.messageOutput != "" {
-		t.Errorf("Wrong message output: '%s'", cout.messageOutput)
+		t.Errorf("wrong message output: '%s'", cout.messageOutput)
 		return
 	}
 	if cout.levelOutput != TraceLvl {
-		t.Errorf("Wrong log level: '%s'", cout.levelOutput)
+		t.Errorf("wrong log level: '%s'", cout.levelOutput)
 		return
 	}
 	if !cout.flushed {
