@@ -1,6 +1,7 @@
 package siesta
 
 import (
+	"errors"
 	"hash"
 	"hash/fnv"
 	"math/rand"
@@ -54,4 +55,19 @@ func NewRandomPartitioner() *RandomPartitioner {
 
 func (rp *RandomPartitioner) Partition(record *ProducerRecord, partitions []int32) (int32, error) {
 	return rp.random.Int31n(int32(len(partitions))), nil
+}
+
+type ManualPartitioner struct{}
+
+func NewManualPartitioner() *ManualPartitioner {
+	return new(ManualPartitioner)
+}
+
+func (mp *ManualPartitioner) Partition(record *ProducerRecord, partitions []int32) (int32, error) {
+	if record.Partition >= int32(len(partitions)) {
+		Logger.Warn("Invalid partition %d. Available partitions: %v", record.Partition, partitions)
+		return -1, errors.New("Invalid partition")
+	}
+
+	return record.Partition, nil
 }

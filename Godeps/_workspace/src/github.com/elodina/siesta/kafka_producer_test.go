@@ -24,6 +24,7 @@ import (
 func TestProducerSend1(t *testing.T) {
 	connector := testConnector(t)
 	producerConfig := &ProducerConfig{
+		Partitioner:     NewHashPartitioner(),
 		BatchSize:       1,
 		ClientID:        "siesta",
 		MaxRequests:     10,
@@ -53,6 +54,7 @@ func TestProducerSend1(t *testing.T) {
 func TestProducerSend1000(t *testing.T) {
 	connector := testConnector(t)
 	producerConfig := &ProducerConfig{
+		Partitioner:     NewHashPartitioner(),
 		BatchSize:       100,
 		ClientID:        "siesta",
 		MaxRequests:     10,
@@ -87,6 +89,7 @@ func TestProducerSend1000(t *testing.T) {
 func TestProducerRequiredAcks0(t *testing.T) {
 	connector := testConnector(t)
 	producerConfig := &ProducerConfig{
+		Partitioner:     NewHashPartitioner(),
 		BatchSize:       100,
 		ClientID:        "siesta",
 		MaxRequests:     10,
@@ -122,6 +125,7 @@ func TestProducerRequiredAcks0(t *testing.T) {
 func TestProducerFlushTimeout(t *testing.T) {
 	connector := testConnector(t)
 	producerConfig := &ProducerConfig{
+		Partitioner:     NewHashPartitioner(),
 		BatchSize:       1000,
 		ClientID:        "siesta",
 		MaxRequests:     10,

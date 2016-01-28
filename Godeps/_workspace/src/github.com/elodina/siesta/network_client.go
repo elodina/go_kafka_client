@@ -44,7 +44,7 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 	request.RequiredAcks = int16(nc.requiredAcks)
 	request.AckTimeoutMs = nc.ackTimeoutMs
 	for _, record := range batch {
-		request.AddMessage(record.Topic, record.partition, &Message{Key: record.encodedKey, Value: record.encodedValue})
+		request.AddMessage(record.Topic, record.Partition, &Message{Key: record.encodedKey, Value: record.encodedValue})
 	}
 	responseChan := nc.selector.Send(leader, request)
 
@@ -80,16 +80,18 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 		}
 	}
 
-	status := produceResponse.Status[topic][partition]
-	currentOffset := status.Offset
-	for _, record := range batch {
-		record.metadataChan <- &RecordMetadata{
-			Topic:     topic,
-			Partition: partition,
-			Offset:    currentOffset,
-			Error:     status.Error,
+	status, exists := produceResponse.Status[topic][partition]
+	if exists {
+		currentOffset := status.Offset
+		for _, record := range batch {
+			record.metadataChan <- &RecordMetadata{
+				Topic:     topic,
+				Partition: partition,
+				Offset:    currentOffset,
+				Error:     status.Error,
+			}
+			currentOffset++
 		}
-		currentOffset++
 	}
 }
 

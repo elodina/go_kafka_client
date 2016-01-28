@@ -9,11 +9,11 @@ import (
 )
 
 type ProducerRecord struct {
-	Topic string
-	Key   interface{}
-	Value interface{}
+	Topic     string
+	Partition int32
+	Key       interface{}
+	Value     interface{}
 
-	partition    int32
 	encodedKey   []byte
 	encodedValue []byte
 	metadataChan chan *RecordMetadata
@@ -29,6 +29,7 @@ type RecordMetadata struct {
 type PartitionInfo struct{}
 type Metric struct{}
 type ProducerConfig struct {
+	Partitioner          Partitioner
 	MetadataFetchTimeout time.Duration
 	MetadataExpire       time.Duration
 	MaxRequestSize       int
@@ -53,6 +54,7 @@ type ProducerConfig struct {
 
 func NewProducerConfig() *ProducerConfig {
 	return &ProducerConfig{
+		Partitioner:     NewHashPartitioner(),
 		BatchSize:       1000,
 		ClientID:        "siesta",
 		MaxRequests:     10,
@@ -110,7 +112,6 @@ type Producer interface {
 type KafkaProducer struct {
 	config          *ProducerConfig
 	time            time.Time
-	partitioner     Partitioner
 	keySerializer   Serializer
 	valueSerializer Serializer
 	metrics         map[string]Metric
@@ -127,7 +128,6 @@ func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSer
 	producer.config = config
 	producer.time = time.Now()
 	producer.metrics = make(map[string]Metric)
-	producer.partitioner = NewHashPartitioner()
 	producer.keySerializer = keySerializer
 	producer.valueSerializer = valueSerializer
 	producer.connector = connector
@@ -248,13 +248,13 @@ func (kp *KafkaProducer) send(record *ProducerRecord) {
 		return
 	}
 
-	partition, err := kp.partitioner.Partition(record, partitions)
+	partition, err := kp.config.Partitioner.Partition(record, partitions)
 	if err != nil {
 		metadata.Error = err
 		metadataChan <- metadata
 		return
 	}
-	record.partition = partition
+	record.Partition = partition
 
 	kp.accumulator.addChan <- record
 }

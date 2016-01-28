@@ -84,10 +84,10 @@ func (ra *RecordAccumulator) addRecord(record *ProducerRecord) {
 	if ra.batches[record.Topic] == nil {
 		ra.batches[record.Topic] = make(map[int32]*RecordBatch)
 	}
-	if ra.batches[record.Topic][record.partition] == nil {
-		ra.createBatch(record.Topic, record.partition)
+	if ra.batches[record.Topic][record.Partition] == nil {
+		ra.createBatch(record.Topic, record.Partition)
 	}
-	ra.records[record.Topic][record.partition] <- record
+	ra.records[record.Topic][record.Partition] <- record
 }
 
 func (ra *RecordAccumulator) createBatch(topic string, partition int32) {
@@ -105,7 +105,7 @@ func (ra *RecordAccumulator) watcher(topic string, partition int32) {
 	for {
 		select {
 		case record := <-ra.records[topic][partition]:
-			batch := ra.batches[record.Topic][record.partition]
+			batch := ra.batches[record.Topic][record.Partition]
 			batch.Lock()
 			batch.batch = append(batch.batch, record)
 			batch.Unlock()
