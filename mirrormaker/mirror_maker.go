@@ -48,8 +48,6 @@ var prefix = flag.String("prefix", "", "Destination topic prefix.")
 var queueSize = flag.Int("queue.size", 10000, "Number of messages that are buffered between the consumer and producer.")
 var maxProcs = flag.Int("max.procs", runtime.NumCPU(), "Maximum number of CPUs that can be executing simultaneously.")
 var schemaRegistryUrl = flag.String("schema.registry.url", "", "Avro schema registry URL for message encoding/decoding")
-var timingsProducerConfig = flag.String("timings.producer.config", "", "Path to producer configuration file for timings.")
-var produceMetricsTopic = flag.String("metrics.topic", "", "Topic to produce mirror maker consumer metrics to. Optional. Turned off if left blank.")
 
 func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	flag.Var(&consumerConfig, "consumer.config", "Path to consumer configuration file.")
@@ -72,9 +70,6 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 		fmt.Println("Queue size should be equal or greater than 0")
 		os.Exit(1)
 	}
-	if *timingsProducerConfig == "" && *schemaRegistryUrl == "" {
-		fmt.Println("--schema.registry.url parameter is required when --timings is used")
-	}
 
 	config := kafka.NewMirrorMakerConfig()
 	config.Blacklist = *blacklist
@@ -88,13 +83,11 @@ func parseAndValidateArgs() *kafka.MirrorMakerConfig {
 	config.ProducerConfig = *producerConfig
 	config.TopicPrefix = *prefix
 	if *schemaRegistryUrl != "" {
-		config.KeyEncoder = avro.NewKafkaAvroEncoder(*schemaRegistryUrl)
-		config.ValueEncoder = avro.NewKafkaAvroEncoder(*schemaRegistryUrl)
+		config.KeyEncoder = avro.NewKafkaAvroEncoder(*schemaRegistryUrl).Encode
+		config.ValueEncoder = avro.NewKafkaAvroEncoder(*schemaRegistryUrl).Encode
 		config.KeyDecoder = avro.NewKafkaAvroDecoder(*schemaRegistryUrl)
 		config.ValueDecoder = avro.NewKafkaAvroDecoder(*schemaRegistryUrl)
 	}
-	config.TimingsProducerConfig = *timingsProducerConfig
-	config.ProduceMetricsTopic = *produceMetricsTopic
 
 	return config
 }
