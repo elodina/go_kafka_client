@@ -398,7 +398,7 @@ func (dc *DefaultConnector) refreshMetadata(topics []string) {
 				panic(fmt.Sprintf("incorrect port in broker connection string: %s", broker))
 			}
 
-			dc.bootstrapLinks = append(dc.bootstrapLinks, newBrokerLink(&Broker{ID: -1, Host: hostPort[0], Port: int32(port)},
+			dc.bootstrapLinks = append(dc.bootstrapLinks, NewBrokerLink(&Broker{ID: -1, Host: hostPort[0], Port: int32(port)},
 				dc.config.KeepAlive,
 				dc.config.KeepAliveTimeout,
 				dc.config.MaxConnectionsPerBroker))
@@ -419,7 +419,7 @@ func (dc *DefaultConnector) refreshMetadata(topics []string) {
 func (dc *DefaultConnector) refreshLeaders(response *MetadataResponse) {
 	brokers := make(map[int32]*brokerLink)
 	for _, broker := range response.Brokers {
-		brokers[broker.ID] = newBrokerLink(broker, dc.config.KeepAlive, dc.config.KeepAliveTimeout, dc.config.MaxConnectionsPerBroker)
+		brokers[broker.ID] = NewBrokerLink(broker, dc.config.KeepAlive, dc.config.KeepAliveTimeout, dc.config.MaxConnectionsPerBroker)
 	}
 
 	if len(brokers) != 0 && len(response.TopicsMetadata) != 0 {
@@ -781,7 +781,7 @@ type brokerLink struct {
 	stop                      chan bool
 }
 
-func newBrokerLink(broker *Broker, keepAlive bool, keepAliveTimeout time.Duration, maxConnectionsPerBroker int) *brokerLink {
+func NewBrokerLink(broker *Broker, keepAlive bool, keepAliveTimeout time.Duration, maxConnectionsPerBroker int) *brokerLink {
 	brokerConnect := fmt.Sprintf("%s:%d", broker.Host, broker.Port)
 	correlationIds := make(chan int32)
 	stop := make(chan bool)

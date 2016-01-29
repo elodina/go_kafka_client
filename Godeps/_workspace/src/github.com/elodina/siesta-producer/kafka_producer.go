@@ -1,10 +1,11 @@
-package siesta
+package producer
 
 import (
 	"fmt"
 	"log"
 	"time"
 
+	"github.com/elodina/siesta"
 	"github.com/jimlawless/cfg"
 )
 
@@ -118,12 +119,12 @@ type KafkaProducer struct {
 	metrics         map[string]Metric
 	accumulator     *RecordAccumulator
 	metricTags      map[string]string
-	connector       Connector
+	connector       siesta.Connector
 	metadata        *Metadata
 	RecordsMetadata chan *RecordMetadata
 }
 
-func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSerializer Serializer, connector Connector) *KafkaProducer {
+func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSerializer Serializer, connector siesta.Connector) *KafkaProducer {
 	log.Println("Starting the Kafka producer")
 	producer := &KafkaProducer{}
 	producer.config = config
@@ -132,7 +133,7 @@ func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSer
 	producer.keySerializer = keySerializer
 	producer.valueSerializer = valueSerializer
 	producer.connector = connector
-	producer.metadata = NetMetadata(connector, config.MetadataExpire)
+	producer.metadata = NewMetadata(connector, config.MetadataExpire)
 	metricTags := make(map[string]string)
 
 	networkClientConfig := NetworkClientConfig{}

@@ -1,4 +1,4 @@
-package siesta
+package producer
 
 import (
 	"sync"
@@ -126,7 +126,6 @@ func (ra *RecordAccumulator) watcher(topic string, partition int32) {
 			timeout.Reset(ra.config.linger)
 		}
 	}
-	timeout.Stop()
 }
 
 func (ra *RecordAccumulator) flush(topic string, partition int32) {

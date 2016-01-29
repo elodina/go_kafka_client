@@ -44,12 +44,16 @@
 		},
 		{
 			"ImportPath": "github.com/elodina/siesta",
-			"Comment": "v0.1.0.0-86-g4cf24ad",
-			"Rev": "4cf24ad3a291eb38a4fe73e724a48ec739a2524f"
+			"Comment": "v0.1.0.0-88-gdc73119",
+			"Rev": "dc73119d392992e2c906942093bbad9fda5aa630"
+		},
+		{
+			"ImportPath": "github.com/elodina/siesta-producer",
+			"Rev": "4f369e841e0a4e517b0675ab17a1dc4bade75470"
 		},
 		{
 			"ImportPath": "github.com/elodina/syslog-service/syslog",
-			"Rev": "b5590433b6d387e4cf77bc51fc776a151e9ebc0b"
+			"Rev": "a63eb72fab4b79b4ca750f0e114871492353141e"
 		},
 		{
 			"ImportPath": "github.com/gogo/protobuf/proto",

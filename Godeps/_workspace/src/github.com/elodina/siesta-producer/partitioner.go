@@ -1,4 +1,4 @@
-package siesta
+package producer
 
 import (
 	"errors"

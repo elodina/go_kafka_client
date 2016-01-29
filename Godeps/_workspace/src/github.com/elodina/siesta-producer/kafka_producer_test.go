@@ -13,35 +13,26 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-package siesta
+package producer
 
 import (
 	"fmt"
+	"github.com/elodina/siesta"
 	"testing"
 	"time"
 )
 
 func TestProducerSend1(t *testing.T) {
 	connector := testConnector(t)
-	producerConfig := &ProducerConfig{
-		Partitioner:     NewHashPartitioner(),
-		BatchSize:       1,
-		ClientID:        "siesta",
-		MaxRequests:     10,
-		SendRoutines:    10,
-		ReceiveRoutines: 10,
-		ReadTimeout:     5 * time.Second,
-		WriteTimeout:    5 * time.Second,
-		RequiredAcks:    1,
-		AckTimeoutMs:    2000,
-		Linger:          1 * time.Second,
-	}
+	producerConfig := NewProducerConfig()
+	producerConfig.BatchSize = 1
+
 	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
 	recordMetadata := producer.Send(&ProducerRecord{Topic: "siesta", Value: "hello world"})
 
 	select {
 	case metadata := <-recordMetadata:
-		assert(t, metadata.Error, ErrNoError)
+		assert(t, metadata.Error, siesta.ErrNoError)
 		assert(t, metadata.Topic, "siesta")
 		assert(t, metadata.Partition, int32(0))
 	case <-time.After(5 * time.Second):
@@ -53,19 +44,9 @@ func TestProducerSend1(t *testing.T) {
 
 func TestProducerSend1000(t *testing.T) {
 	connector := testConnector(t)
-	producerConfig := &ProducerConfig{
-		Partitioner:     NewHashPartitioner(),
-		BatchSize:       100,
-		ClientID:        "siesta",
-		MaxRequests:     10,
-		SendRoutines:    10,
-		ReceiveRoutines: 10,
-		ReadTimeout:     5 * time.Second,
-		WriteTimeout:    5 * time.Second,
-		RequiredAcks:    1,
-		AckTimeoutMs:    2000,
-		Linger:          1 * time.Second,
-	}
+	producerConfig := NewProducerConfig()
+	producerConfig.BatchSize = 100
+
 	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
 	metadatas := make([]<-chan *RecordMetadata, 1000)
 	for i := 0; i < 1000; i++ {
@@ -75,7 +56,7 @@ func TestProducerSend1000(t *testing.T) {
 	for _, metadataChan := range metadatas {
 		select {
 		case metadata := <-metadataChan:
-			assert(t, metadata.Error, ErrNoError)
+			assert(t, metadata.Error, siesta.ErrNoError)
 			assert(t, metadata.Topic, "siesta")
 			assert(t, metadata.Partition, int32(0))
 		case <-time.After(5 * time.Second):
@@ -88,18 +69,10 @@ func TestProducerSend1000(t *testing.T) {
 
 func TestProducerRequiredAcks0(t *testing.T) {
 	connector := testConnector(t)
-	producerConfig := &ProducerConfig{
-		Partitioner:     NewHashPartitioner(),
-		BatchSize:       100,
-		ClientID:        "siesta",
-		MaxRequests:     10,
-		SendRoutines:    10,
-		ReceiveRoutines: 10,
-		ReadTimeout:     5 * time.Second,
-		WriteTimeout:    5 * time.Second,
-		RequiredAcks:    0,
-		Linger:          1 * time.Second,
-	}
+	producerConfig := NewProducerConfig()
+	producerConfig.BatchSize = 100
+	producerConfig.RequiredAcks = 0
+
 	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
 
 	metadatas := make([]<-chan *RecordMetadata, 1000)
@@ -110,7 +83,7 @@ func TestProducerRequiredAcks0(t *testing.T) {
 	for _, metadataChan := range metadatas {
 		select {
 		case metadata := <-metadataChan:
-			assert(t, metadata.Error, ErrNoError)
+			assert(t, metadata.Error, siesta.ErrNoError)
 			assert(t, metadata.Topic, "siesta")
 			assert(t, metadata.Partition, int32(0))
 			assert(t, metadata.Offset, int64(-1))
@@ -124,18 +97,10 @@ func TestProducerRequiredAcks0(t *testing.T) {
 
 func TestProducerFlushTimeout(t *testing.T) {
 	connector := testConnector(t)
-	producerConfig := &ProducerConfig{
-		Partitioner:     NewHashPartitioner(),
-		BatchSize:       1000,
-		ClientID:        "siesta",
-		MaxRequests:     10,
-		SendRoutines:    10,
-		ReceiveRoutines: 10,
-		ReadTimeout:     5 * time.Second,
-		WriteTimeout:    5 * time.Second,
-		RequiredAcks:    0,
-		Linger:          500 * time.Millisecond,
-	}
+	producerConfig := NewProducerConfig()
+	producerConfig.RequiredAcks = 0
+	producerConfig.Linger = 500 * time.Millisecond
+
 	producer := NewKafkaProducer(producerConfig, ByteSerializer, StringSerializer, connector)
 	metadatas := make([]<-chan *RecordMetadata, 100)
 	for i := 0; i < 100; i++ {
@@ -145,7 +110,7 @@ func TestProducerFlushTimeout(t *testing.T) {
 	for _, metadataChan := range metadatas {
 		select {
 		case metadata := <-metadataChan:
-			assert(t, metadata.Error, ErrNoError)
+			assert(t, metadata.Error, siesta.ErrNoError)
 			assert(t, metadata.Topic, "siesta")
 			assert(t, metadata.Partition, int32(0))
 			assert(t, metadata.Offset, int64(-1))

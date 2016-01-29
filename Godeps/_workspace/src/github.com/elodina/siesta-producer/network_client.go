@@ -1,9 +1,12 @@
-package siesta
+package producer
 
-import "net"
+import (
+	"github.com/elodina/siesta"
+	"net"
+)
 
 type NetworkClient struct {
-	connector               Connector
+	connector               siesta.Connector
 	metadata                Metadata
 	socketSendBuffer        int
 	socketReceiveBuffer     int
@@ -21,7 +24,7 @@ type NetworkClient struct {
 type NetworkClientConfig struct {
 }
 
-func NewNetworkClient(config NetworkClientConfig, connector Connector, producerConfig *ProducerConfig) *NetworkClient {
+func NewNetworkClient(config NetworkClientConfig, connector siesta.Connector, producerConfig *ProducerConfig) *NetworkClient {
 	client := &NetworkClient{}
 	client.connector = connector
 	client.requiredAcks = producerConfig.RequiredAcks
@@ -40,11 +43,11 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 		}
 	}
 
-	request := new(ProduceRequest)
+	request := new(siesta.ProduceRequest)
 	request.RequiredAcks = int16(nc.requiredAcks)
 	request.AckTimeoutMs = nc.ackTimeoutMs
 	for _, record := range batch {
-		request.AddMessage(record.Topic, record.Partition, &Message{Key: record.encodedKey, Value: record.encodedValue})
+		request.AddMessage(record.Topic, record.Partition, &siesta.Message{Key: record.encodedKey, Value: record.encodedValue})
 	}
 	responseChan := nc.selector.Send(leader, request)
 
@@ -57,7 +60,7 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 				Offset:    -1,
 				Topic:     topic,
 				Partition: partition,
-				Error:     ErrNoError,
+				Error:     siesta.ErrNoError,
 			}
 		}
 	}
@@ -71,12 +74,12 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 		}
 	}
 
-	decoder := NewBinaryDecoder(response.bytes)
-	produceResponse := new(ProduceResponse)
+	decoder := siesta.NewBinaryDecoder(response.bytes)
+	produceResponse := new(siesta.ProduceResponse)
 	decodingErr := produceResponse.Read(decoder)
 	if decodingErr != nil {
 		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Error: decodingErr.err}
+			record.metadataChan <- &RecordMetadata{Error: decodingErr.Error()}
 		}
 	}
 

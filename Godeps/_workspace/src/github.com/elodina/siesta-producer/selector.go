@@ -13,9 +13,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-package siesta
+package producer
 
 import (
+	"github.com/elodina/siesta"
 	"io"
 	"net"
 	"time"
@@ -94,7 +95,7 @@ func (s *Selector) Close() {
 	close(s.responses)
 }
 
-func (s *Selector) Send(link BrokerLink, request Request) <-chan *rawResponseAndError {
+func (s *Selector) Send(link siesta.BrokerLink, request siesta.Request) <-chan *rawResponseAndError {
 	responseChan := make(chan *rawResponseAndError, 1) //make this buffered so we don't block if noone reads the response
 	s.requests <- &NetworkRequest{link, request, responseChan}
 
@@ -152,10 +153,10 @@ func (s *Selector) responseDispatcher() {
 	}
 }
 
-func (s *Selector) send(correlationID int32, conn *net.TCPConn, request Request) error {
-	writer := NewRequestHeader(correlationID, s.config.ClientID, request)
+func (s *Selector) send(correlationID int32, conn *net.TCPConn, request siesta.Request) error {
+	writer := siesta.NewRequestHeader(correlationID, s.config.ClientID, request)
 	bytes := make([]byte, writer.Size())
-	encoder := NewBinaryEncoder(bytes)
+	encoder := siesta.NewBinaryEncoder(bytes)
 	writer.Write(encoder)
 
 	conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
@@ -171,7 +172,7 @@ func (s *Selector) receive(conn *net.TCPConn) ([]byte, error) {
 		return nil, err
 	}
 
-	decoder := NewBinaryDecoder(header)
+	decoder := siesta.NewBinaryDecoder(header)
 	length, err := decoder.GetInt32()
 	if err != nil {
 		return nil, err
@@ -187,7 +188,13 @@ func (s *Selector) receive(conn *net.TCPConn) ([]byte, error) {
 
 //TODO better struct name
 type NetworkRequest struct {
-	link         BrokerLink
-	request      Request
+	link         siesta.BrokerLink
+	request      siesta.Request
 	responseChan chan *rawResponseAndError
+}
+
+type rawResponseAndError struct {
+	bytes []byte
+	link  siesta.BrokerLink
+	err   error
 }

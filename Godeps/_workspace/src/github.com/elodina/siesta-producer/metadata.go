@@ -1,19 +1,20 @@
-package siesta
+package producer
 
 import (
 	"fmt"
+	"github.com/elodina/siesta"
 	"sync"
 	"time"
 )
 
 type Metadata struct {
-	connector      Connector
+	connector      siesta.Connector
 	metadataExpire time.Duration
 	cache          map[string]*metadataEntry
 	refreshLock    sync.Mutex
 }
 
-func NetMetadata(connector Connector, metadataExpire time.Duration) *Metadata {
+func NewMetadata(connector siesta.Connector, metadataExpire time.Duration) *Metadata {
 	return &Metadata{
 		connector:      connector,
 		metadataExpire: metadataExpire,
