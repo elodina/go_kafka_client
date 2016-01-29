@@ -13,42 +13,26 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-package go_kafka_client
+package producer
 
-type Encoder interface {
-	Encode(interface{}) ([]byte, error)
-}
+import (
+	"errors"
+	"testing"
+)
 
-type Decoder interface {
-	Decode([]byte) (interface{}, error)
-}
+func TestManualPartitioner(t *testing.T) {
+	partitioner := new(ManualPartitioner)
 
-type StringEncoder struct{}
+	partitions := []int32{0, 1, 2}
+	partition, err := partitioner.Partition(&ProducerRecord{Partition: 0}, partitions)
+	assert(t, partition, int32(0))
+	assert(t, err, nil)
 
-func (this *StringEncoder) Encode(what interface{}) ([]byte, error) {
-	if what == nil {
-		return nil, nil
-	}
-	return []byte(what.(string)), nil
-}
+	partition, err = partitioner.Partition(&ProducerRecord{Partition: 2}, partitions)
+	assert(t, partition, int32(2))
+	assert(t, err, nil)
 
-type StringDecoder struct{}
-
-func (this *StringDecoder) Decode(bytes []byte) (interface{}, error) {
-	return string(bytes), nil
-}
-
-type ByteEncoder struct{}
-
-func (this *ByteEncoder) Encode(what interface{}) ([]byte, error) {
-	if what == nil {
-		return nil, nil
-	}
-	return what.([]byte), nil
-}
-
-type ByteDecoder struct{}
-
-func (this *ByteDecoder) Decode(bytes []byte) (interface{}, error) {
-	return bytes, nil
+	partition, err = partitioner.Partition(&ProducerRecord{Partition: 3}, partitions)
+	assert(t, partition, int32(-1))
+	assert(t, err, errors.New("Invalid partition"))
 }

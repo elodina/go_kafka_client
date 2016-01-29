@@ -265,7 +265,7 @@ func createProducerConfig(t *testing.T, id int) string {
 
 	fileName := fmt.Sprintf("producer-%d.properties", id)
 
-	contents := fmt.Sprintf(`metadata.broker.list=%s
+	contents := fmt.Sprintf(`bootstrap.servers=%s
 `, localBroker)
 
 	configPath := fmt.Sprintf("%s/%s", tmpPath, fileName)

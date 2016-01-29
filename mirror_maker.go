@@ -17,11 +17,9 @@ package go_kafka_client
 
 import (
 	"fmt"
-	avro "github.com/elodina/go-avro"
 	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"hash/fnv"
-	"io/ioutil"
-	"reflect"
 	"time"
 )
 
@@ -58,38 +56,25 @@ type MirrorMakerConfig struct {
 	ChannelSize int
 
 	// Message keys encoder for producer
-	KeyEncoder Encoder
+	KeyEncoder producer.Serializer
 
 	// Message values encoder for producer
-	ValueEncoder Encoder
+	ValueEncoder producer.Serializer
 
 	// Message keys decoder for consumer
 	KeyDecoder Decoder
 
 	// Message values decoder for consumer
 	ValueDecoder Decoder
-
-	// Function that generates producer instances
-	ProducerConstructor ProducerConstructor
-
-	// Path to producer configuration, that is responsible for logging timings
-	// Defines whether add timings to message or not.
-	// Note: used only for avro encoded messages
-	TimingsProducerConfig string
-
-	// ProduceMetricsTopic is a topic where all mirror maker consumer metrics will be produced to.
-	// Nothing will be produced if left blank.
-	ProduceMetricsTopic string
 }
 
 // Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
 	return &MirrorMakerConfig{
-		KeyEncoder:          &ByteEncoder{},
-		ValueEncoder:        &ByteEncoder{},
-		KeyDecoder:          &ByteDecoder{},
-		ValueDecoder:        &ByteDecoder{},
-		ProducerConstructor: NewSaramaProducer,
+		KeyEncoder:   producer.ByteSerializer,
+		ValueEncoder: producer.ByteSerializer,
+		KeyDecoder:   &ByteDecoder{},
+		ValueDecoder: &ByteDecoder{},
 	}
 }
 
@@ -99,34 +84,22 @@ type MirrorMaker struct {
 	config          *MirrorMakerConfig
 	metricReporter  *KafkaMetricReporter
 	consumers       []*Consumer
-	producers       []Producer
+	producers       []producer.Producer
 	messageChannels []chan *Message
-	timingsProducer Producer
-	logLineSchema   *avro.RecordSchema
-	evolutioned     *schemaSet
-	errors          chan *FailedMessage
 	stopped         chan struct{}
 }
 
 // Creates a new MirrorMaker using given MirrorMakerConfig.
 func NewMirrorMaker(config *MirrorMakerConfig) *MirrorMaker {
-	var logLineSchema *avro.RecordSchema
-	if config.TimingsProducerConfig != "" {
-		logLineSchema = readLoglineSchema()
-	}
 	return &MirrorMaker{
-		config:        config,
-		logLineSchema: logLineSchema,
-		evolutioned:   newSchemaSet(),
-		errors:        make(chan *FailedMessage),
-		stopped:       make(chan struct{}),
+		config:  config,
+		stopped: make(chan struct{}),
 	}
 }
 
 // Starts the MirrorMaker. This method is blocking and should probably be run in a separate goroutine.
 func (this *MirrorMaker) Start() {
 	this.initializeMessageChannels()
-	this.startMetricsProducer()
 	this.startConsumers()
 	this.startProducers()
 	<-this.stopped
@@ -149,7 +122,7 @@ func (this *MirrorMaker) Stop() {
 
 	//TODO maybe drain message channel first?
 	for _, producer := range this.producers {
-		producer.Close()
+		producer.Close(time.Second)
 	}
 
 	Info("", "Sending stopped")
@@ -170,8 +143,6 @@ func (this *MirrorMaker) startConsumers() {
 		if err != nil {
 			panic(err)
 		}
-		//Let the NumWorkers be set via consumer configs
-		//config.NumWorkers = 1
 		config.AutoOffsetReset = SmallestOffset
 		config.Coordinator = NewZookeeperCoordinator(zkConfig)
 		config.WorkerFailureCallback = func(_ *WorkerManager) FailedDecision {
@@ -182,16 +153,8 @@ func (this *MirrorMaker) startConsumers() {
 		}
 		if this.config.PreserveOrder {
 			numProducers := this.config.NumProducers
+			config.NumWorkers = 1 // NumWorkers must be 1 to guarantee order
 			config.Strategy = func(_ *Worker, msg *Message, id TaskId) WorkerResult {
-				if this.config.TimingsProducerConfig != "" {
-					consumed := time.Now().Unix()
-					if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
-						msg.DecodedValue = this.AddTiming(record, "consumed", consumed)
-					} else {
-						return NewProcessingFailedResult(id)
-					}
-				}
-
 				this.messageChannels[topicPartitionHash(msg)%numProducers] <- msg
 
 				return NewSuccessfulResult(id)
@@ -213,9 +176,6 @@ func (this *MirrorMaker) startConsumers() {
 		} else {
 			panic("Consume pattern not specified")
 		}
-		if this.config.ProduceMetricsTopic != "" {
-			go consumer.Metrics().WriteJSON(time.Second, this.metricReporter)
-		}
 	}
 }
 
@@ -230,173 +190,39 @@ func (this *MirrorMaker) initializeMessageChannels() {
 }
 
 func (this *MirrorMaker) startProducers() {
-	if this.config.TimingsProducerConfig != "" {
-		conf, err := ProducerConfigFromFile(this.config.TimingsProducerConfig)
-		if err != nil {
-			panic(err)
-		}
-		if this.config.PreservePartitions {
-			conf.Partitioner = NewFixedPartitioner
-		} else {
-			conf.Partitioner = NewRandomPartitioner
-		}
-		conf.KeyEncoder = this.config.KeyEncoder
-		conf.ValueEncoder = this.config.ValueEncoder
-		this.timingsProducer = this.config.ProducerConstructor(conf)
-		go this.failedRoutine(this.timingsProducer)
-	}
-
 	for i := 0; i < this.config.NumProducers; i++ {
-		conf, err := ProducerConfigFromFile(this.config.ProducerConfig)
+		conf, err := producer.ProducerConfigFromFile(this.config.ProducerConfig)
 		if err != nil {
 			panic(err)
 		}
 		if this.config.PreservePartitions {
-			conf.Partitioner = NewFixedPartitioner
-		} else {
-			conf.Partitioner = NewRandomPartitioner
+			conf.Partitioner = producer.NewManualPartitioner()
 		}
-		conf.KeyEncoder = this.config.KeyEncoder
-		conf.ValueEncoder = this.config.ValueEncoder
-		if this.config.TimingsProducerConfig != "" {
-			conf.AckSuccesses = true
+		connectorConfig := siesta.NewConnectorConfig()
+		connectorConfig.BrokerList = conf.BrokerList
+		connector, err := siesta.NewDefaultConnector(connectorConfig)
+		if err != nil {
+			panic(err)
 		}
-		producer := this.config.ProducerConstructor(conf)
+
+		producer := producer.NewKafkaProducer(conf, this.config.KeyEncoder, this.config.ValueEncoder, connector)
 		this.producers = append(this.producers, producer)
-		if this.config.TimingsProducerConfig != "" {
-			go this.timingsRoutine(producer)
-		}
 		if this.config.PreserveOrder {
 			go this.produceRoutine(producer, i)
 		} else {
 			go this.produceRoutine(producer, 0)
 		}
-		go this.failedRoutine(producer)
 	}
 }
 
-func (this *MirrorMaker) startMetricsProducer() {
-	if this.config.ProduceMetricsTopic != "" {
-		conf, err := siesta.ProducerConfigFromFile(this.config.ProducerConfig)
-		if err != nil {
-			panic(err)
-		}
-		connectorConfig := siesta.NewConnectorConfig()
-		connectorConfig.BrokerList = conf.BrokerList
-
-		this.metricReporter, err = NewKafkaMetricReporter(this.config.ProduceMetricsTopic, conf, connectorConfig)
-		if err != nil {
-			panic(err)
-		}
-	}
-}
-
-func (this *MirrorMaker) produceRoutine(producer Producer, channelIndex int) {
-	partitionEncoder := &Int32Encoder{}
+func (this *MirrorMaker) produceRoutine(p producer.Producer, channelIndex int) {
 	for msg := range this.messageChannels[channelIndex] {
-		if this.config.TimingsProducerConfig != "" {
-			preProduce := time.Now().UnixNano()
-			if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
-				msg.DecodedValue = this.AddTiming(record, "pre-produce", preProduce)
-			} else {
-				panic("Failed to decode message")
-			}
-		}
-		if this.config.PreservePartitions {
-			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: uint32(msg.Partition), Value: msg.DecodedValue, KeyEncoder: partitionEncoder}
-		} else {
-			producer.Input() <- &ProducerMessage{Topic: this.config.TopicPrefix + msg.Topic, Key: msg.Key, Value: msg.DecodedValue}
-		}
-	}
-}
-
-func (this *MirrorMaker) timingsRoutine(producer Producer) {
-	var keyDecoder Decoder
-	if this.config.PreservePartitions {
-		keyDecoder = &Int32Decoder{}
-	} else {
-		keyDecoder = this.config.KeyDecoder
-	}
-
-	for msg := range producer.Successes() {
-		decodedKey, err := keyDecoder.Decode(msg.Key.([]byte))
-		if err != nil {
-			Errorf(this, "Failed to decode %v", msg.Key)
-		}
-		decodedValue, err := this.config.ValueDecoder.Decode(msg.Value.([]byte))
-		if err != nil {
-			Errorf(this, "Failed to decode %v", msg.Value)
-		}
-
-		if record, ok := decodedValue.(*avro.GenericRecord); ok {
-			record = this.AddTiming(record, "post-produce", time.Now().Unix())
-			if this.config.PreservePartitions {
-				this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + msg.Topic, Key: int32(decodedKey.(uint32)), Value: record}
-			} else {
-				this.timingsProducer.Input() <- &ProducerMessage{Topic: "timings_" + msg.Topic, Key: decodedKey, Value: record}
-			}
-		} else {
-			Errorf(this, "Invalid avro schema type %s", decodedValue)
-		}
-	}
-}
-
-func (this *MirrorMaker) AddTiming(record *avro.GenericRecord, tag string, now int64) *avro.GenericRecord {
-	if !this.evolutioned.exists(record.Schema().String()) {
-		currentSchema := record.Schema().(*avro.RecordSchema)
-		newSchema := *record.Schema().(*avro.RecordSchema)
-		for _, newField := range this.logLineSchema.Fields {
-			var exists bool
-			for _, currentField := range currentSchema.Fields {
-				if currentField.Name == newField.Name {
-					if reflect.DeepEqual(currentField, newField) {
-						exists = true
-						break
-					}
-					panic(fmt.Sprintf("Incompatible field %s in schema %s", currentField.Name, currentSchema.String()))
-				}
-			}
-			if !exists {
-				newSchema.Fields = append(newSchema.Fields, newField)
-			}
-		}
-		newRecord := avro.NewGenericRecord(&newSchema)
-		for _, field := range currentSchema.Fields {
-			newRecord.Set(field.Name, record.Get(field.Name))
-		}
-		record = newRecord
-		this.evolutioned.add(record.Schema().String())
-	}
-
-	var timings map[string]interface{}
-	if record.Get("timings") == nil {
-		timings = make(map[string]interface{})
-	} else {
-		timings = record.Get("timings").(map[string]interface{})
-	}
-
-	timings[tag] = now
-	record.Set("timings", timings)
-
-	return record
-}
-
-func (this *MirrorMaker) Errors() <-chan *FailedMessage {
-	return this.errors
-}
-
-func readLoglineSchema() *avro.RecordSchema {
-	file, err := ioutil.ReadFile("logline.avsc")
-	if err != nil {
-		panic(err)
-	}
-
-	return avro.MustParseSchema(string(file)).(*avro.RecordSchema)
-}
-
-func (this *MirrorMaker) failedRoutine(producer Producer) {
-	for msg := range producer.Errors() {
-		this.errors <- msg
+		p.Send(&producer.ProducerRecord{
+			Topic:     this.config.TopicPrefix + msg.Topic,
+			Partition: msg.Partition,
+			Key:       msg.Key,
+			Value:     msg.DecodedValue,
+		})
 	}
 }
 
@@ -404,25 +230,4 @@ func topicPartitionHash(msg *Message) int {
 	h := fnv.New32a()
 	h.Write([]byte(fmt.Sprintf("%s%d", msg.Topic, msg.Partition)))
 	return int(h.Sum32())
-}
-
-type schemaSet struct {
-	internal map[string]interface{}
-}
-
-func newSchemaSet() *schemaSet {
-	return &schemaSet{
-		internal: make(map[string]interface{}),
-	}
-}
-
-func (this *schemaSet) add(schema string) {
-	if _, exists := this.internal[schema]; !exists {
-		this.internal[schema] = nil
-	}
-}
-
-func (this *schemaSet) exists(schema string) bool {
-	_, exists := this.internal[schema]
-	return exists
 }

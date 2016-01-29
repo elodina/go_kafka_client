@@ -540,7 +540,6 @@ func TestConsumeDistinctTopicsWithDistinctPartitions(t *testing.T) {
 
 	config := testConsumerConfig()
 	config.Strategy = newAllPartitionsTrackingStrategy(t, consumeMessages*(topic1Partitions+topic2Partitions), consumeTimeout, consumeStatus)
-	config.KeyDecoder = &Int32Decoder{}
 	consumer := NewConsumer(config)
 	go consumer.StartStatic(map[string]int{topic1: topic1Partitions, topic2: topic2Partitions})
 
@@ -704,7 +703,7 @@ func newAllPartitionsTrackingStrategy(t *testing.T, expectedMessages int, timeou
 			if _, exists := allConsumedMessages[msg.Topic]; !exists {
 				allConsumedMessages[msg.Topic] = make(map[int]int)
 			}
-			allConsumedMessages[msg.Topic][int(msg.DecodedKey.(uint32))]++
+			allConsumedMessages[msg.Topic][int(msg.Partition)]++
 			total := 0
 			for _, partitionInfo := range allConsumedMessages {
 				for _, numMessages := range partitionInfo {

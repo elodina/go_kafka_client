@@ -1,19 +1,20 @@
-package siesta
+package producer
 
 import (
 	"fmt"
 	"log"
 	"time"
 
+	"github.com/elodina/siesta"
 	"github.com/jimlawless/cfg"
 )
 
 type ProducerRecord struct {
-	Topic string
-	Key   interface{}
-	Value interface{}
+	Topic     string
+	Partition int32
+	Key       interface{}
+	Value     interface{}
 
-	partition    int32
 	encodedKey   []byte
 	encodedValue []byte
 	metadataChan chan *RecordMetadata
@@ -29,6 +30,7 @@ type RecordMetadata struct {
 type PartitionInfo struct{}
 type Metric struct{}
 type ProducerConfig struct {
+	Partitioner          Partitioner
 	MetadataFetchTimeout time.Duration
 	MetadataExpire       time.Duration
 	MaxRequestSize       int
@@ -53,6 +55,8 @@ type ProducerConfig struct {
 
 func NewProducerConfig() *ProducerConfig {
 	return &ProducerConfig{
+		Partitioner:     NewHashPartitioner(),
+		MetadataExpire:  time.Minute,
 		BatchSize:       1000,
 		ClientID:        "siesta",
 		MaxRequests:     10,
@@ -110,28 +114,26 @@ type Producer interface {
 type KafkaProducer struct {
 	config          *ProducerConfig
 	time            time.Time
-	partitioner     Partitioner
 	keySerializer   Serializer
 	valueSerializer Serializer
 	metrics         map[string]Metric
 	accumulator     *RecordAccumulator
 	metricTags      map[string]string
-	connector       Connector
+	connector       siesta.Connector
 	metadata        *Metadata
 	RecordsMetadata chan *RecordMetadata
 }
 
-func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSerializer Serializer, connector Connector) *KafkaProducer {
+func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSerializer Serializer, connector siesta.Connector) *KafkaProducer {
 	log.Println("Starting the Kafka producer")
 	producer := &KafkaProducer{}
 	producer.config = config
 	producer.time = time.Now()
 	producer.metrics = make(map[string]Metric)
-	producer.partitioner = NewHashPartitioner()
 	producer.keySerializer = keySerializer
 	producer.valueSerializer = valueSerializer
 	producer.connector = connector
-	producer.metadata = NetMetadata(connector, config.MetadataExpire)
+	producer.metadata = NewMetadata(connector, config.MetadataExpire)
 	metricTags := make(map[string]string)
 
 	networkClientConfig := NetworkClientConfig{}
@@ -248,13 +250,13 @@ func (kp *KafkaProducer) send(record *ProducerRecord) {
 		return
 	}
 
-	partition, err := kp.partitioner.Partition(record, partitions)
+	partition, err := kp.config.Partitioner.Partition(record, partitions)
 	if err != nil {
 		metadata.Error = err
 		metadataChan <- metadata
 		return
 	}
-	record.partition = partition
+	record.Partition = partition
 
 	kp.accumulator.addChan <- record
 }

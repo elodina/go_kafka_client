@@ -20,7 +20,7 @@ import (
 	"fmt"
 	kafka "github.com/elodina/go_kafka_client"
 	sp "github.com/elodina/go_kafka_client/syslog/syslog_proto"
-	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"github.com/elodina/syslog-service/syslog"
 	"github.com/golang/protobuf/proto"
 	"math"
@@ -94,7 +94,7 @@ func parseAndValidateArgs() *syslog.SyslogProducerConfig {
 	}
 
 	config := syslog.NewSyslogProducerConfig()
-	conf, err := siesta.ProducerConfigFromFile(*producerConfig)
+	conf, err := producer.ProducerConfigFromFile(*producerConfig)
 	useFile := true
 	if err != nil {
 		//we dont have a producer configuraiton which is ok
@@ -104,7 +104,7 @@ func parseAndValidateArgs() *syslog.SyslogProducerConfig {
 	if useFile {
 		config.ProducerConfig = conf
 	} else {
-		config.ProducerConfig = siesta.NewProducerConfig()
+		config.ProducerConfig = producer.NewProducerConfig()
 		config.ProducerConfig.RequiredAcks = *requiredAcks
 		config.ProducerConfig.AckTimeoutMs = int32(*acksTimeout)
 	}
@@ -156,7 +156,7 @@ func main() {
 	producer.Stop()
 }
 
-func protobufTransformer(msg *syslog.SyslogMessage, topic string) *siesta.ProducerRecord {
+func protobufTransformer(msg *syslog.SyslogMessage, topic string) *producer.ProducerRecord {
 	line := &sp.LogLine{}
 
 	line.Line = proto.String(msg.Message)
@@ -174,5 +174,5 @@ func protobufTransformer(msg *syslog.SyslogMessage, topic string) *siesta.Produc
 		kafka.Errorf("protobuf-transformer", "Failed to marshal %s as Protocol Buffer", msg)
 	}
 
-	return &siesta.ProducerRecord{Topic: topic, Key: []byte(*source), Value: protobuf}
+	return &producer.ProducerRecord{Topic: topic, Key: []byte(*source), Value: protobuf}
 }

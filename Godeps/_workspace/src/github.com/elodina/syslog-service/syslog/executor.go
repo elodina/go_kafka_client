@@ -20,7 +20,7 @@ import (
 
 	"fmt"
 	"github.com/elodina/go-kafka-avro"
-	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"github.com/mesos/mesos-go/executor"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	"time"
@@ -112,7 +112,7 @@ func (e *Executor) Error(driver executor.ExecutorDriver, message string) {
 
 func (e *Executor) newSyslogProducer() *SyslogProducer {
 	config := NewSyslogProducerConfig()
-	conf, err := siesta.ProducerConfigFromFile(Config.ProducerProperties)
+	conf, err := producer.ProducerConfigFromFile(Config.ProducerProperties)
 	useFile := true
 	if err != nil {
 		//we dont have a producer configuraiton which is ok
@@ -122,7 +122,7 @@ func (e *Executor) newSyslogProducer() *SyslogProducer {
 	if useFile {
 		config.ProducerConfig = conf
 	} else {
-		config.ProducerConfig = siesta.NewProducerConfig()
+		config.ProducerConfig = producer.NewProducerConfig()
 	}
 	config.NumProducers = 1 //TODO configurable
 	config.BrokerList = Config.BrokerList
