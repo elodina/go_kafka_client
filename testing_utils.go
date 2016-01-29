@@ -172,7 +172,6 @@ func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, 
 	connector := testConnector(t)
 	producerConfig := siesta.NewProducerConfig()
 	producerConfig.Partitioner = siesta.NewManualPartitioner()
-	producerConfig.CompressionType
 
 	producer := siesta.NewKafkaProducer(producerConfig, siesta.ByteSerializer, siesta.StringSerializer, connector)
 	defer producer.Close(time.Second)
