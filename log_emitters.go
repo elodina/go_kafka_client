@@ -20,6 +20,7 @@ import (
 	kafkaavro "github.com/elodina/go-kafka-avro"
 	"github.com/elodina/go_kafka_client/avro"
 	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"time"
 )
 
@@ -82,7 +83,7 @@ type KafkaLogEmitterConfig struct {
 	SchemaRegistryUrl string
 
 	// Producer config that will be used by this emitter. Note that ValueEncoder WILL BE replaced by KafkaAvroEncoder.
-	ProducerConfig *siesta.ProducerConfig
+	ProducerConfig *producer.ProducerConfig
 
 	// Siesta connector config that will be used by this emitter
 	ConnectorConfig *siesta.ConnectorConfig
@@ -102,7 +103,7 @@ func NewKafkaLogEmitterConfig() *KafkaLogEmitterConfig {
 // KafkaLogEmitter implements LogEmitter and KafkaLogger and sends all structured log data to a Kafka topic encoded as Avro.
 type KafkaLogEmitter struct {
 	config   *KafkaLogEmitterConfig
-	producer siesta.Producer
+	producer producer.Producer
 }
 
 // NewKafkaLogEmitter creates a new KafkaLogEmitter with a provided configuration.
@@ -115,7 +116,7 @@ func NewKafkaLogEmitter(config *KafkaLogEmitterConfig) (*KafkaLogEmitter, error)
 
 	emitter := &KafkaLogEmitter{
 		config:   config,
-		producer: siesta.NewKafkaProducer(config.ProducerConfig, siesta.ByteSerializer, encoder.Encode, connector),
+		producer: producer.NewKafkaProducer(config.ProducerConfig, producer.ByteSerializer, encoder.Encode, connector),
 	}
 
 	return emitter, nil
@@ -124,7 +125,7 @@ func NewKafkaLogEmitter(config *KafkaLogEmitterConfig) (*KafkaLogEmitter, error)
 // Emit emits a single entry to a given destination topic.
 func (k *KafkaLogEmitter) Emit(logLine *avro.LogLine) {
 	if logLine.Logtypeid.(int64) >= logLevels[k.config.LogLevel] {
-		k.producer.Send(&siesta.ProducerRecord{
+		k.producer.Send(&producer.ProducerRecord{
 			Topic: k.config.Topic,
 			Value: logLine,
 		})

@@ -18,6 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"testing"
 	"time"
 )
@@ -36,7 +37,7 @@ func TestLogEmitter(t *testing.T) {
 	loggerConfig.Topic = topic
 	loggerConfig.Source = "go_kafka_client.log.emitter"
 	loggerConfig.Tags = map[string]string{"origin": topic}
-	loggerConfig.ProducerConfig = siesta.NewProducerConfig()
+	loggerConfig.ProducerConfig = producer.NewProducerConfig()
 	loggerConfig.ConnectorConfig = siesta.NewConnectorConfig()
 	loggerConfig.ConnectorConfig.BrokerList = []string{localBroker}
 
@@ -71,7 +72,7 @@ func TestMetricsEmitter(t *testing.T) {
 	consumeStatus := make(chan int)
 	delayTimeout := 10 * time.Second
 
-	metricsProducerConfig := siesta.NewProducerConfig()
+	metricsProducerConfig := producer.NewProducerConfig()
 	connectorConfig := siesta.NewConnectorConfig()
 	connectorConfig.BrokerList = []string{localBroker}
 	reporter, err := NewCodahaleKafkaReporter(topic, schemaRepositoryUrl, metricsProducerConfig, connectorConfig)

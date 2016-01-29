@@ -18,6 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"hash/fnv"
 	"time"
 )
@@ -55,10 +56,10 @@ type MirrorMakerConfig struct {
 	ChannelSize int
 
 	// Message keys encoder for producer
-	KeyEncoder siesta.Serializer
+	KeyEncoder producer.Serializer
 
 	// Message values encoder for producer
-	ValueEncoder siesta.Serializer
+	ValueEncoder producer.Serializer
 
 	// Message keys decoder for consumer
 	KeyDecoder Decoder
@@ -70,8 +71,8 @@ type MirrorMakerConfig struct {
 // Creates an empty MirrorMakerConfig.
 func NewMirrorMakerConfig() *MirrorMakerConfig {
 	return &MirrorMakerConfig{
-		KeyEncoder:   siesta.ByteSerializer,
-		ValueEncoder: siesta.ByteSerializer,
+		KeyEncoder:   producer.ByteSerializer,
+		ValueEncoder: producer.ByteSerializer,
 		KeyDecoder:   &ByteDecoder{},
 		ValueDecoder: &ByteDecoder{},
 	}
@@ -83,9 +84,8 @@ type MirrorMaker struct {
 	config          *MirrorMakerConfig
 	metricReporter  *KafkaMetricReporter
 	consumers       []*Consumer
-	producers       []siesta.Producer
+	producers       []producer.Producer
 	messageChannels []chan *Message
-	timingsProducer siesta.Producer
 	stopped         chan struct{}
 }
 
@@ -191,12 +191,12 @@ func (this *MirrorMaker) initializeMessageChannels() {
 
 func (this *MirrorMaker) startProducers() {
 	for i := 0; i < this.config.NumProducers; i++ {
-		conf, err := siesta.ProducerConfigFromFile(this.config.ProducerConfig)
+		conf, err := producer.ProducerConfigFromFile(this.config.ProducerConfig)
 		if err != nil {
 			panic(err)
 		}
 		if this.config.PreservePartitions {
-			conf.Partitioner = siesta.NewManualPartitioner()
+			conf.Partitioner = producer.NewManualPartitioner()
 		}
 		connectorConfig := siesta.NewConnectorConfig()
 		connectorConfig.BrokerList = conf.BrokerList
@@ -205,7 +205,7 @@ func (this *MirrorMaker) startProducers() {
 			panic(err)
 		}
 
-		producer := siesta.NewKafkaProducer(conf, this.config.KeyEncoder, this.config.ValueEncoder, connector)
+		producer := producer.NewKafkaProducer(conf, this.config.KeyEncoder, this.config.ValueEncoder, connector)
 		this.producers = append(this.producers, producer)
 		if this.config.PreserveOrder {
 			go this.produceRoutine(producer, i)
@@ -215,9 +215,9 @@ func (this *MirrorMaker) startProducers() {
 	}
 }
 
-func (this *MirrorMaker) produceRoutine(producer siesta.Producer, channelIndex int) {
+func (this *MirrorMaker) produceRoutine(p producer.Producer, channelIndex int) {
 	for msg := range this.messageChannels[channelIndex] {
-		producer.Send(&siesta.ProducerRecord{
+		p.Send(&producer.ProducerRecord{
 			Topic:     this.config.TopicPrefix + msg.Topic,
 			Partition: msg.Partition,
 			Key:       msg.Key,

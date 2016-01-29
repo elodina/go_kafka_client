@@ -17,7 +17,7 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"github.com/elodina/syslog-service/syslog"
 	"net"
 	"testing"
@@ -43,7 +43,7 @@ func TestSyslogProducer(t *testing.T) {
 	EnsureHasLeader(localZk, topic)
 
 	config := syslog.NewSyslogProducerConfig()
-	config.ProducerConfig = siesta.NewProducerConfig()
+	config.ProducerConfig = producer.NewProducerConfig()
 	config.BrokerList = localBroker
 	config.NumProducers = 1
 	config.TCPAddr = tcpAddr

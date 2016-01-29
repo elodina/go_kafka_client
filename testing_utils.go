@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"github.com/samuel/go-zookeeper/zk"
 	"os"
 	"os/exec"
@@ -147,15 +148,15 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 	connector := testConnector(t)
-	producerConfig := siesta.NewProducerConfig()
+	producerConfig := producer.NewProducerConfig()
 
-	producer := siesta.NewKafkaProducer(producerConfig, siesta.ByteSerializer, siesta.StringSerializer, connector)
-	defer producer.Close(time.Second)
+	p := producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, producer.StringSerializer, connector)
+	defer p.Close(time.Second)
 
-	metadatas := make([]<-chan *siesta.RecordMetadata, n)
+	metadatas := make([]<-chan *producer.RecordMetadata, n)
 
 	for i := 0; i < n; i++ {
-		metadatas[i] = producer.Send(&siesta.ProducerRecord{Topic: topic, Value: fmt.Sprintf("test-kafka-message-%d", i)})
+		metadatas[i] = p.Send(&producer.ProducerRecord{Topic: topic, Value: fmt.Sprintf("test-kafka-message-%d", i)})
 	}
 
 	for _, metadataChan := range metadatas {
@@ -170,16 +171,16 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 
 func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, brokerAddr string) {
 	connector := testConnector(t)
-	producerConfig := siesta.NewProducerConfig()
-	producerConfig.Partitioner = siesta.NewManualPartitioner()
+	producerConfig := producer.NewProducerConfig()
+	producerConfig.Partitioner = producer.NewManualPartitioner()
 
-	producer := siesta.NewKafkaProducer(producerConfig, siesta.ByteSerializer, siesta.StringSerializer, connector)
-	defer producer.Close(time.Second)
+	p := producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, producer.StringSerializer, connector)
+	defer p.Close(time.Second)
 
-	metadatas := make([]<-chan *siesta.RecordMetadata, n)
+	metadatas := make([]<-chan *producer.RecordMetadata, n)
 
 	for i := 0; i < n; i++ {
-		metadatas[i] = producer.Send(&siesta.ProducerRecord{Topic: topic, Partition: int32(partition), Value: fmt.Sprintf("test-kafka-message-%d", i)})
+		metadatas[i] = p.Send(&producer.ProducerRecord{Topic: topic, Partition: int32(partition), Value: fmt.Sprintf("test-kafka-message-%d", i)})
 	}
 
 	for _, metadataChan := range metadatas {
