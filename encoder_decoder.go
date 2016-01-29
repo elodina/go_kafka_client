@@ -15,8 +15,6 @@ limitations under the License. */
 
 package go_kafka_client
 
-import "encoding/binary"
-
 type Encoder interface {
 	Encode(interface{}) ([]byte, error)
 }
@@ -38,20 +36,6 @@ type StringDecoder struct{}
 
 func (this *StringDecoder) Decode(bytes []byte) (interface{}, error) {
 	return string(bytes), nil
-}
-
-type Int32Encoder struct{}
-
-func (this *Int32Encoder) Encode(what interface{}) ([]byte, error) {
-	buf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buf, what.(uint32))
-	return buf, nil
-}
-
-type Int32Decoder struct{}
-
-func (this *Int32Decoder) Decode(bytes []byte) (interface{}, error) {
-	return binary.LittleEndian.Uint32(bytes), nil
 }
 
 type ByteEncoder struct{}
