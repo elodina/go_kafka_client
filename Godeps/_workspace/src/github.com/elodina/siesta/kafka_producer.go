@@ -55,6 +55,7 @@ type ProducerConfig struct {
 func NewProducerConfig() *ProducerConfig {
 	return &ProducerConfig{
 		Partitioner:     NewHashPartitioner(),
+		MetadataExpire:  time.Minute,
 		BatchSize:       1000,
 		ClientID:        "siesta",
 		MaxRequests:     10,

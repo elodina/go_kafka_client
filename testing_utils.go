@@ -155,7 +155,7 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 	metadatas := make([]<-chan *siesta.RecordMetadata, n)
 
 	for i := 0; i < n; i++ {
-		metadatas[i] = producer.Send(&siesta.ProducerRecord{Topic: "siesta", Value: fmt.Sprintf("test-kafka-message-%d", i)})
+		metadatas[i] = producer.Send(&siesta.ProducerRecord{Topic: topic, Value: fmt.Sprintf("test-kafka-message-%d", i)})
 	}
 
 	for _, metadataChan := range metadatas {
@@ -179,7 +179,7 @@ func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, 
 	metadatas := make([]<-chan *siesta.RecordMetadata, n)
 
 	for i := 0; i < n; i++ {
-		metadatas[i] = producer.Send(&siesta.ProducerRecord{Topic: "siesta", Partition: int32(partition), Value: fmt.Sprintf("test-kafka-message-%d", i)})
+		metadatas[i] = producer.Send(&siesta.ProducerRecord{Topic: topic, Partition: int32(partition), Value: fmt.Sprintf("test-kafka-message-%d", i)})
 	}
 
 	for _, metadataChan := range metadatas {

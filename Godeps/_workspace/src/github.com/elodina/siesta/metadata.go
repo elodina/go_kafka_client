@@ -41,6 +41,7 @@ func (tmc *Metadata) Get(topic string) ([]int32, error) {
 func (tmc *Metadata) Refresh(topics []string) error {
 	tmc.refreshLock.Lock()
 	defer tmc.refreshLock.Unlock()
+	Logger.Info("Refreshing metadata for topics %v", topics)
 
 	topicMetadataResponse, err := tmc.connector.GetTopicMetadata(topics)
 	if err != nil {
@@ -53,6 +54,7 @@ func (tmc *Metadata) Refresh(topics []string) error {
 			partitions = append(partitions, partitionMetadata.PartitionID)
 		}
 		tmc.cache[topicMetadata.Topic] = newMetadataEntry(partitions)
+		Logger.Debug("Received metadata: partitions %v for topic %s", partitions, topicMetadata.Topic)
 	}
 
 	return nil

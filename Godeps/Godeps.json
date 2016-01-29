@@ -44,8 +44,8 @@
 		},
 		{
 			"ImportPath": "github.com/elodina/siesta",
-			"Comment": "v0.1.0.0-83-gb838890",
-			"Rev": "b8388901787e709da469f4867b0e0bd14256df91"
+			"Comment": "v0.1.0.0-86-g4cf24ad",
+			"Rev": "4cf24ad3a291eb38a4fe73e724a48ec739a2524f"
 		},
 		{
 			"ImportPath": "github.com/elodina/syslog-service/syslog",
