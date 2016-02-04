@@ -225,7 +225,7 @@ func (c *Consumer) maintainCleanCoordinator() {
 		for {
 			select {
 			case <-tick.C:
-				Infof(c, "Starting coordinator cleanup of API reqeusts for %s", c.config.Groupid)
+				Infof(c, "Starting coordinator cleanup of API requests for %s", c.config.Groupid)
 				c.config.Coordinator.RemoveOldApiRequests(c.config.Groupid)
 			case <-c.stopCleanup:
 				return
