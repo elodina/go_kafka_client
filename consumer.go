@@ -54,6 +54,7 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
+	resetConsumer                  chan bool
 	stopCleanup                    chan struct{}
 	topicCount                     TopicsToNumStreams
 
@@ -80,6 +81,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		workerManagers:                 make(map[TopicAndPartition]*WorkerManager),
 		stopStreams:                    make(chan bool),
 		close:                          make(chan bool),
+		resetConsumer:                  make(chan bool),
 	}
 
 	if err := c.config.Coordinator.Connect(); err != nil {
@@ -89,7 +91,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		panic(err)
 	}
 	c.metrics = newConsumerMetrics(c.String(), config.MetricsPrefix)
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics, c.resetConsumer)
 
 	go func() {
 		<-c.close
@@ -178,6 +180,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 func (c *Consumer) startStreams() {
 	c.maintainCleanCoordinator()
 	stopRedirects := make(map[TopicAndPartition]chan bool)
+
 	for {
 		select {
 		case <-c.stopStreams:
@@ -207,6 +210,31 @@ func (c *Consumer) startStreams() {
 			{
 				Debug(c, "Restart streams")
 				c.pipeChannels(stopRedirects)
+			}
+		case <-c.resetConsumer:
+			{
+				//This need to execute in a goroutine so it doesn't block the outer for/select loop while closing consumer conns
+				go func(){
+					Infof(c, "Consumer recieved reset signal, restarting consumer")
+					c.metrics.consumerResetCounter.Inc(1)
+
+					//Grab the context before we close the ZK connection
+					context, _ := newAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
+
+					//Close the consumer since the broker connections are busted
+					<-c.Close()
+
+					//Reconnect to the zkCoordinator
+					err := c.config.Coordinator.Connect()
+					if err != nil {
+						panic(fmt.Sprintf("Failed to connect to Coordinator: %s", err))
+					}
+
+					//Resume the consumption of data and force a rebalance since we've re-established zk connection with fresh brokers
+					c.resumeAfterClose(context)
+					c.rebalance()
+					Infof(c, "Consumer reset")
+				}()
 			}
 		}
 	}
@@ -377,7 +405,8 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		var err error
 		var stateHash string
 		barrierPassed := false
-		for !barrierPassed {
+		timeLimit := time.Now().Add(3 * time.Minute)
+		for !barrierPassed && time.Now().Before(timeLimit) {
 			context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
 				c.config.ExcludeInternalTopics, c.config.Coordinator)
 			if err != nil {
@@ -388,6 +417,19 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 			stateHash = context.hash()
 			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash,
 				barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
+
+			if !barrierPassed {
+				// If the barrier failed to have consensus remove it.
+				err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, stateHash, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId))
+				if err != nil {
+					Warnf(c, "Failed to remove state barrier %s due to: %s", stateHash, err.Error())
+				}
+			}
+
+		}
+		//If we couldn't reach consensus on the barrier within the time threshold panic
+		if !barrierPassed {
+			panic("Could not reach consensus on state barrier.")
 		}
 
 		<-c.Close()
@@ -480,7 +522,7 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
 	c.config.LowLevelClient.Initialize()
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics, c.resetConsumer)
 	c.metrics = newConsumerMetrics(c.String(), c.config.MetricsPrefix)
 
 	go func() {

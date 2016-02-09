@@ -578,7 +578,7 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 					// during a network event which interrupts and potentially invalidates the watcher.
 					// (We've observed this, where one consumer won't receive watcher notifications
 					// following network i/o issues with zk.)
-					Infof(this, "Automatically renewing all watchers at interval=%v", renewWatcherInterval)
+					Debugf(this, "Automatically renewing all watchers at interval=%v", renewWatcherInterval)
 
 					// verify there's nothing already in the channel that we'll miss
 					select {
@@ -603,25 +603,25 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						break
 					}
 
-					Info(this, "Trying to renew watcher for consumer registry")
+					Debugf(this, "Trying to renew watcher for consumer registry")
 					consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
 					if err != nil {
 						panic(err)
 					}
 
-					Info(this, "Trying to renew watcher for consumer API dir")
+					Debugf(this, "Trying to renew watcher for consumer API dir")
 					blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
 					if err != nil {
 						panic(err)
 					}
 
-					Info(this, "Trying to renew watcher for consumer topic dir")
+					Debugf(this, "Trying to renew watcher for consumer topic dir")
 					topicsWatcher, err = this.getTopicsWatcher()
 					if err != nil {
 						panic(err)
 					}
 
-					Info(this, "Trying to renew watcher for brokers in cluster")
+					Debugf(this, "Trying to renew watcher for brokers in cluster")
 					brokersWatcher, err = this.getAllBrokersInClusterWatcher()
 					if err != nil {
 						panic(err)

@@ -18,6 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	"math"
+	"net"
 	"sync"
 	"time"
 )
@@ -33,6 +34,8 @@ type consumerFetcherManager struct {
 	updateInProgress               bool
 	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
+	resetConsumer                  chan bool
+	resetInProgress                bool
 
 	metrics *ConsumerMetrics
 	client  LowLevelClient
@@ -42,15 +45,16 @@ func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.Consumerid)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition, metrics *ConsumerMetrics) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition, metrics *ConsumerMetrics, resetConsumer chan bool) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config:                         config,
 		closeFinished:                  make(chan bool),
 		partitionMap:                   make(map[TopicAndPartition]*partitionTopicInfo),
 		fetcherRoutineMap:              make(map[int]*consumerFetcherRoutine),
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
-		client:  config.LowLevelClient,
-		metrics: metrics,
+		client:        config.LowLevelClient,
+		metrics:       metrics,
+		resetConsumer: resetConsumer,
 	}
 	manager.updatedCond = sync.NewCond(manager.updateLock.RLocker())
 
@@ -67,6 +71,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 	partitionInfos := make(map[TopicAndPartition]*partitionTopicInfo)
 
 	m.updateInProgress = true
+	m.resetInProgress = false
 	inWriteLock(&m.updateLock, func() {
 		if Logger.IsAllowed(DebugLevel) {
 			Debug(m, "Updating fetcher configuration")
@@ -290,6 +295,18 @@ func (f *consumerFetcherRoutine) start() {
 									Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
 									//TODO new backoff type?
 									time.Sleep(1 * time.Second)
+
+									// If a network error occurs signal a reset is necessary
+									// Currently the underlying sarama client is unable to gracefully recover from some network issues
+									if networkErr, ok := err.(*net.OpError); ok {
+										Errorf(f, "Fetcher encountered a network error: %s", networkErr)
+										f.manager.metrics.fetcherNetworkErrors().Inc(1)
+										if !f.manager.resetInProgress {
+											f.manager.resetInProgress = true
+											f.manager.resetConsumer <- true
+										}
+									}
+
 								}
 							}
 						}
