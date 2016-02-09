@@ -1,9 +1,6 @@
 {
 	"ImportPath": "github.com/elodina/go_kafka_client",
-	"GoVersion": "go1.5.1",
-	"Packages": [
-		"./..."
-	],
+	"GoVersion": "go1.5.3",
 	"Deps": [
 		{
 			"ImportPath": "github.com/Shopify/sarama",
@@ -77,6 +74,10 @@
 			"Rev": "8cf9686de5a8b290717494297d381948feffe19f"
 		},
 		{
+			"ImportPath": "github.com/klauspost/crc32",
+			"Rev": "6973dcf6594efa905c08260fe9120cae92ab4305"
+		},
+		{
 			"ImportPath": "github.com/mesos/mesos-go/auth",
 			"Comment": "before-0.26-protos-14-g4a7554a",
 			"Rev": "4a7554aad396c70d19c9fc3469980547c9f117ae"
@@ -145,6 +146,10 @@
 			"ImportPath": "github.com/stretchr/testify/mock",
 			"Comment": "v1.1.3",
 			"Rev": "f390dcf405f7b83c997eac1b06768bb9f44dec18"
+		},
+		{
+			"ImportPath": "github.com/yanzay/cfg",
+			"Rev": "3b647091f880406fdb14edcb309ce750a38d3e85"
 		},
 		{
 			"ImportPath": "golang.org/x/net/context",
