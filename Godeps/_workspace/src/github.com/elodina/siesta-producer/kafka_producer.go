@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/elodina/siesta"
-	"github.com/jimlawless/cfg"
+	"github.com/yanzay/cfg"
 )
 
 type ProducerRecord struct {

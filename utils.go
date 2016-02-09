@@ -19,7 +19,7 @@ import (
 	"container/ring"
 	crand "crypto/rand"
 	"fmt"
-	"github.com/jimlawless/cfg"
+	"github.com/yanzay/cfg"
 	"hash/fnv"
 	"math/rand"
 	"reflect"
