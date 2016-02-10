@@ -49,3 +49,6 @@ var InvalidSchema = errors.New("Invalid schema")
 
 // Happens when a datum reader has no set schema.
 var SchemaNotSet = errors.New("Schema not set")
+
+// FieldDoesNotExist happens when a struct does not have a necessary field.
+var FieldDoesNotExist = errors.New("Field does not exist")

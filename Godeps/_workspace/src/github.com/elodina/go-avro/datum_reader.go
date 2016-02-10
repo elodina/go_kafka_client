@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 )
 
 // Reader is an interface that may be implemented to avoid using runtime reflection during deserialization.
@@ -23,6 +24,9 @@ type DatumReader interface {
 	// Note that it must be called before calling Read.
 	SetSchema(Schema)
 }
+
+var enumSymbolsToIndexCache map[string]map[string]int32 = make(map[string]map[string]int32)
+var enumSymbolsToIndexCacheLock sync.Mutex
 
 // Generic Avro enum representation. This is still subject to change and may be rethought.
 type GenericEnum struct {
@@ -189,6 +193,7 @@ func (this *SpecificDatumReader) mapArray(field Schema, reflectField reflect.Val
 		return reflect.ValueOf(arrayLength), err
 	} else {
 		array := reflect.MakeSlice(reflectField.Type(), 0, 0)
+		pointer := reflectField.Type().Elem().Kind() == reflect.Ptr
 		for {
 			if arrayLength == 0 {
 				break
@@ -197,25 +202,25 @@ func (this *SpecificDatumReader) mapArray(field Schema, reflectField reflect.Val
 			arrayPart := reflect.MakeSlice(reflectField.Type(), int(arrayLength), int(arrayLength))
 			var i int64 = 0
 			for ; i < arrayLength; i++ {
-				val, err := this.readValue(field.(*ArraySchema).Items, arrayPart.Index(int(i)), dec)
+				current := arrayPart.Index(int(i))
+				val, err := this.readValue(field.(*ArraySchema).Items, current, dec)
 				if err != nil {
 					return reflect.ValueOf(arrayLength), err
 				}
-
-				pointer := reflectField.Type().Elem().Kind() == reflect.Ptr
 
 				if pointer && val.Kind() != reflect.Ptr {
 					val = val.Addr()
 				} else if !pointer && val.Kind() == reflect.Ptr {
 					val = val.Elem()
 				}
-				arrayPart.Index(int(i)).Set(val)
+				current.Set(val)
 			}
 			//concatenate arrays
-			concatArray := reflect.MakeSlice(reflectField.Type(), array.Len()+int(arrayLength), array.Cap()+int(arrayLength))
-			reflect.Copy(concatArray, array)
-			reflect.Copy(concatArray, arrayPart)
-			array = concatArray
+			if array.Len() == 0 {
+				array = arrayPart
+			} else {
+				array = reflect.AppendSlice(array, arrayPart)
+			}
 			arrayLength, err = dec.ArrayNext()
 			if err != nil {
 				return reflect.ValueOf(arrayLength), err
@@ -265,8 +270,22 @@ func (this *SpecificDatumReader) mapEnum(field Schema, dec Decoder) (reflect.Val
 	if enumIndex, err := dec.ReadEnum(); err != nil {
 		return reflect.ValueOf(enumIndex), err
 	} else {
-		enum := NewGenericEnum(field.(*EnumSchema).Symbols)
-		enum.SetIndex(enumIndex)
+		schema := field.(*EnumSchema)
+		fullName := GetFullName(schema)
+
+		var symbolsToIndex map[string]int32
+		enumSymbolsToIndexCacheLock.Lock()
+		if symbolsToIndex = enumSymbolsToIndexCache[fullName]; symbolsToIndex == nil {
+			symbolsToIndex = NewGenericEnum(schema.Symbols).symbolsToIndex
+			enumSymbolsToIndexCache[fullName] = symbolsToIndex
+		}
+		enumSymbolsToIndexCacheLock.Unlock()
+
+		enum := &GenericEnum{
+			Symbols:        schema.Symbols,
+			symbolsToIndex: symbolsToIndex,
+			index:          enumIndex,
+		}
 		return reflect.ValueOf(enum), nil
 	}
 }
@@ -449,8 +468,22 @@ func (this *GenericDatumReader) mapEnum(field Schema, dec Decoder) (*GenericEnum
 	if enumIndex, err := dec.ReadEnum(); err != nil {
 		return nil, err
 	} else {
-		enum := NewGenericEnum(field.(*EnumSchema).Symbols)
-		enum.SetIndex(enumIndex)
+		schema := field.(*EnumSchema)
+		fullName := GetFullName(schema)
+
+		var symbolsToIndex map[string]int32
+		enumSymbolsToIndexCacheLock.Lock()
+		if symbolsToIndex = enumSymbolsToIndexCache[fullName]; symbolsToIndex == nil {
+			symbolsToIndex = NewGenericEnum(schema.Symbols).symbolsToIndex
+			enumSymbolsToIndexCache[fullName] = symbolsToIndex
+		}
+		enumSymbolsToIndexCacheLock.Unlock()
+
+		enum := &GenericEnum{
+			Symbols:        schema.Symbols,
+			symbolsToIndex: symbolsToIndex,
+			index:          enumIndex,
+		}
 		return enum, nil
 	}
 }

@@ -39,7 +39,7 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 	leader, err := nc.connector.GetLeader(topic, partition)
 	if err != nil {
 		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Error: err}
+			record.metadataChan <- &RecordMetadata{Record: record, Error: err}
 		}
 	}
 
@@ -57,6 +57,7 @@ func (nc *NetworkClient) send(topic string, partition int32, batch []*ProducerRe
 		// acks = 0 case, just complete all requests
 		for _, record := range batch {
 			record.metadataChan <- &RecordMetadata{
+				Record:    record,
 				Offset:    -1,
 				Topic:     topic,
 				Partition: partition,
@@ -70,7 +71,7 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 	response := <-responseChan
 	if response.err != nil {
 		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Error: response.err}
+			record.metadataChan <- &RecordMetadata{Record: record, Error: response.err}
 		}
 	}
 
@@ -79,7 +80,7 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 	decodingErr := produceResponse.Read(decoder)
 	if decodingErr != nil {
 		for _, record := range batch {
-			record.metadataChan <- &RecordMetadata{Error: decodingErr.Error()}
+			record.metadataChan <- &RecordMetadata{Record: record, Error: decodingErr.Error()}
 		}
 	}
 
@@ -88,6 +89,7 @@ func listenForResponse(topic string, partition int32, batch []*ProducerRecord, r
 		currentOffset := status.Offset
 		for _, record := range batch {
 			record.metadataChan <- &RecordMetadata{
+				Record:    record,
 				Topic:     topic,
 				Partition: partition,
 				Offset:    currentOffset,

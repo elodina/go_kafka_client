@@ -140,6 +140,7 @@ func testProduce(t *testing.T, topicName string, numMessages int, connector *Def
 
 func testConsume(t *testing.T, topicName string, numMessages int, connector *DefaultConnector) {
 	response, err := connector.Fetch(topicName, 0, 0)
+	assertFatal(t, response.Error(topicName, 0), ErrNoError)
 	assertFatal(t, err, nil)
 	messages, err := response.GetMessages()
 	assertFatal(t, err, nil)

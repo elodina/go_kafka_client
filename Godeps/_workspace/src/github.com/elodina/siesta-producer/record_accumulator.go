@@ -7,7 +7,6 @@ import (
 
 type RecordAccumulatorConfig struct {
 	batchSize         int
-	totalMemorySize   int
 	compressionType   string
 	linger            time.Duration
 	retryBackoff      time.Duration
@@ -34,6 +33,9 @@ type RecordAccumulator struct {
 	closed       chan bool
 	metadataChan chan *RecordMetadata
 	records      map[string]map[int32]chan *ProducerRecord
+
+	batchesLock sync.RWMutex
+	recordsLock sync.RWMutex
 }
 
 func NewRecordAccumulator(config *RecordAccumulatorConfig, metadataChan chan *RecordMetadata) *RecordAccumulator {
@@ -81,16 +83,24 @@ func (ra *RecordAccumulator) cleanup() {
 }
 
 func (ra *RecordAccumulator) addRecord(record *ProducerRecord) {
+	ra.batchesLock.Lock()
 	if ra.batches[record.Topic] == nil {
 		ra.batches[record.Topic] = make(map[int32]*RecordBatch)
 	}
 	if ra.batches[record.Topic][record.Partition] == nil {
 		ra.createBatch(record.Topic, record.Partition)
 	}
+	ra.batchesLock.Unlock()
+
+	ra.recordsLock.RLock()
+	defer ra.recordsLock.RUnlock()
 	ra.records[record.Topic][record.Partition] <- record
 }
 
 func (ra *RecordAccumulator) createBatch(topic string, partition int32) {
+	ra.recordsLock.Lock()
+	defer ra.recordsLock.Unlock()
+
 	batch := make([]*ProducerRecord, 0, ra.batchSize)
 	ra.batches[topic][partition] = &RecordBatch{batch: batch}
 	if ra.records[topic] == nil {
@@ -103,12 +113,22 @@ func (ra *RecordAccumulator) createBatch(topic string, partition int32) {
 func (ra *RecordAccumulator) watcher(topic string, partition int32) {
 	timeout := time.NewTimer(ra.config.linger)
 	for {
+		ra.recordsLock.RLock()
+
 		select {
 		case record := <-ra.records[topic][partition]:
+			ra.batchesLock.RLock()
 			batch := ra.batches[record.Topic][record.Partition]
+			ra.batchesLock.RUnlock()
+
 			batch.Lock()
 			batch.batch = append(batch.batch, record)
 			batch.Unlock()
+			length := len(batch.batch)
+			if length >= ra.batchSize {
+				ra.flush(topic, partition)
+				timeout.Reset(ra.config.linger)
+			}
 		case <-timeout.C:
 			ra.flush(topic, partition)
 			timeout.Reset(ra.config.linger)
@@ -117,18 +137,15 @@ func (ra *RecordAccumulator) watcher(topic string, partition int32) {
 			timeout.Stop()
 			return
 		}
-		batch := ra.batches[topic][partition]
-		batch.RLock()
-		lenght := len(batch.batch)
-		batch.RUnlock()
-		if lenght >= ra.batchSize {
-			ra.flush(topic, partition)
-			timeout.Reset(ra.config.linger)
-		}
+
+		ra.recordsLock.RUnlock()
 	}
 }
 
 func (ra *RecordAccumulator) flush(topic string, partition int32) {
+	ra.batchesLock.Lock()
+	defer ra.batchesLock.Unlock()
+
 	batch := ra.batches[topic][partition]
 	batch.Lock()
 	defer batch.Unlock()

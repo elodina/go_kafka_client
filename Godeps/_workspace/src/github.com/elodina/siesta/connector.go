@@ -269,6 +269,21 @@ func (dc *DefaultConnector) GetAvailableOffset(topic string, partition int32, of
 
 // Fetch issues a single fetch request to a broker responsible for a given topic and partition and returns a FetchResponse that contains messages starting from a given offset.
 func (dc *DefaultConnector) Fetch(topic string, partition int32, offset int64) (*FetchResponse, error) {
+	response, err := dc.tryFetch(topic, partition, offset)
+	if err != nil {
+		return response, err
+	}
+
+	if response.Error(topic, partition) == ErrNotLeaderForPartition {
+		Infof(dc, "Sent a fetch reqest to a non-leader broker. Refleshing metadata for topic %s and retrying the request", topic)
+		dc.refreshMetadata([]string{topic})
+		response, err = dc.tryFetch(topic, partition, offset)
+	}
+
+	return response, err
+}
+
+func (dc *DefaultConnector) tryFetch(topic string, partition int32, offset int64) (*FetchResponse, error) {
 	link := dc.getLeader(topic, partition)
 	if link == nil {
 		leader, err := dc.tryGetLeader(topic, partition, dc.config.MetadataRetries)

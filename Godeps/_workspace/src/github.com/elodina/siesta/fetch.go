@@ -109,7 +109,7 @@ func (fr *FetchResponse) Read(decoder Decoder) *DecodingError {
 func (fr *FetchResponse) GetMessages() ([]*MessageAndMetadata, error) {
 	var messages []*MessageAndMetadata
 
-	collector := func(topic string, partition int32, offset int64, key []byte, value []byte) {
+	collector := func(topic string, partition int32, offset int64, key []byte, value []byte) error {
 		messages = append(messages, &MessageAndMetadata{
 			Topic:     topic,
 			Partition: partition,
@@ -117,15 +117,29 @@ func (fr *FetchResponse) GetMessages() ([]*MessageAndMetadata, error) {
 			Key:       key,
 			Value:     value,
 		})
+		return nil
 	}
 
 	err := fr.CollectMessages(collector)
 	return messages, err
 }
 
+// Error returns the error message for a given topic and pertion of this FetchResponse
+func (fr *FetchResponse) Error(topic string, partition int32) error {
+	t, ok := fr.Data[topic]
+	if !ok {
+		return nil
+	}
+	p, ok := t[partition]
+	if !ok {
+		return nil
+	}
+	return p.Error
+}
+
 // CollectMessages traverses this FetchResponse and applies a collector function to each message
 // giving the possibility to avoid response -> siesta.Message -> other.Message conversion if necessary.
-func (fr *FetchResponse) CollectMessages(collector func(topic string, partition int32, offset int64, key []byte, value []byte)) error {
+func (fr *FetchResponse) CollectMessages(collector func(topic string, partition int32, offset int64, key []byte, value []byte) error) error {
 	for topic, partitionAndData := range fr.Data {
 		for partition, data := range partitionAndData {
 			if data.Error != ErrNoError {
@@ -134,10 +148,16 @@ func (fr *FetchResponse) CollectMessages(collector func(topic string, partition 
 			for _, messageAndOffset := range data.Messages {
 				if messageAndOffset.Message.Nested != nil {
 					for _, nested := range messageAndOffset.Message.Nested {
-						collector(topic, partition, nested.Offset, nested.Message.Key, nested.Message.Value)
+						err := collector(topic, partition, nested.Offset, nested.Message.Key, nested.Message.Value)
+						if err != nil {
+							return err
+						}
 					}
 				} else {
-					collector(topic, partition, messageAndOffset.Offset, messageAndOffset.Message.Key, messageAndOffset.Message.Value)
+					err := collector(topic, partition, messageAndOffset.Offset, messageAndOffset.Message.Key, messageAndOffset.Message.Value)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
