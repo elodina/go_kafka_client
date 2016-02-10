@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	avro "github.com/elodina/go-avro"
+	"sync"
 )
 
 const (
@@ -102,6 +103,7 @@ type CachedSchemaRegistryClient struct {
 	schemaCache  map[string]map[avro.Schema]int32
 	idCache      map[int32]avro.Schema
 	versionCache map[string]map[avro.Schema]int32
+	lock         sync.RWMutex
 }
 
 func NewCachedSchemaRegistryClient(registryURL string) *CachedSchemaRegistryClient {
@@ -116,14 +118,21 @@ func NewCachedSchemaRegistryClient(registryURL string) *CachedSchemaRegistryClie
 func (this *CachedSchemaRegistryClient) Register(subject string, schema avro.Schema) (int32, error) {
 	var schemaIdMap map[avro.Schema]int32
 	var exists bool
+
+	this.lock.RLock()
+	if schemaIdMap, exists = this.schemaCache[subject]; exists {
+		var id int32
+		if id, exists = schemaIdMap[schema]; exists {
+			return id, nil
+		}
+	}
+	this.lock.RUnlock()
+
+	this.lock.Lock()
+	defer this.lock.Unlock()
 	if schemaIdMap, exists = this.schemaCache[subject]; !exists {
 		schemaIdMap = make(map[avro.Schema]int32)
 		this.schemaCache[subject] = schemaIdMap
-	}
-
-	var id int32
-	if id, exists = schemaIdMap[schema]; exists {
-		return id, nil
 	}
 
 	request, err := this.newDefaultRequest("POST",
@@ -136,7 +145,7 @@ func (this *CachedSchemaRegistryClient) Register(subject string, schema avro.Sch
 
 	if this.isOK(response) {
 		decodedResponse := &RegisterSchemaResponse{}
-		if this.handleSuccess(response, decodedResponse) != nil {
+		if err := this.handleSuccess(response, decodedResponse); err != nil {
 			return 0, err
 		}
 
@@ -167,7 +176,7 @@ func (this *CachedSchemaRegistryClient) GetByID(id int32) (avro.Schema, error) {
 
 	if this.isOK(response) {
 		decodedResponse := &GetSchemaResponse{}
-		if this.handleSuccess(response, decodedResponse) != nil {
+		if err := this.handleSuccess(response, decodedResponse); err != nil {
 			return nil, err
 		}
 		schema, err := avro.ParseSchema(decodedResponse.Schema)
@@ -191,7 +200,7 @@ func (this *CachedSchemaRegistryClient) GetLatestSchemaMetadata(subject string) 
 
 	if this.isOK(response) {
 		decodedResponse := &GetSubjectVersionResponse{}
-		if this.handleSuccess(response, decodedResponse) != nil {
+		if err := this.handleSuccess(response, decodedResponse); err != nil {
 			return nil, err
 		}
 
@@ -224,7 +233,7 @@ func (this *CachedSchemaRegistryClient) GetVersion(subject string, schema avro.S
 
 	if this.isOK(response) {
 		decodedResponse := &GetSubjectVersionResponse{}
-		if this.handleSuccess(response, decodedResponse) != nil {
+		if err := this.handleSuccess(response, decodedResponse); err != nil {
 			return 0, err
 		}
 		schemaVersionMap[schema] = decodedResponse.Version

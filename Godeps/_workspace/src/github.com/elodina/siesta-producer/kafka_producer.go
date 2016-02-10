@@ -21,6 +21,7 @@ type ProducerRecord struct {
 }
 
 type RecordMetadata struct {
+	Record    *ProducerRecord
 	Offset    int64
 	Topic     string
 	Partition int32
@@ -30,17 +31,14 @@ type RecordMetadata struct {
 type PartitionInfo struct{}
 type Metric struct{}
 type ProducerConfig struct {
-	Partitioner          Partitioner
-	MetadataFetchTimeout time.Duration
-	MetadataExpire       time.Duration
-	MaxRequestSize       int
-	TotalMemorySize      int
-	CompressionType      string
-	BatchSize            int
-	Linger               time.Duration
-	Retries              int
-	RetryBackoff         time.Duration
-	BlockOnBufferFull    bool
+	Partitioner       Partitioner
+	MetadataExpire    time.Duration
+	CompressionType   string
+	BatchSize         int
+	Linger            time.Duration
+	Retries           int
+	RetryBackoff      time.Duration
+	BlockOnBufferFull bool
 
 	ClientID        string
 	MaxRequests     int
@@ -141,7 +139,6 @@ func NewKafkaProducer(config *ProducerConfig, keySerializer Serializer, valueSer
 
 	accumulatorConfig := &RecordAccumulatorConfig{
 		batchSize:         config.BatchSize,
-		totalMemorySize:   config.TotalMemorySize,
 		compressionType:   config.CompressionType,
 		linger:            config.Linger,
 		retryBackoff:      config.RetryBackoff,
@@ -165,13 +162,7 @@ func ProducerConfigFromFile(filename string) (*ProducerConfig, error) {
 	}
 
 	producerConfig := NewProducerConfig()
-	if err := setDurationConfig(&producerConfig.MetadataFetchTimeout, c["metadata.fetch.timeout"]); err != nil {
-		return nil, err
-	}
 	if err := setDurationConfig(&producerConfig.MetadataExpire, c["metadata.max.age"]); err != nil {
-		return nil, err
-	}
-	if err := setIntConfig(&producerConfig.MaxRequestSize, c["metadata.expire"]); err != nil {
 		return nil, err
 	}
 	if err := setIntConfig(&producerConfig.BatchSize, c["batch.size"]); err != nil {
@@ -191,9 +182,6 @@ func ProducerConfigFromFile(filename string) (*ProducerConfig, error) {
 		return nil, err
 	}
 	if err := setIntConfig(&producerConfig.ReceiveRoutines, c["receive.routines"]); err != nil {
-		return nil, err
-	}
-	if err := setIntConfig(&producerConfig.MaxRequestSize, c["max.request.size"]); err != nil {
 		return nil, err
 	}
 	setBoolConfig(&producerConfig.BlockOnBufferFull, c["block.on.buffer.full"])

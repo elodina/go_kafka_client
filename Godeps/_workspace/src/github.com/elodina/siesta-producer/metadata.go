@@ -11,7 +11,7 @@ type Metadata struct {
 	connector      siesta.Connector
 	metadataExpire time.Duration
 	cache          map[string]*metadataEntry
-	refreshLock    sync.Mutex
+	metadataLock   sync.RWMutex
 }
 
 func NewMetadata(connector siesta.Connector, metadataExpire time.Duration) *Metadata {
@@ -23,25 +23,33 @@ func NewMetadata(connector siesta.Connector, metadataExpire time.Duration) *Meta
 }
 
 func (tmc *Metadata) Get(topic string) ([]int32, error) {
+	tmc.metadataLock.RLock()
 	cache := tmc.cache[topic]
+	tmc.metadataLock.RUnlock()
+
 	if cache == nil || cache.timestamp.Add(tmc.metadataExpire).Before(time.Now()) {
 		err := tmc.Refresh([]string{topic})
 		if err != nil {
 			return nil, err
 		}
+
+		tmc.metadataLock.RLock()
+		cache = tmc.cache[topic]
+		tmc.metadataLock.RUnlock()
+
+		if cache != nil {
+			return cache.partitions, nil
+		}
+
+		return nil, fmt.Errorf("Could not get topic metadata for topic %s", topic)
 	}
 
-	cache = tmc.cache[topic]
-	if cache != nil {
-		return cache.partitions, nil
-	}
-
-	return nil, fmt.Errorf("Could not get topic metadata for topic %s", topic)
+	return cache.partitions, nil
 }
 
 func (tmc *Metadata) Refresh(topics []string) error {
-	tmc.refreshLock.Lock()
-	defer tmc.refreshLock.Unlock()
+	tmc.metadataLock.Lock()
+	defer tmc.metadataLock.Unlock()
 	Logger.Info("Refreshing metadata for topics %v", topics)
 
 	topicMetadataResponse, err := tmc.connector.GetTopicMetadata(topics)

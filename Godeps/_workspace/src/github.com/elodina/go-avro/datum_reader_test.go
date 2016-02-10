@@ -3,6 +3,7 @@ package avro
 import (
 	"bytes"
 	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -330,6 +331,53 @@ func TestGenericDatumReaderEmptyArray(t *testing.T) {
 	assert(t, rec.Get("map1"), nil)
 }
 
+var schemaEnumA = MustParseSchema(`
+	{"type": "record", "name": "PlayingCard",
+	 "fields": [
+        {"name": "type", "type": {"type": "enum", "name": "Type", "symbols":["HEART", "SPADE", "CLUB"]}}
+     ]}`)
+var schemaEnumB = MustParseSchema(`
+	{"type": "record", "name": "Car",
+	 "fields": [
+        {"name": "drive", "type": {"type": "enum", "name": "DriveSystem", "symbols":["FWD", "RWD", "AWD"]}}
+     ]}`)
+
+func TestEnumCachingRace(t *testing.T) {
+	enumRaceTest(t, []Schema{schemaEnumA})
+}
+
+func TestEnumCachingRace2(t *testing.T) {
+	enumRaceTest(t, []Schema{schemaEnumA, schemaEnumB})
+}
+
+func enumRaceTest(t *testing.T, schemas []Schema) {
+	var buf bytes.Buffer
+	enc := NewBinaryEncoder(&buf)
+	enc.WriteInt(2)
+
+	parallelF(20, 100, func(routine, loop int) {
+		var dest GenericRecord
+		schema := schemas[routine%len(schemas)]
+		reader := NewGenericDatumReader()
+		reader.SetSchema(schema)
+		reader.Read(&dest, NewBinaryDecoder(buf.Bytes()))
+	})
+
+}
+
+func parallelF(numRoutines, numLoops int, f func(routine, loop int)) {
+	var wg sync.WaitGroup
+	wg.Add(numRoutines)
+	for i := 0; i < numRoutines; i++ {
+		go func(routine int) {
+			defer wg.Done()
+			for loop := 0; loop < numLoops; loop++ {
+				f(routine, loop)
+			}
+		}(i)
+	}
+}
+
 func BenchmarkSpecificDatumReader_complex(b *testing.B) {
 	var dest complex
 	specificReaderBenchComplex(b, &dest)
@@ -360,6 +408,60 @@ func specificReaderComplexVal() (Schema, []byte) {
 
 func specificReaderBenchComplex(b *testing.B, dest interface{}) {
 	schema, buf := specificReaderComplexVal()
+	specificDecoderBench(b, schema, buf, dest)
+}
+
+/////// BIG ARRAYS
+
+var bigArraysSchema = MustParseSchema(`{
+    "type": "record",
+    "name": "bigArrays",
+    "fields": [
+        {"name": "ints", "type": {"type": "array", "items": "int"}},
+        {"name": "strings", "type": {"type": "array", "items": "string"}}
+    ]
+}`)
+
+type bigArrays struct {
+	Ints    []int32  `avro:"ints"`
+	Strings []string `avro:"strings"`
+}
+
+func BenchmarkSpecificDatumReader_bigArrays(b *testing.B) {
+	big := &bigArrays{}
+	for i := 0; i < 2000; i++ {
+		big.Ints = append(big.Ints, int32(i+1))
+	}
+	buf := testEncodeBytes(bigArraysSchema, big)
+
+	var dest bigArrays
+	specificDecoderBench(b, bigArraysSchema, buf, &dest)
+}
+
+func BenchmarkSpecificDatumReader_segmented_bigArrays(b *testing.B) {
+	// go-avro doesn't create segmented arrays by default. Make one ourselves.
+	var buf bytes.Buffer
+	encoder := NewBinaryEncoder(&buf)
+	for i := 0; i < 2000; i += 100 {
+		if i == 0 {
+			encoder.WriteArrayStart(100)
+		} else {
+			encoder.WriteArrayNext(100)
+		}
+		for j := i; j < i+100; j++ {
+			encoder.WriteInt(int32(j + 1))
+		}
+	}
+	encoder.WriteArrayNext(0)
+	encoder.WriteArrayStart(0)
+	var dest bigArrays
+	specificDecoderBench(b, bigArraysSchema, buf.Bytes(), &dest)
+}
+
+/////// UTILITIES
+
+func specificDecoderBench(b *testing.B, schema Schema, buf []byte, dest interface{}) {
+	b.ReportAllocs()
 	datumReader := NewSpecificDatumReader()
 	datumReader.SetSchema(schema)
 

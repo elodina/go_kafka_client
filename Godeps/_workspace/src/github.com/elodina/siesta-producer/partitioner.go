@@ -43,18 +43,15 @@ func (hp *HashPartitioner) Partition(record *ProducerRecord, partitions []int32)
 	}
 }
 
-type RandomPartitioner struct {
-	random *rand.Rand
-}
+type RandomPartitioner struct{}
 
 func NewRandomPartitioner() *RandomPartitioner {
-	return &RandomPartitioner{
-		random: rand.New(rand.NewSource(time.Now().UnixNano())),
-	}
+	rand.Seed(time.Now().UnixNano())
+	return new(RandomPartitioner)
 }
 
 func (rp *RandomPartitioner) Partition(record *ProducerRecord, partitions []int32) (int32, error) {
-	return rp.random.Int31n(int32(len(partitions))), nil
+	return rand.Int31n(int32(len(partitions))), nil
 }
 
 type ManualPartitioner struct{}
