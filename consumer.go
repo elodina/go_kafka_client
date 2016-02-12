@@ -56,6 +56,7 @@ type Consumer struct {
 	close                          chan bool
 	resetConsumer                  chan bool
 	stopCleanup                    chan struct{}
+	wg                             sync.WaitGroup
 	topicCount                     TopicsToNumStreams
 
 	metrics *ConsumerMetrics
@@ -214,8 +215,8 @@ func (c *Consumer) startStreams() {
 		case <-c.resetConsumer:
 			{
 				//This need to execute in a goroutine so it doesn't block the outer for/select loop while closing consumer conns
-				go func(){
-					Infof(c, "Consumer recieved reset signal, restarting consumer")
+				go func() {
+					Infof(c, "Consumer received reset signal, restarting consumer")
 					c.metrics.consumerResetCounter.Inc(1)
 
 					//Grab the context before we close the ZK connection
@@ -324,6 +325,11 @@ func (c *Consumer) createMessageStreamsByFilter(topicFilter TopicFilter) {
 
 func (c *Consumer) reinitializeConsumer() {
 	c.subscribeForChanges(c.config.Groupid)
+	c.rebalance()
+}
+
+func (c *Consumer) ForceRebalance() {
+	c.lastSuccessfulRebalanceHash = ""
 	c.rebalance()
 }
 
@@ -874,9 +880,7 @@ func (c *Consumer) fetchOffsets(topicPartitions []*TopicAndPartition) (map[Topic
 func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int32]*partitionTopicInfo,
 	topicPartition *TopicAndPartition, offset int64,
 	consumerThreadId ConsumerThreadId) {
-	if Logger.IsAllowed(DebugLevel) {
-		Debugf(c, "Adding partitionTopicInfo: %s", topicPartition)
-	}
+	Tracef(c, "Adding partitionTopicInfo: %v \n %s", currenttopicRegistry, topicPartition)
 	partTopicInfoMap, exists := currenttopicRegistry[topicPartition.Topic]
 	if !exists {
 		partTopicInfoMap = make(map[int32]*partitionTopicInfo)
@@ -900,18 +904,14 @@ func (c *Consumer) addPartitionTopicInfo(currenttopicRegistry map[string]map[int
 }
 
 func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision map[TopicAndPartition]ConsumerThreadId) bool {
-	if Logger.IsAllowed(InfoLevel) {
-		Info(c, "Consumer is trying to reflect partition ownership decision")
-	}
-	if Logger.IsAllowed(DebugLevel) {
-		Debugf(c, "Partition ownership decision: %v", partitionOwnershipDecision)
-	}
-
+	Infof(c, "Consumer is trying to reflect partition ownership decision: %v\n", partitionOwnershipDecision)
 	pool := NewRoutinePool(c.config.RoutinePoolSize)
 
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	successChan := make(chan TopicAndPartition)
 	go func() {
+		c.wg.Add(1)
+		defer c.wg.Done()
 		for tp := range successChan {
 			successfullyOwnedPartitions = append(successfullyOwnedPartitions, &tp)
 		}
@@ -923,6 +923,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 
 	pool.Stop()
 	close(successChan)
+	c.wg.Wait()
 
 	if len(partitionOwnershipDecision) > len(successfullyOwnedPartitions) {
 		if Logger.IsAllowed(WarnLevel) {
@@ -944,14 +945,10 @@ func (c *Consumer) claimPartitionOwnershipFunc(topicPartition TopicAndPartition,
 			panic(err)
 		}
 		if success {
-			if Logger.IsAllowed(DebugLevel) {
-				Debugf(c, "Consumer successfully claimed partition %d for topic %s", topicPartition.Partition, topicPartition.Topic)
-			}
+			Debugf(c, "Consumer successfully claimed partition %d for topic %s", topicPartition.Partition, topicPartition.Topic)
 			successChan <- topicPartition
 		} else {
-			if Logger.IsAllowed(WarnLevel) {
-				Warnf(c, "Consumer failed to claim partition %d for topic %s", topicPartition.Partition, topicPartition.Topic)
-			}
+			Warnf(c, "Consumer failed to claim partition %d for topic %s", topicPartition.Partition, topicPartition.Topic)
 		}
 	}
 }

@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
 	avro "github.com/stealthly/go-avro"
 )
 

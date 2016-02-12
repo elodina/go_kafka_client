@@ -176,9 +176,12 @@ func (this *FixedPartitioner) Partition(key []byte, numPartitions int32) (int32,
 	if key == nil {
 		panic("FixedPartitioner does not work without keys.")
 	}
-	partition, err := binary.ReadUvarint(bytes.NewBuffer(key))
-	if err != nil {
-		return -1, err
+
+	var partition int32
+	buf := bytes.NewBuffer(key)
+	binary.Read(buf, binary.LittleEndian, &partition)
+	if partition < 0 {
+		return -1, errors.New("Partition turned to be -1 (too big to be int32 little endian?)")
 	}
 
 	return int32(partition) % numPartitions, nil

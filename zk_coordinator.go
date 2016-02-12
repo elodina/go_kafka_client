@@ -589,6 +589,9 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 								if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
 									newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 									groupWatch.coordinatorEvents <- BlueGreenRequest
+								} else if e.Path == groupWatch.poisonPillMessage {
+									stopRedirecting <- true
+									return
 								} else {
 									groupWatch.coordinatorEvents <- Regular
 								}
@@ -1046,7 +1049,7 @@ func (this *ZookeeperCoordinator) getBlueGreenWatcher(group string) (<-chan zk.E
 	return this.getWatcher(fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, BlueGreenDeploymentAPI))
 }
 
-func (this *ZookeeperCoordinator) getTopicsWatcher() (<-chan zk.Event, error) {
+func (this *ZookeeperCoordinator) getTopicsWatcher() (watcher <-chan zk.Event, err error) {
 	return this.getWatcher(this.rootedPath(brokerTopicsPath))
 }
 
