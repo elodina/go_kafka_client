@@ -222,6 +222,7 @@ func (c *Consumer) maintainCleanCoordinator() {
 	c.stopCleanup = make(chan struct{})
 	go func() {
 		tick := time.NewTicker(5 * time.Minute)
+		defer tick.Stop()
 		for {
 			select {
 			case <-tick.C:
