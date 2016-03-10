@@ -631,7 +631,7 @@ func testConsumerConfig() *ConsumerConfig {
 	zkConfig := NewZookeeperConfig()
 	zkConfig.ZookeeperConnect = []string{localZk}
 	zkConfig.MaxRequestRetries = 10
-	zkConfig.ZookeeperTimeout = 30 * time.Second
+	zkConfig.ZookeeperSessionTimeout = 30 * time.Second
 	zkConfig.RequestBackoff = 3 * time.Second
 	config.Coordinator = NewZookeeperCoordinator(zkConfig)
 
