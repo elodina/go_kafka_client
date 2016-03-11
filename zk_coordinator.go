@@ -93,32 +93,30 @@ func (this *ZookeeperCoordinator) Disconnect() {
 }
 
 func (this *ZookeeperCoordinator) listenConnectionEvents(connectionEvents <-chan zk.Event) {
-	for event := range connectionEvents {
-		if this.closed {
-			return
-		}
-
-		if event.State == zk.StateExpired && event.Type == zk.EventSession {
-			err := this.Connect()
-			if err != nil {
-				this.config.PanicHandler(err)
-			}
-			for groupId, watch := range this.watches {
-				watch.zkEvents <- zk.Event{
-					Type:  zk.EventNodeCreated,
-					State: zk.StateConnected,
-					Path:  watch.poisonPillMessage,
-				}
-				_, err := this.SubscribeForChanges(groupId)
-				if err != nil {
-					this.config.PanicHandler(err)
-				}
+	for event := range connectionEvents { // will be closed by zk.Conn when it's stopped
+		Infof(this, "Received zkConnectionEvent Type: %s Server: %s State: %s", event.Type.String(), event.Server, event.State.String())
+		switch event.State {
+		case zk.StateConnecting:
+			// (Re)connecting to a ZK server
+			// Nothing to do
+		case zk.StateConnected:
+			// (Re)connected to a ZK server (TCP layer)
+			// We have no idea about ZK session at this moment
+			// Nothing to do
+		case zk.StateExpired:
+			// Failed to reuse the previous session (timeout)
+			// Existing watchers will be discarded
+			// Exsiting ephemeral nodes will be removed
+			for _, watch := range this.watches {
 				watch.coordinatorEvents <- Reinitialize
 			}
 
-			return
+		case zk.StateHasSession:
+			// Got an new or existing session
+			// Nothing to do
 		}
 	}
+	Infof(this, "Stopping listening connection events")
 }
 
 /* Registers a new consumer with Consumerid id and TopicCount subscription that is a part of consumer group Groupid in this ConsumerCoordinator. Returns an error if registration failed, nil otherwise. */
@@ -531,9 +529,6 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
 							newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
 							groupWatch.coordinatorEvents <- BlueGreenRequest
-						} else if e.Path == groupWatch.poisonPillMessage {
-							stopRedirecting <- true
-							return
 						} else {
 							groupWatch.coordinatorEvents <- Regular
 						}
