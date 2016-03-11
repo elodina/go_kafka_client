@@ -82,7 +82,7 @@ func (this *ZookeeperCoordinator) Connect() (err error) {
 
 func (this *ZookeeperCoordinator) tryConnect() (zkConn *zk.Conn, connectionEvents <-chan zk.Event, err error) {
 	Infof(this, "Connecting to ZK at %s\n", this.config.ZookeeperConnect)
-	zkConn, connectionEvents, err = zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperTimeout)
+	zkConn, connectionEvents, err = zk.Connect(this.config.ZookeeperConnect, this.config.ZookeeperSessionTimeout)
 	return
 }
 
@@ -1102,8 +1102,8 @@ type ZookeeperConfig struct {
 	/* Zookeeper hosts */
 	ZookeeperConnect []string
 
-	/* Zookeeper read timeout */
-	ZookeeperTimeout time.Duration
+	/* Zookeeper session timeout */
+	ZookeeperSessionTimeout time.Duration
 
 	/* Max retries for any request except CommitOffset. CommitOffset is controlled by ConsumerConfig.OffsetsCommitMaxRetries. */
 	MaxRequestRetries int
@@ -1122,7 +1122,7 @@ type ZookeeperConfig struct {
 func NewZookeeperConfig() *ZookeeperConfig {
 	config := &ZookeeperConfig{}
 	config.ZookeeperConnect = []string{"localhost"}
-	config.ZookeeperTimeout = 1 * time.Second
+	config.ZookeeperSessionTimeout = 5 * time.Second
 	config.MaxRequestRetries = 3
 	config.RequestBackoff = 150 * time.Millisecond
 	config.Root = ""
@@ -1152,7 +1152,7 @@ func ZookeeperConfigFromFile(filename string) (*ZookeeperConfig, error) {
 	setStringSliceConfig(&config.ZookeeperConnect, z["zookeeper.connect"], ",")
 	setStringConfig(&config.Root, z["zookeeper.kafka.root"])
 
-	if err := setDurationConfig(&config.ZookeeperTimeout, z["zookeeper.connection.timeout"]); err != nil {
+	if err := setDurationConfig(&config.ZookeeperSessionTimeout, z["zookeeper.connection.session.timeout"]); err != nil {
 		return nil, err
 	}
 	if err := setIntConfig(&config.MaxRequestRetries, z["zookeeper.max.request.retries"]); err != nil {
