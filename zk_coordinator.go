@@ -70,6 +70,8 @@ func (this *ZookeeperCoordinator) Connect() (err error) {
 	for i := 0; i <= this.config.MaxRequestRetries; i++ {
 		this.zkConn, connectionEvents, err = this.tryConnect()
 		if err == nil {
+			this.zkConn.SetLogger(&zkLogger{tag: this})
+
 			go this.listenConnectionEvents(connectionEvents)
 			return
 		}
@@ -1200,6 +1202,14 @@ func newZKGroupTopicDirs(root string, group string, topic string) *zkGroupTopicD
 		ConsumerOffsetDir: fmt.Sprintf("%s/%s/%s", zkGroupsDirs.ConsumerGroupDir, "offsets", topic),
 		ConsumerOwnerDir:  fmt.Sprintf("%s/%s/%s", zkGroupsDirs.ConsumerGroupDir, "owners", topic),
 	}
+}
+
+type zkLogger struct {
+	tag interface{}
+}
+
+func (l *zkLogger) Printf(message string, params ...interface{}) {
+	Infof(l.tag, message, params...)
 }
 
 //used for tests only
