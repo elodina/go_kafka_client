@@ -151,7 +151,7 @@ func produceN(t *testing.T, n int, topic string, brokerAddr string) {
 	producerConfig := producer.NewProducerConfig()
 
 	p := producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, producer.StringSerializer, connector)
-	defer p.Close(time.Second)
+	defer p.Close()
 
 	metadatas := make([]<-chan *producer.RecordMetadata, n)
 
@@ -175,7 +175,7 @@ func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, 
 	producerConfig.Partitioner = producer.NewManualPartitioner()
 
 	p := producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, producer.StringSerializer, connector)
-	defer p.Close(time.Second)
+	defer p.Close()
 
 	metadatas := make([]<-chan *producer.RecordMetadata, n)
 
