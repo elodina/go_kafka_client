@@ -134,7 +134,7 @@ func (k *KafkaLogEmitter) Emit(logLine *avro.LogLine) {
 
 // Close closes the underlying producer. The KafkaLogEmitter won't be usable anymore after call to this.
 func (k *KafkaLogEmitter) Close() {
-	k.producer.Close(k.config.ProducerCloseTimeout)
+	k.producer.Close()
 }
 
 // Trace formats a given message according to given params to log with level Trace and produces to a given Kafka topic.
