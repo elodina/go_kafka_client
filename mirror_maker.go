@@ -20,7 +20,6 @@ import (
 	"github.com/elodina/siesta"
 	"github.com/elodina/siesta-producer"
 	"hash/fnv"
-	"time"
 )
 
 // MirrorMakerConfig defines configuration options for MirrorMaker
@@ -122,7 +121,7 @@ func (this *MirrorMaker) Stop() {
 
 	//TODO maybe drain message channel first?
 	for _, producer := range this.producers {
-		producer.Close(time.Second)
+		producer.Close()
 	}
 
 	Info("", "Sending stopped")
