@@ -22,23 +22,34 @@ import (
 	"time"
 
 	metrics "github.com/rcrowley/go-metrics"
+	"sync"
 )
 
 type ConsumerMetrics struct {
-	registry metrics.Registry
+	registry     metrics.Registry
+	consumerName string
+	prefix       string
 
 	numFetchRoutinesCounter metrics.Counter
 	fetchersIdleTimer       metrics.Timer
 	fetchDurationTimer      metrics.Timer
 
-	numWorkerManagersGauge     metrics.Gauge
-	activeWorkersCounter       metrics.Counter
-	pendingWMsTasksCounter     metrics.Counter
-	taskTimeoutCounter         metrics.Counter
+	numWorkerManagersGauge metrics.Gauge
+	activeWorkersCounter   metrics.Counter
+	pendingWMsTasksCounter metrics.Counter
+	taskTimeoutCounter     metrics.Counter
+	wmsBatchDurationTimer  metrics.Timer
+	wmsIdleTimer           metrics.Timer
+
 	fetcherNetworkErrorCounter metrics.Counter
 	consumerResetCounter       metrics.Counter
-	wmsBatchDurationTimer      metrics.Timer
-	wmsIdleTimer               metrics.Timer
+	numFetchedMessagesCounter  metrics.Counter
+	numConsumedMessagesCounter metrics.Counter
+	numAcksCounter             metrics.Counter
+	topicPartitionLag          map[TopicAndPartition]metrics.Gauge
+
+	metricLock            sync.Mutex
+	reportingStopChannels []chan struct{}
 }
 
 func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
@@ -51,6 +62,8 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	if prefix != "" && prefix[len(prefix)-1:] != "." {
 		prefix += "."
 	}
+	kafkaMetrics.consumerName = consumerName
+	kafkaMetrics.prefix = prefix
 
 	kafkaMetrics.fetchersIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sFetchersIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.fetchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sFetchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
@@ -63,6 +76,13 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	kafkaMetrics.consumerResetCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sConsumerReset-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsBatchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
+
+	kafkaMetrics.numFetchedMessagesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sFetchedMessages-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.numConsumedMessagesCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sConsumedMessages-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.numAcksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sAcks-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.topicPartitionLag = make(map[TopicAndPartition]metrics.Gauge)
+
+	kafkaMetrics.reportingStopChannels = make([]chan struct{}, 0)
 
 	return kafkaMetrics
 }
@@ -105,6 +125,33 @@ func (this *ConsumerMetrics) fetcherNetworkErrors() metrics.Counter {
 
 func (this *ConsumerMetrics) consumerResets() metrics.Counter {
 	return this.consumerResetCounter
+}
+
+func (this *ConsumerMetrics) numFetchedMessages() metrics.Counter {
+	return this.numFetchedMessagesCounter
+}
+
+func (this *ConsumerMetrics) numConsumedMessages() metrics.Counter {
+	return this.numConsumedMessagesCounter
+}
+
+func (this *ConsumerMetrics) numAcks() metrics.Counter {
+	return this.numAcksCounter
+}
+
+func (this *ConsumerMetrics) topicAndPartitionLag(topic string, partition int32) metrics.Gauge {
+	topicAndPartition := TopicAndPartition{Topic: topic, Partition: partition}
+	lag, ok := this.topicPartitionLag[topicAndPartition]
+	if !ok {
+		inLock(&this.metricLock, func() {
+			lag, ok = this.topicPartitionLag[topicAndPartition]
+			if !ok {
+				this.topicPartitionLag[topicAndPartition] = metrics.NewRegisteredGauge(fmt.Sprintf("%sLag-%s-%s", this.prefix, this.consumerName, &topicAndPartition), this.registry)
+				lag = this.topicPartitionLag[topicAndPartition]
+			}
+		})
+	}
+	return lag
 }
 
 func (this *ConsumerMetrics) Stats() map[string]map[string]float64 {
@@ -159,9 +206,26 @@ func (this *ConsumerMetrics) Stats() map[string]map[string]float64 {
 }
 
 func (this *ConsumerMetrics) WriteJSON(reportingInterval time.Duration, writer io.Writer) {
-	metrics.WriteJSON(this.registry, reportingInterval, writer)
+	tick := time.Tick(reportingInterval)
+	stop := make(chan struct{})
+
+	inLock(&this.metricLock, func() {
+		this.reportingStopChannels = append(this.reportingStopChannels, stop)
+	})
+
+	for {
+		select {
+		case <-tick:
+			metrics.WriteJSONOnce(this.registry, writer)
+		case <-stop:
+			return
+		}
+	}
 }
 
 func (this *ConsumerMetrics) close() {
+	for _, ch := range this.reportingStopChannels {
+		ch <- struct{}{}
+	}
 	this.registry.UnregisterAll()
 }

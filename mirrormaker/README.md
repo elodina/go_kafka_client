@@ -37,6 +37,6 @@ The tool uses a Kafka consumer to consume messages from the source cluster, and 
  **Docker usage:**
  
  1. Install Docker [https://docs.docker.com/installation/#installation](https://docs.docker.com/installation/#installation)
- 2. `cd $GOPATH/src/github.com/stealthly/go_kafka_client`
- 3. Build docker image: `docker build -t stealthly/go_kafka_mirrormaker --file Dockerfile.mirrormaker .`
- 4. `docker run -v $(pwd)/mirrormaker:/mirrormaker stealthly/go_kafka_mirrormaker --consumer.config /mirrormaker/sourceCluster1Consumer.config --consumer.config /mirrormaker/sourceCluster2Consumer.config --num.streams 2 --producer.config /mirrormaker/targetClusterProducer.config --whitelist=".*"`
+ 2. `cd $GOPATH/src/github.com/elodina/go_kafka_client`
+ 3. Build docker image: `docker build -t elodina/go_kafka_mirrormaker --file Dockerfile.mirrormaker .`
+ 4. `docker run -v $(pwd)/mirrormaker:/mirrormaker elodina/go_kafka_mirrormaker --consumer.config /mirrormaker/sourceCluster1Consumer.config --consumer.config /mirrormaker/sourceCluster2Consumer.config --num.streams 2 --producer.config /mirrormaker/targetClusterProducer.config --whitelist=".*"`

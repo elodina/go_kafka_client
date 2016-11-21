@@ -17,9 +17,10 @@ package go_kafka_client
 
 import (
 	"fmt"
-	"github.com/samuel/go-zookeeper/zk"
-	//	"github.com/stealthly/go-kafka/producer"
 	"github.com/Shopify/sarama"
+	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
+	"github.com/samuel/go-zookeeper/zk"
 	"os"
 	"os/exec"
 	"reflect"
@@ -146,56 +147,53 @@ func receiveNoMessages(t *testing.T, timeout time.Duration, from <-chan []*Messa
 }
 
 func produceN(t *testing.T, n int, topic string, brokerAddr string) {
-	clientConfig := sarama.NewConfig()
-	clientConfig.Producer.Timeout = 10 * time.Second
-	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
+	connector := testConnector(t)
+	producerConfig := producer.NewProducerConfig()
 
-	producer, err := sarama.NewAsyncProducerFromClient(client)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer producer.Close()
+	p := producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, producer.StringSerializer, connector)
+	defer p.Close()
+
+	metadatas := make([]<-chan *producer.RecordMetadata, n)
+
 	for i := 0; i < n; i++ {
-		producer.Input() <- &sarama.ProducerMessage{Topic: topic, Key: nil, Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+		metadatas[i] = p.Send(&producer.ProducerRecord{Topic: topic, Value: fmt.Sprintf("test-kafka-message-%d", i)})
 	}
-	select {
-	case e := <-producer.Errors():
-		t.Fatalf("Failed to produce message: %s", e)
-	case <-time.After(5 * time.Second):
+
+	for _, metadataChan := range metadatas {
+		select {
+		case metadata := <-metadataChan:
+			assert(t, metadata.Error, siesta.ErrNoError)
+		case <-time.After(5 * time.Second):
+			t.Fatal("Could not get produce response within 5 seconds")
+		}
 	}
 }
 
 func produceNToTopicPartition(t *testing.T, n int, topic string, partition int, brokerAddr string) {
-	clientConfig := sarama.NewConfig()
-	partitionerFactory := &SaramaPartitionerFactory{NewFixedPartitioner}
-	clientConfig.Producer.Partitioner = partitionerFactory.PartitionerConstructor
-	clientConfig.Producer.Timeout = 10 * time.Second
-	client, err := sarama.NewClient([]string{brokerAddr}, clientConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	producer, err := sarama.NewAsyncProducerFromClient(client)
-	encoder := &Int32Encoder{}
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer producer.Close()
+	connector := testConnector(t)
+	producerConfig := producer.NewProducerConfig()
+	producerConfig.Partitioner = producer.NewManualPartitioner()
+
+	p := producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, producer.StringSerializer, connector)
+	defer p.Close()
+
+	metadatas := make([]<-chan *producer.RecordMetadata, n)
+
 	for i := 0; i < n; i++ {
-		key, _ := encoder.Encode(uint32(partition))
-		producer.Input() <- &sarama.ProducerMessage{Topic: topic, Key: sarama.ByteEncoder(key), Value: sarama.StringEncoder(fmt.Sprintf("test-kafka-message-%d", i))}
+		metadatas[i] = p.Send(&producer.ProducerRecord{Topic: topic, Partition: int32(partition), Value: fmt.Sprintf("test-kafka-message-%d", i)})
 	}
-	select {
-	case e := <-producer.Errors():
-		t.Fatalf("Failed to produce message: %s", e)
-	case <-time.After(5 * time.Second):
+
+	for _, metadataChan := range metadatas {
+		select {
+		case metadata := <-metadataChan:
+			assert(t, metadata.Error, siesta.ErrNoError)
+		case <-time.After(5 * time.Second):
+			t.Fatal("Could not get produce response within 5 seconds")
+		}
 	}
 }
 
+// Siesta producer does not yet support compression
 func produce(t *testing.T, messages []string, topic string, brokerAddr string, compression sarama.CompressionCodec) {
 	clientConfig := sarama.NewConfig()
 	clientConfig.Producer.Compression = compression
@@ -232,6 +230,17 @@ func closeWithin(t *testing.T, timeout time.Duration, consumer *Consumer) {
 			t.Errorf("Failed to close a consumer within %d seconds", timeout.Seconds())
 		}
 	}
+}
+
+func testConnector(t *testing.T) *siesta.DefaultConnector {
+	config := siesta.NewConnectorConfig()
+	config.BrokerList = []string{"localhost:9092"}
+
+	connector, err := siesta.NewDefaultConnector(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return connector
 }
 
 //Convenience utility to create a topic topicName with numPartitions partitions in Zookeeper located at zk (format should be host:port).

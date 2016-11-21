@@ -250,6 +250,7 @@ func (c *Consumer) maintainCleanCoordinator() {
 	c.stopCleanup = make(chan struct{})
 	go func() {
 		tick := time.NewTicker(5 * time.Minute)
+		defer tick.Stop()
 		for {
 			select {
 			case <-tick.C:
@@ -964,6 +965,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	successChan := make(chan TopicAndPartition)
+
 	go func() {
 		c.wg.Add(1)
 		defer c.wg.Done()
