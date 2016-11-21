@@ -118,6 +118,9 @@ type ConsumerConfig struct {
 	Resets after each flush meaning this won't be triggered if FetchBatchSize is reached before timeout. */
 	FetchBatchTimeout time.Duration
 
+	//Debug topic prefix to log when FetchBatchTimeout is reached for auto-flushing
+	BatchFlushTimeoutPrefix string
+
 	/* Backoff between fetch requests if no messages were fetched from a previous fetch. */
 	RequeueAskNextBackoff time.Duration
 
@@ -168,9 +171,9 @@ type ConsumerConfig struct {
 	/* Metrics Prefix if the client wants to organize the way metric names are emitted. (optional) */
 	MetricsPrefix string
 
-	/* Config to skip corrupted messages. If set to true the consumer will increment the topic-partition offset by 1
-	   on each corrupted response until the corrupted part of data is over. Turned off by default. */
-	SkipCorruptedMessages bool
+       	/* Config to skip corrupted messages. If set to true the consumer will increment the topic-partition offset by 1
+           on each corrupted response until the corrupted part of data is over. Turned off by default. */
+       	SkipCorruptedMessages bool
 
 	/* RoutinePoolSize defines the size of routine pools created within this consumer. */
 	RoutinePoolSize int

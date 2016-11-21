@@ -184,8 +184,10 @@ func (wm *WorkerManager) startBatch(batch []*Message) {
 }
 
 func (wm *WorkerManager) commitBatch() {
+	timeout := newTimer(wm.config.OffsetCommitInterval)
+	defer timeout.Stop()
 	for {
-		timeout := time.NewTimer(wm.config.OffsetCommitInterval)
+		timeout.safeReset(wm.config.OffsetCommitInterval)
 		select {
 		case <-wm.commitStop:
 			{
@@ -195,6 +197,7 @@ func (wm *WorkerManager) commitBatch() {
 			}
 		case <-timeout.C:
 			{
+				timeout.scr()
 				wm.commitOffset()
 			}
 		}
@@ -243,16 +246,12 @@ func (wm *WorkerManager) processBatch() {
 		outputChannels[i] = &worker.OutputChannel
 	}
 
-	resultsChannel := make(chan WorkerResult)
+	resultsChannel := make(chan WorkerResult, len(wm.workers))
+	stopRedirecting := redirectChannelsTo(outputChannels, resultsChannel)
 	for {
-		stopRedirecting := redirectChannelsTo(outputChannels, resultsChannel)
 		select {
 		case result := <-resultsChannel:
 			{
-				go func() {
-					stopRedirecting <- true
-				}()
-
 				if wm.shutdownDecision != nil && *wm.shutdownDecision == DoNotCommitOffsetAndStop {
 					wm.taskIsDone(result)
 					continue
@@ -264,7 +263,9 @@ func (wm *WorkerManager) processBatch() {
 					task := wm.currentBatch.get(result.Id())
 					if _, ok := result.(*TimedOutResult); ok {
 						wm.metrics.taskTimeouts().Inc(1)
-						task.Callee.OutputChannel = make(chan WorkerResult)
+						//This is really bad no reason to reset the OutputChannel on the worker it is rdy
+						// this is the cause of random consumer hang do not do something like this to the Callee aka worker
+						// task.Callee.OutputChannel = make(chan WorkerResult)
 					}
 
 					Debugf(wm, "Worker task %s has failed", result.Id())
@@ -389,21 +390,23 @@ func (w *Worker) String() string {
 	return "worker"
 }
 
-// Starts processing a given task using given strategy with this worker.
+// Start starts processing a given task using given strategy with this worker.
 // Call to this method blocks until the task is done or timed out.
 func (w *Worker) Start() {
 	handlerInterrupted := false
 	go func() {
+		handlerTimeout := 5 * time.Second
+		timeout := newTimer(handlerTimeout)
 		for taskAndStrategy := range w.HandlerInputChannel {
 			result := taskAndStrategy.Strategy(w, taskAndStrategy.WorkerTask.Msg, taskAndStrategy.WorkerTask.Id())
 		Loop:
 			for !handlerInterrupted {
-				timeout := time.NewTimer(5 * time.Second)
 				select {
 				case w.HandlerOutputChannel <- result:
-					timeout.Stop()
+					timeout.safeReset(handlerTimeout)
 					break Loop
 				case <-timeout.C:
+					timeout.scr()
 				}
 			}
 			handlerInterrupted = false
@@ -411,22 +414,30 @@ func (w *Worker) Start() {
 	}()
 
 	go func() {
+		timeout := newTimer(w.TaskTimeout)
 		for taskAndStrategy := range w.InputChannel {
 			taskAndStrategy.WorkerTask.Callee = w
 			w.HandlerInputChannel <- taskAndStrategy
-			timeout := time.NewTimer(w.TaskTimeout)
+			timeout.safeReset(w.TaskTimeout)
 			select {
 			case result := <-w.HandlerOutputChannel:
 				{
-					w.OutputChannel <- result
+					select {
+					case w.OutputChannel <- result:  //i don't see how this is blocking but it is
+						continue
+					case <-timeout.C:
+						timeout.scr()
+						handlerInterrupted = true
+						Warnf(w, "worker output channel blocked with result timeout: %+v", result)
+					}
 				}
 			case <-timeout.C:
 				{
+					timeout.scr()
 					handlerInterrupted = true
 					w.OutputChannel <- &TimedOutResult{taskAndStrategy.WorkerTask.Id()}
 				}
 			}
-			timeout.Stop()
 		}
 	}()
 }
@@ -461,13 +472,17 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 		stop:            make(chan bool),
 	}
 	go func() {
+		timeout := newTimer(WorkerThresholdTimeWindow)
+		defer timeout.Stop()
 		for {
-			timeout := time.NewTimer(WorkerThresholdTimeWindow)
 			select {
 			case <-timeout.C:
 				{
+					timeout.scr()
 					if counter.count >= FailedThreshold {
-						counter.failed = true
+						inLock(&counter.countLock, func() {
+							counter.failed = true
+						})
 						return
 					} else {
 						inLock(&counter.countLock, func() {
@@ -476,7 +491,6 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 					}
 				}
 			case <-counter.stop:
-				timeout.Stop()
 				return
 			}
 		}
@@ -487,8 +501,12 @@ func NewFailureCounter(FailedThreshold int32, WorkerThresholdTimeWindow time.Dur
 // Tells this FailureCounter to increment a number of failures by one.
 // Returns true if threshold is reached, false otherwise.
 func (f *FailureCounter) Failed() bool {
-	inLock(&f.countLock, func() { f.count++ })
-	return f.count >= f.failedThreshold || f.failed
+	failed := false
+	inLock(&f.countLock, func() {
+		f.count++
+		failed = f.count >= f.failedThreshold || f.failed
+	})
+	return failed
 }
 
 // Stops this failure counter

@@ -18,6 +18,7 @@ package go_kafka_client
 import (
 	"fmt"
 	"math"
+	"net"
 	"sync"
 	"time"
 )
@@ -33,6 +34,8 @@ type consumerFetcherManager struct {
 	updateInProgress               bool
 	updatedCond                    *sync.Cond
 	disconnectChannelsForPartition chan TopicAndPartition
+	resetConsumer                  chan bool
+	resetInProgress                bool
 
 	metrics *ConsumerMetrics
 	client  LowLevelClient
@@ -42,15 +45,16 @@ func (m *consumerFetcherManager) String() string {
 	return fmt.Sprintf("%s-manager", m.config.Consumerid)
 }
 
-func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition, metrics *ConsumerMetrics) *consumerFetcherManager {
+func newConsumerFetcherManager(config *ConsumerConfig, disconnectChannelsForPartition chan TopicAndPartition, metrics *ConsumerMetrics, resetConsumer chan bool) *consumerFetcherManager {
 	manager := &consumerFetcherManager{
 		config:                         config,
 		closeFinished:                  make(chan bool),
 		partitionMap:                   make(map[TopicAndPartition]*partitionTopicInfo),
 		fetcherRoutineMap:              make(map[int]*consumerFetcherRoutine),
 		disconnectChannelsForPartition: disconnectChannelsForPartition,
-		client:  config.LowLevelClient,
-		metrics: metrics,
+		client:        config.LowLevelClient,
+		metrics:       metrics,
+		resetConsumer: resetConsumer,
 	}
 	manager.updatedCond = sync.NewCond(manager.updateLock.RLocker())
 
@@ -67,6 +71,7 @@ func (m *consumerFetcherManager) startConnections(topicInfos []*partitionTopicIn
 	partitionInfos := make(map[TopicAndPartition]*partitionTopicInfo)
 
 	m.updateInProgress = true
+	m.resetInProgress = false
 	inWriteLock(&m.updateLock, func() {
 		if Logger.IsAllowed(DebugLevel) {
 			Debug(m, "Updating fetcher configuration")
@@ -176,7 +181,9 @@ func (m *consumerFetcherManager) shutdownIdleFetchers() {
 	}
 	for key, fetcher := range m.fetcherRoutineMap {
 		if len(fetcher.partitionMap) <= 0 {
-			Debugf(m, "There is idle fetcher: %s", fetcher)
+			if Logger.IsAllowed(DebugLevel) {
+				Debugf(m, "There is idle fetcher: %s", fetcher)
+			}
 			<-fetcher.close()
 			delete(m.fetcherRoutineMap, key)
 		}
@@ -187,34 +194,50 @@ func (m *consumerFetcherManager) shutdownIdleFetchers() {
 }
 
 func (m *consumerFetcherManager) closeAllFetchers() {
-	Info(m, "Closing fetchers")
+	if Logger.IsAllowed(InfoLevel) {
+		Info(m, "Closing fetchers")
+	}
 	inWriteLock(&m.updateLock, func() {
-		Debug(m, "Stopping all message buffers and removing paritions")
+		if Logger.IsAllowed(DebugLevel) {
+			Debug(m, "Stopping all message buffers and removing paritions")
+		}
 		for k, v := range m.partitionMap {
 			v.Buffer.stop()
 			delete(m.partitionMap, k)
 		}
 
-		Debugf(m, "Trying to close %d fetchers", len(m.fetcherRoutineMap))
+		if Logger.IsAllowed(DebugLevel) {
+			Debugf(m, "Trying to close %d fetchers", len(m.fetcherRoutineMap))
+		}
 		for key, fetcher := range m.fetcherRoutineMap {
-			Debugf(m, "Closing %s", fetcher)
+			if Logger.IsAllowed(DebugLevel) {
+				Debugf(m, "Closing %s", fetcher)
+			}
 			<-fetcher.close()
-			Debugf(m, "Closed %s", fetcher)
+			if Logger.IsAllowed(DebugLevel) {
+				Debugf(m, "Closed %s", fetcher)
+			}
 			delete(m.fetcherRoutineMap, key)
 		}
 	})
 }
 
 func (m *consumerFetcherManager) close() <-chan bool {
-	Info(m, "Closing manager")
+	if Logger.IsAllowed(InfoLevel) {
+		Info(m, "Closing manager")
+	}
 	go func() {
-		Info(m, "Setting shutdown flag")
+		if Logger.IsAllowed(InfoLevel) {
+			Info(m, "Setting shutdown flag")
+		}
 		m.shuttingDown = true
 		m.closeAllFetchers()
 		m.updatedCond.Broadcast()
 		m.partitionMap = nil
 		m.closeFinished <- true
-		Info(m, "Successfully closed all fetcher manager routines")
+		if Logger.IsAllowed(InfoLevel) {
+			Info(m, "Successfully closed all fetcher manager routines")
+		}
 	}()
 
 	return m.closeFinished
@@ -284,12 +307,30 @@ func (f *consumerFetcherRoutine) start() {
 						if err != nil {
 							if offset > -1 { // Negative offsets are obviously out of range but don't spam the logs...
 								if f.manager.client.IsOffsetOutOfRange(err) {
-									Warnf(f, "Current offset %d for topic %s and partition %s is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
+									if Logger.IsAllowed(WarnLevel) {
+										Warnf(f, "Current offset %d for topic %s and partition %d is out of range.", offset, nextTopicPartition.Topic, nextTopicPartition.Partition)
+									}
 									f.handleOffsetOutOfRange(&nextTopicPartition)
 								} else {
-									Warnf(f, "Got a fetch error for topic %s, partition %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, err)
+									if Logger.IsAllowed(WarnLevel) {
+										Warnf(f, "Got a fetch error for topic %s partition %d at offset %d: %s", nextTopicPartition.Topic, nextTopicPartition.Partition, offset, err)
+									}
 									//TODO new backoff type?
 									time.Sleep(1 * time.Second)
+
+									// If a network error occurs signal a reset is necessary
+									// Currently the underlying sarama client is unable to gracefully recover from some network issues
+									if networkErr, ok := err.(*net.OpError); ok {
+										if Logger.IsAllowed(ErrorLevel) {
+											Errorf(f, "Fetcher encountered a network error: %s", networkErr)
+										}
+										f.manager.metrics.fetcherNetworkErrors().Inc(1)
+										if !f.manager.resetInProgress {
+											f.manager.resetInProgress = true
+											f.manager.resetConsumer <- true
+										}
+									}
+
 								}
 							}
 						}
@@ -381,7 +422,9 @@ func (f *consumerFetcherRoutine) processPartitionData(topicAndPartition TopicAnd
 func (f *consumerFetcherRoutine) handleOffsetOutOfRange(topicAndPartition *TopicAndPartition) {
 	newOffset, err := f.manager.client.GetAvailableOffset(topicAndPartition.Topic, topicAndPartition.Partition, f.manager.config.AutoOffsetReset)
 	if err != nil {
-		Errorf(f, "Cannot get available offset for %s. Reason: %s", topicAndPartition, err)
+		if Logger.IsAllowed(ErrorLevel) {
+			Errorf(f, "Cannot get available offset for %s. Reason: %s", topicAndPartition, err)
+		}
 		return
 	}
 
@@ -413,13 +456,19 @@ func (f *consumerFetcherRoutine) removePartitions(partitions []TopicAndPartition
 }
 
 func (f *consumerFetcherRoutine) close() <-chan bool {
-	Info(f, "Closing fetcher")
+	if Logger.IsAllowed(InfoLevel) {
+		Info(f, "Closing fetcher")
+	}
 	go func() {
 		f.fetchStopper <- true
 		f.removeAllPartitions()
-		Debug(f, "Sending close finished")
+		if Logger.IsAllowed(DebugLevel) {
+			Debug(f, "Sending close finished")
+		}
 		f.closeFinished <- true
-		Debug(f, "Sent close finished")
+		if Logger.IsAllowed(DebugLevel) {
+			Debug(f, "Sent close finished")
+		}
 	}()
 	return f.closeFinished
 }

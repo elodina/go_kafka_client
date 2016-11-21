@@ -118,29 +118,39 @@ func notifyWhenThresholdIsReached(inputChannels interface{}, outputChannel inter
 		}
 	}
 
+	//Default case so this can't deadlock
+	cases = append(cases, reflect.SelectCase{Dir: reflect.SelectDefault})
+	defaultCaseIndex := len(cases) - 1
 	count := threshold
 	go func() {
-		for {
-			remaining := len(cases)
-			for remaining > 0 {
-				chosen, _, ok := reflect.Select(cases)
-				if !ok {
-					// The chosen channel has been closed, so zero out the channel to disable the case
-					cases[chosen].Chan = reflect.ValueOf(nil)
-					remaining -= 1
-					continue
-				}
+		remaining := len(cases)
+		for remaining > 0 {
+			chosen, _, ok := reflect.Select(cases)
+			if !ok {
+				// The chosen channel has been closed, so zero out the channel to disable the case
+				cases[chosen].Chan = reflect.ValueOf(nil)
+				remaining -= 1
+				continue
+			}
 
-				if cases[chosen].Chan.Interface() == killChannel {
-					return
-				} else {
-					count--
-				}
-
-				if count == 0 {
+			if chosen == defaultCaseIndex {
+				if count <= 0 {
 					output.Send(reflect.ValueOf(true))
 					return
 				}
+				time.Sleep(time.Millisecond * 10) //don't burn cpu for default
+				continue
+			}
+
+			if cases[chosen].Chan.Interface() == killChannel {
+				return
+			} else {
+				count--
+			}
+
+			if count <= 0 {
+				output.Send(reflect.ValueOf(true))
+				return
 			}
 		}
 	}()
@@ -191,27 +201,25 @@ func redirectChannelsToWithTimeout(inputChannels interface{}, outputChannel inte
 	}
 
 	go func() {
-		for {
-			remaining := len(cases)
-			for remaining > 0 {
-				chosen, value, ok := reflect.Select(cases)
-				if !ok {
-					// The chosen channel has been closed, so zero out the channel to disable the case
-					cases[chosen].Chan = reflect.ValueOf(nil)
-					remaining -= 1
-					continue
-				}
-
-				if cases[chosen].Chan.Interface() == killChannel {
-					return
-				}
-
-				if cases[chosen].Chan.Interface() == timeoutInputChannel {
-					timeoutOutputChannel <- value.Interface().(time.Time)
-				}
-
-				output.Send(value)
+		remaining := len(cases)
+		for remaining > 0 {
+			chosen, value, ok := reflect.Select(cases)
+			if !ok {
+				// The chosen channel has been closed, so zero out the channel to disable the case
+				cases[chosen].Chan = reflect.ValueOf(nil)
+				remaining -= 1
+				continue
 			}
+
+			if cases[chosen].Chan.Interface() == killChannel {
+				return
+			}
+
+			if cases[chosen].Chan.Interface() == timeoutInputChannel {
+				timeoutOutputChannel <- value.Interface().(time.Time)
+			}
+
+			output.Send(value)
 		}
 	}()
 
@@ -335,4 +343,33 @@ func setInt32Config(where *int32, what string) error {
 		return err
 	}
 	return nil
+}
+
+type timer struct {
+	*time.Timer
+	_scr bool
+}
+
+//saw channel read, must be called after receiving value from timer chan
+func (t *timer) scr() {
+	t._scr = true
+}
+
+func (t *timer) safeReset(d time.Duration) bool {
+	ret := t.Stop()
+	if !ret && !t._scr {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+	t.Timer.Reset(d)
+	t._scr = false
+	return ret
+}
+
+func newTimer(d time.Duration) *timer {
+	return &timer{
+		Timer: time.NewTimer(d),
+	}
 }

@@ -31,12 +31,14 @@ type ConsumerMetrics struct {
 	fetchersIdleTimer       metrics.Timer
 	fetchDurationTimer      metrics.Timer
 
-	numWorkerManagersGauge metrics.Gauge
-	activeWorkersCounter   metrics.Counter
-	pendingWMsTasksCounter metrics.Counter
-	taskTimeoutCounter     metrics.Counter
-	wmsBatchDurationTimer  metrics.Timer
-	wmsIdleTimer           metrics.Timer
+	numWorkerManagersGauge     metrics.Gauge
+	activeWorkersCounter       metrics.Counter
+	pendingWMsTasksCounter     metrics.Counter
+	taskTimeoutCounter         metrics.Counter
+	fetcherNetworkErrorCounter metrics.Counter
+	consumerResetCounter       metrics.Counter
+	wmsBatchDurationTimer      metrics.Timer
+	wmsIdleTimer               metrics.Timer
 }
 
 func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
@@ -57,6 +59,8 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	kafkaMetrics.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sWMsActiveWorkers-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sWMsPendingTasks-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.taskTimeoutCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sTaskTimeouts-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.fetcherNetworkErrorCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sFetcherNetworkError-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.consumerResetCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sConsumerReset-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsBatchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
 
@@ -93,6 +97,14 @@ func (this *ConsumerMetrics) taskTimeouts() metrics.Counter {
 
 func (this *ConsumerMetrics) activeWorkers() metrics.Counter {
 	return this.activeWorkersCounter
+}
+
+func (this *ConsumerMetrics) fetcherNetworkErrors() metrics.Counter {
+	return this.fetcherNetworkErrorCounter
+}
+
+func (this *ConsumerMetrics) consumerResets() metrics.Counter {
+	return this.consumerResetCounter
 }
 
 func (this *ConsumerMetrics) Stats() map[string]map[string]float64 {

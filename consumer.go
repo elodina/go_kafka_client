@@ -54,7 +54,9 @@ type Consumer struct {
 	workerManagersLock             sync.Mutex
 	stopStreams                    chan bool
 	close                          chan bool
+	resetConsumer                  chan bool
 	stopCleanup                    chan struct{}
+	wg                             sync.WaitGroup
 	topicCount                     TopicsToNumStreams
 
 	metrics *ConsumerMetrics
@@ -80,6 +82,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		workerManagers:                 make(map[TopicAndPartition]*WorkerManager),
 		stopStreams:                    make(chan bool),
 		close:                          make(chan bool),
+		resetConsumer:                  make(chan bool),
 	}
 
 	if err := c.config.Coordinator.Connect(); err != nil {
@@ -89,7 +92,7 @@ func NewConsumer(config *ConsumerConfig) *Consumer {
 		panic(err)
 	}
 	c.metrics = newConsumerMetrics(c.String(), config.MetricsPrefix)
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics, c.resetConsumer)
 
 	go func() {
 		<-c.close
@@ -178,6 +181,7 @@ func (c *Consumer) StartStaticPartitions(topicPartitionMap map[string][]int32) {
 func (c *Consumer) startStreams() {
 	c.maintainCleanCoordinator()
 	stopRedirects := make(map[TopicAndPartition]chan bool)
+
 	for {
 		select {
 		case <-c.stopStreams:
@@ -208,6 +212,31 @@ func (c *Consumer) startStreams() {
 				Debug(c, "Restart streams")
 				c.pipeChannels(stopRedirects)
 			}
+		case <-c.resetConsumer:
+			{
+				//This need to execute in a goroutine so it doesn't block the outer for/select loop while closing consumer conns
+				go func() {
+					Infof(c, "Consumer received reset signal, restarting consumer")
+					c.metrics.consumerResetCounter.Inc(1)
+
+					//Grab the context before we close the ZK connection
+					context, _ := newAssignmentContext(c.config.Groupid, c.config.Consumerid, c.config.ExcludeInternalTopics, c.config.Coordinator)
+
+					//Close the consumer since the broker connections are busted
+					<-c.Close()
+
+					//Reconnect to the zkCoordinator
+					err := c.config.Coordinator.Connect()
+					if err != nil {
+						panic(fmt.Sprintf("Failed to connect to Coordinator: %s", err))
+					}
+
+					//Resume the consumption of data and force a rebalance since we've re-established zk connection with fresh brokers
+					c.resumeAfterClose(context)
+					c.rebalance()
+					Infof(c, "Consumer reset")
+				}()
+			}
 		}
 	}
 }
@@ -224,7 +253,7 @@ func (c *Consumer) maintainCleanCoordinator() {
 		for {
 			select {
 			case <-tick.C:
-				Infof(c, "Starting coordinator cleanup of API reqeusts for %s", c.config.Groupid)
+				Debugf(c, "Starting coordinator cleanup of API reqeusts for %s", c.config.Groupid)
 				c.config.Coordinator.RemoveOldApiRequests(c.config.Groupid)
 			case <-c.stopCleanup:
 				return
@@ -299,21 +328,53 @@ func (c *Consumer) reinitializeConsumer() {
 	c.rebalance()
 }
 
+func (c *Consumer) ForceRebalance() {
+	c.lastSuccessfulRebalanceHash = ""
+	c.rebalance()
+}
+
 func (c *Consumer) initializeWorkerManagers() {
 	inLock(&c.workerManagersLock, func() {
+		allowedManagerPartitions := make(map[string][]int32)
 		if Logger.IsAllowed(DebugLevel) {
 			Debugf(c, "Initializing worker managers from topic registry: %s", c.topicRegistry)
 		}
 		for topic, partitions := range c.topicRegistry {
 			for partition := range partitions {
+				if pAllowed, found := allowedManagerPartitions[topic]; found {
+					allowedManagerPartitions[topic] = append(pAllowed, partition)
+				} else {
+					allowedManagerPartitions[topic] = []int32{partition}
+				}
 				topicPartition := TopicAndPartition{topic, partition}
 				workerManager, exists := c.workerManagers[topicPartition]
 				if !exists {
 					workerManager = NewWorkerManager(fmt.Sprintf("WM-%s-%d", topic, partition), c.config, topicPartition, c.metrics, c.close)
+					if Logger.IsAllowed(DebugLevel) {
+						Debugf(c, "started WorkerManager for topic=%s parititon=%d with workers=%d", topic, partition, c.config.NumWorkers)
+					}
 					c.workerManagers[topicPartition] = workerManager
 					go workerManager.Start()
 				}
 			}
+		}
+
+		//Now that we have setup our worker managers lets make sure rebalance didn't cause some to be invalid/leak
+		for tp, _ := range c.workerManagers {
+			if partitions, found := allowedManagerPartitions[tp.Topic]; found {
+				for _, p := range partitions {
+					if tp.Partition == p {
+						//Valid worker
+						goto VALIDWORKER
+					}
+				}
+				//this worker manager is for a partition that is no longer valid
+				Infof(c, "stale WorkerManager for topic=%s parititon=%d", tp.Topic, tp.Partition)
+				//c.disconnectChannelsForPartition <- tp
+				//Infof(c, "request to stop WorkerManager for topic=%s parititon=%d sent", tp.Topic, tp.Partition)
+			}
+			VALIDWORKER:
+			//done
 		}
 	})
 	c.metrics.numWorkerManagers().Update(int64(len(c.workerManagers)))
@@ -377,7 +438,8 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 		var err error
 		var stateHash string
 		barrierPassed := false
-		for !barrierPassed {
+		timeLimit := time.Now().Add(3 * time.Minute)
+		for !barrierPassed && time.Now().Before(timeLimit) {
 			context, err = newAssignmentContext(c.config.Groupid, c.config.Consumerid,
 				c.config.ExcludeInternalTopics, c.config.Coordinator)
 			if err != nil {
@@ -388,6 +450,19 @@ func (c *Consumer) handleBlueGreenRequest(requestId string, blueGreenRequest *Bl
 			stateHash = context.hash()
 			barrierPassed = c.config.Coordinator.AwaitOnStateBarrier(c.config.Consumerid, c.config.Groupid, stateHash,
 				barrierSize, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId), c.config.BarrierTimeout)
+
+			if !barrierPassed {
+				// If the barrier failed to have consensus remove it.
+				err = c.config.Coordinator.RemoveStateBarrier(c.config.Groupid, stateHash, fmt.Sprintf("%s/%s", BlueGreenDeploymentAPI, requestId))
+				if err != nil {
+					Warnf(c, "Failed to remove state barrier %s due to: %s", stateHash, err.Error())
+				}
+			}
+
+		}
+		//If we couldn't reach consensus on the barrier within the time threshold panic
+		if !barrierPassed {
+			panic("Could not reach consensus on state barrier.")
 		}
 
 		<-c.Close()
@@ -480,7 +555,7 @@ func (c *Consumer) resumeAfterClose(context *assignmentContext) {
 	c.workerManagers = make(map[TopicAndPartition]*WorkerManager)
 	c.topicPartitionsAndBuffers = make(map[TopicAndPartition]*messageBuffer)
 	c.config.LowLevelClient.Initialize()
-	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics)
+	c.fetcher = newConsumerFetcherManager(c.config, c.disconnectChannelsForPartition, c.metrics, c.resetConsumer)
 	c.metrics = newConsumerMetrics(c.String(), c.config.MetricsPrefix)
 
 	go func() {
@@ -582,6 +657,15 @@ func (c *Consumer) subscribeForChanges(group string) {
 	c.shouldUnsubscribe = true
 
 	go func() {
+		// Initialize a timer but stop it so it doesn't fire until triggered by a rebalance
+		// The goal is to stop a lot of noisy rebalance requests from continuing to fire and cause state confusion.
+		// Instead, the logic is to wait until 10 seconds after we've received the last rebalance request. Any new rebalance request
+		// that comes in the meantime will reset the timer.  This should give any cluster changes time to settle down before we even consider
+		// kicking off a rebalance.
+		rebalanceTimer := time.NewTimer(10*time.Second)
+		if !rebalanceTimer.Stop() {
+			<-rebalanceTimer.C
+		}
 		for {
 			select {
 			case eventType := <-changes:
@@ -608,16 +692,29 @@ func (c *Consumer) subscribeForChanges(group string) {
 							// Reset our internal state to guarantee we go through the rebalance logic.
 							c.lastSuccessfulRebalanceHash = ""
 						}
-						// If it's not a blue-green request do a rebalance.
-						// Even it it's a Reinitialize event, make sure we drop partition ownership and re-discover what
-						// topic partitions we should be working on.
-						go c.rebalance()
+
+						if !rebalanceTimer.Stop() {
+							select {
+							case <-rebalanceTimer.C:
+							default:
+							}
+						}
+						Info(c, "Firing rebalance in 10 seconds.....")
+						rebalanceTimer.Reset(10*time.Second)
 					}
 				}
 			case <-c.unsubscribe:
 				{
 					return
 				}
+			case <-rebalanceTimer.C:
+				go func() {
+					now := time.Now()
+					nearest10SecInterval := now.Add(10*time.Second).Truncate(10*time.Second)
+					// Try to coordinate all servers to do a rebalance at the same clock time which is the nearest 10 second interval.
+					<- time.After(nearest10SecInterval.Sub(now))
+					c.rebalance()
+				}()
 			}
 		}
 	}()
@@ -765,8 +862,8 @@ func tryRebalance(c *Consumer, context *assignmentContext, partitionAssignor ass
 		}
 
 		c.topicRegistry = currentTopicRegistry
-		if Logger.IsAllowed(InfoLevel) {
-			Infof(c, "Trying to reinitialize fetchers and workers")
+		if Logger.IsAllowed(DebugLevel) {
+			Debugf(c, "Trying to reinitialize fetchers and workers")
 		}
 		c.initFetchersAndWorkers(context)
 		if Logger.IsAllowed(InfoLevel) {
@@ -792,8 +889,8 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 				numStreams = len(v)
 				break
 			}
-			if Logger.IsAllowed(InfoLevel) {
-				Infof(c, "Trying to update fetcher")
+			if Logger.IsAllowed(DebugLevel) {
+				Debugf(c, "Trying to update fetcher")
 			}
 			c.updateFetcher(numStreams)
 		}
@@ -803,7 +900,6 @@ func (c *Consumer) initFetchersAndWorkers(assignmentContext *assignmentContext) 
 			c.updateFetcher(topicCount.NumStreams)
 		}
 	}
-
 	if Logger.IsAllowed(DebugLevel) {
 		Debugf(c, "Fetcher has been updated %s", assignmentContext)
 	}
@@ -864,12 +960,13 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 	if Logger.IsAllowed(DebugLevel) {
 		Debugf(c, "Partition ownership decision: %v", partitionOwnershipDecision)
 	}
-
 	pool := NewRoutinePool(c.config.RoutinePoolSize)
 
 	successfullyOwnedPartitions := make([]*TopicAndPartition, 0)
 	successChan := make(chan TopicAndPartition)
 	go func() {
+		c.wg.Add(1)
+		defer c.wg.Done()
 		for tp := range successChan {
 			successfullyOwnedPartitions = append(successfullyOwnedPartitions, &tp)
 		}
@@ -881,6 +978,7 @@ func (c *Consumer) reflectPartitionOwnershipDecision(partitionOwnershipDecision 
 
 	pool.Stop()
 	close(successChan)
+	c.wg.Wait()
 
 	if len(partitionOwnershipDecision) > len(successfullyOwnedPartitions) {
 		if Logger.IsAllowed(WarnLevel) {
