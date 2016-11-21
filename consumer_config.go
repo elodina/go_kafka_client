@@ -171,10 +171,6 @@ type ConsumerConfig struct {
 	/* Metrics Prefix if the client wants to organize the way metric names are emitted. (optional) */
 	MetricsPrefix string
 
-       	/* Config to skip corrupted messages. If set to true the consumer will increment the topic-partition offset by 1
-           on each corrupted response until the corrupted part of data is over. Turned off by default. */
-       	SkipCorruptedMessages bool
-
 	/* RoutinePoolSize defines the size of routine pools created within this consumer. */
 	RoutinePoolSize int
 }
