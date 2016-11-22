@@ -20,7 +20,15 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/stealthly/siesta"
+	"github.com/elodina/siesta"
+)
+
+type ErrorType int
+
+const (
+	ErrorTypeOffsetOutOfRange ErrorType = iota
+	ErrorTypeCorruptedResponse
+	ErrorTypeOther
 )
 
 // LowLevelClient is a low-level Kafka client that manages broker connections, responsible to fetch metadata and is able
@@ -37,8 +45,8 @@ type LowLevelClient interface {
 	Fetch(topic string, partition int32, offset int64) ([]*Message, error)
 
 	// This will be called when call to Fetch returns an error. As every client has different error mapping we ask here explicitly
-	// whether the returned error is an OffsetOutOfRange error. Should return true if it is, false otherwise.
-	IsOffsetOutOfRange(error) bool
+	// what kind of error was returned.
+	GetErrorType(error) ErrorType
 
 	// This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
 	// Should return a corresponding offset value and an error if it occurred.
@@ -138,9 +146,16 @@ func (this *SaramaClient) Fetch(topic string, partition int32, offset int64) ([]
 	return messages, nil
 }
 
-// Checks whether the given error indicates an OffsetOutOfRange error.
-func (this *SaramaClient) IsOffsetOutOfRange(err error) bool {
-	return err == sarama.ErrOffsetOutOfRange
+// Tells the caller what kind of error it is.
+func (this *SaramaClient) GetErrorType(err error) ErrorType {
+	switch {
+	case err == sarama.ErrOffsetOutOfRange:
+		return ErrorTypeOffsetOutOfRange
+	case err == sarama.ErrIncompleteResponse:
+		return ErrorTypeCorruptedResponse
+	default:
+		return ErrorTypeOther
+	}
 }
 
 // This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".
@@ -228,7 +243,7 @@ func (this *SaramaClient) collectMessages(partitionData *sarama.FetchResponseBlo
 	return messages
 }
 
-// SiestaClient implements LowLevelClient and OffsetStorage and uses github.com/stealthly/siesta as underlying implementation.
+// SiestaClient implements LowLevelClient and OffsetStorage and uses github.com/elodina/siesta as underlying implementation.
 type SiestaClient struct {
 	config    *ConsumerConfig
 	connector siesta.Connector
@@ -241,7 +256,7 @@ func NewSiestaClient(config *ConsumerConfig) *SiestaClient {
 	}
 }
 
-// Returns a string representation of this SaramaClient.
+// Returns a string representation of this SiestaClient.
 func (this *SiestaClient) String() string {
 	return "Siesta client"
 }
@@ -282,16 +297,18 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 	messages := make([]*Message, 0)
 
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-	collector := func(topic string, partition int32, offset int64, key []byte, value []byte) {
+	collector := func(topic string, partition int32, offset int64, key []byte, value []byte) error {
 		decodedKey, err := this.config.KeyDecoder.Decode(key)
 		if err != nil {
 			//TODO: what if we fail to decode the key: fail-fast or fail-safe strategy?
 			Error(this, err.Error())
+			return err
 		}
 		decodedValue, err := this.config.ValueDecoder.Decode(value)
 		if err != nil {
 			//TODO: what if we fail to decode the value: fail-fast or fail-safe strategy?
 			Error(this, err.Error())
+			return err
 		}
 
 		if this.config.Debug {
@@ -308,14 +325,22 @@ func (this *SiestaClient) Fetch(topic string, partition int32, offset int64) ([]
 			Offset:              offset,
 			HighwaterMarkOffset: response.Data[topic][partition].HighwaterMarkOffset,
 		})
+		return nil
 	}
 
 	return messages, response.CollectMessages(collector)
 }
 
-// Checks whether the given error indicates an OffsetOutOfRange error.
-func (this *SiestaClient) IsOffsetOutOfRange(err error) bool {
-	return err == siesta.ErrOffsetOutOfRange
+// Tells the caller what kind of error it is.
+func (this *SiestaClient) GetErrorType(err error) ErrorType {
+	switch {
+	case err == siesta.ErrOffsetOutOfRange:
+		return ErrorTypeOffsetOutOfRange
+	case err == siesta.ErrEOF:
+		return ErrorTypeCorruptedResponse
+	default:
+		return ErrorTypeOther
+	}
 }
 
 // This will be called to handle OffsetOutOfRange error. OffsetTime will be either "smallest" or "largest".

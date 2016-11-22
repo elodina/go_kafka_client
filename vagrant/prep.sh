@@ -103,10 +103,10 @@ cp $ZK_HOME/conf/zoo_sample.cfg $ZK_HOME/conf/zoo.cfg
 #Get Go
 wget -q $GOLANG_URL -O /tmp/$GOLANG_RELEASE.tar.gz
 tar -xzf /tmp/$GOLANG_RELEASE.tar.gz -C /usr/bin
-mkdir -p $GOPATH/src/github.com/stealthly/go_kafka_client
-cp -r /vagrant/* $GOPATH/src/github.com/stealthly/go_kafka_client
+mkdir -p $GOPATH/src/github.com/elodina/go_kafka_client
+cp -r /vagrant/* $GOPATH/src/github.com/elodina/go_kafka_client
 
 mkdir -p /opt/github.com/pote
 cd /opt/github.com/pote
-#Get GPM
-git clone https://github.com/pote/gpm.git && cd gpm && git checkout v1.3.1 && ./configure && make install
+#Get godep
+go get github.com/tools/godep

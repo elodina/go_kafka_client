@@ -15,7 +15,7 @@
 
 FROM stealthly/docker-java
 
-MAINTAINER stealthly
+MAINTAINER elodina
 
 #Kafka settings
 ENV KAFKA_VERSION 0.8.2.1
@@ -65,8 +65,8 @@ RUN tar xfz /tmp/confluent-$REGISTRY_VERSION-$SCALA_VERSION.tgz -C /opt
 RUN wget -q $GOLANG_URL -O /tmp/$GOLANG_RELEASE.tar.gz
 RUN tar -xzf /tmp/$GOLANG_RELEASE.tar.gz -C /usr/bin
 RUN mkdir -p $GOPATH/src
-#Get GPM
-RUN git clone https://github.com/pote/gpm.git && cd gpm && git checkout v1.3.1 && ./configure && make install
+#Get godep
+RUN go get github.com/tools/godep
 
 EXPOSE 9092
 EXPOSE 2181

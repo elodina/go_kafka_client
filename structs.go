@@ -252,8 +252,3 @@ type StateSnapshot struct {
 	// Offsets are a map where keys are topics and values are maps where keys are partitions and values are offsets for these topic-partitions.
 	Offsets map[string]map[int32]int64
 }
-
-type FailedMessage struct {
-	message *ProducerMessage
-	err     error
-}

@@ -16,8 +16,7 @@ limitations under the License. */
 package go_kafka_client
 
 import (
-	"fmt"
-	"github.com/stealthly/go_kafka_client/avro"
+	"github.com/elodina/go_kafka_client/avro"
 	"time"
 )
 
@@ -62,92 +61,6 @@ type LogEmitter interface {
 	Close()
 }
 
-// KafkaLogEmitterConfig provides multiple configuration entries for KafkaLogEmitter.
-type KafkaLogEmitterConfig struct {
-	// LogLevel to use for KafkaLogEmitter
-	LogLevel LogLevel
-
-	// LogLine event source. Used only when called as a Logger interface.
-	Source string
-
-	// LogLine tags. Used only when called as a logger interface.
-	Tags map[string]string
-
-	// Topic to emit logs to.
-	Topic string
-
-	// Confluent Avro schema registry URL.
-	SchemaRegistryUrl string
-
-	// Producer config that will be used by this emitter. Note that ValueEncoder WILL BE replaced by KafkaAvroEncoder.
-	ProducerConfig *ProducerConfig
-}
-
-// NewKafkaLogEmitterConfig creates a new KafkaLogEmitterConfig with log level set to Info.
-func NewKafkaLogEmitterConfig() *KafkaLogEmitterConfig {
-	return &KafkaLogEmitterConfig{
-		LogLevel: InfoLevel,
-	}
-}
-
-// KafkaLogEmitter implements LogEmitter and KafkaLogger and sends all structured log data to a Kafka topic encoded as Avro.
-type KafkaLogEmitter struct {
-	config   *KafkaLogEmitterConfig
-	producer Producer
-}
-
-// NewKafkaLogEmitter creates a new KafkaLogEmitter with a provided configuration.
-func NewKafkaLogEmitter(config *KafkaLogEmitterConfig) *KafkaLogEmitter {
-	config.ProducerConfig.ValueEncoder = NewKafkaAvroEncoder(config.SchemaRegistryUrl)
-	emitter := &KafkaLogEmitter{
-		config:   config,
-		producer: NewSaramaProducer(config.ProducerConfig),
-	}
-
-	return emitter
-}
-
-// Emit emits a single entry to a given destination topic.
-func (k *KafkaLogEmitter) Emit(logLine *avro.LogLine) {
-	if logLine.Logtypeid.(int64) >= logLevels[k.config.LogLevel] {
-		k.producer.Input() <- &ProducerMessage{Topic: k.config.Topic, Value: logLine}
-	}
-}
-
-// Close closes the underlying producer. The KafkaLogEmitter won't be usable anymore after call to this.
-func (k *KafkaLogEmitter) Close() {
-	k.producer.Close()
-}
-
-// Trace formats a given message according to given params to log with level Trace and produces to a given Kafka topic.
-func (k *KafkaLogEmitter) Trace(message string, params ...interface{}) {
-	k.Emit(newLogLine(k.config.Source, TraceLogTypeId, fmt.Sprintf(message, params), k.config.Tags))
-}
-
-// Debug formats a given message according to given params to log with level Debug and produces to a given Kafka topic.
-func (k *KafkaLogEmitter) Debug(message string, params ...interface{}) {
-	k.Emit(newLogLine(k.config.Source, DebugLogTypeId, fmt.Sprintf(message, params), k.config.Tags))
-}
-
-// Info formats a given message according to given params to log with level Info and produces to a given Kafka topic.
-func (k *KafkaLogEmitter) Info(message string, params ...interface{}) {
-	k.Emit(newLogLine(k.config.Source, InfoLogTypeId, fmt.Sprintf(message, params), k.config.Tags))
-}
-
-// Warn formats a given message according to given params to log with level Warn and produces to a given Kafka topic.
-func (k *KafkaLogEmitter) Warn(message string, params ...interface{}) {
-	k.Emit(newLogLine(k.config.Source, WarnLogTypeId, fmt.Sprintf(message, params), k.config.Tags))
-}
-
-// Error formats a given message according to given params to log with level Error and produces to a given Kafka topic.
-func (k *KafkaLogEmitter) Error(message string, params ...interface{}) {
-	k.Emit(newLogLine(k.config.Source, ErrorLogTypeId, fmt.Sprintf(message, params), k.config.Tags))
-}
-
-// Critical formats a given message according to given params to log with level Critical and produces to a given Kafka topic.
-func (k *KafkaLogEmitter) Critical(message string, params ...interface{}) {
-	k.Emit(newLogLine(k.config.Source, CriticalLogTypeId, fmt.Sprintf(message, params), k.config.Tags))
-}
 
 // EmptyEmitter implements emitter and ignores all incoming messages. Used not to break anyone.
 type EmptyEmitter string

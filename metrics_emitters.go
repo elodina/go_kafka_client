@@ -18,24 +18,31 @@ package go_kafka_client
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/stealthly/go-avro"
-	avroline "github.com/stealthly/go_kafka_client/avro"
+	"github.com/elodina/go-avro"
+	kafkaavro "github.com/elodina/go-kafka-avro"
+	avroline "github.com/elodina/go_kafka_client/avro"
+	"github.com/elodina/siesta"
+	"github.com/elodina/siesta-producer"
 	"regexp"
 	"strings"
 )
 
 type CodahaleKafkaReporter struct {
 	topic    string
-	producer Producer
+	producer producer.Producer
 }
 
-func NewCodahaleKafkaReporter(topic string, schemaRegistryUrl string, producerConfig *ProducerConfig) *CodahaleKafkaReporter {
-	producerConfig.ValueEncoder = NewKafkaAvroEncoder(schemaRegistryUrl)
+func NewCodahaleKafkaReporter(topic string, schemaRegistryUrl string, producerConfig *producer.ProducerConfig, connectorConfig *siesta.ConnectorConfig) (*CodahaleKafkaReporter, error) {
+	encoder := kafkaavro.NewKafkaAvroEncoder(schemaRegistryUrl)
+	connector, err := siesta.NewDefaultConnector(connectorConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	return &CodahaleKafkaReporter{
 		topic:    topic,
-		producer: NewSaramaProducer(producerConfig),
-	}
+		producer: producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, encoder.Encode, connector),
+	}, nil
 }
 
 func (c *CodahaleKafkaReporter) Write(bytes []byte) (n int, err error) {
@@ -48,7 +55,10 @@ func (c *CodahaleKafkaReporter) Write(bytes []byte) (n int, err error) {
 	record := avro.NewGenericRecord(schema)
 	c.fillRecord(record, schema.(*avro.RecordSchema), metrics, lookupNames)
 
-	c.producer.Input() <- &ProducerMessage{Topic: c.topic, Value: record}
+	c.producer.Send(&producer.ProducerRecord{
+		Topic: c.topic,
+		Value: record,
+	})
 
 	return 0, nil
 }
@@ -57,7 +67,7 @@ func (c *CodahaleKafkaReporter) parseSchema(metrics map[string]interface{}) (avr
 	lookupNames := make(map[string]string)
 	schema := &avro.RecordSchema{
 		Name:      "Metrics",
-		Namespace: "ly.stealth",
+		Namespace: "net.elodina",
 		Fields:    make([]*avro.SchemaField, 0),
 	}
 	for name, v := range metrics {
@@ -99,7 +109,7 @@ func (c *CodahaleKafkaReporter) parseRecordField(name string, v map[string]inter
 	lookupNames[lookupRecordName] = name
 	record := &avro.RecordSchema{
 		Name:      lookupRecordName,
-		Namespace: "ly.stealth",
+		Namespace: "net.elodina",
 		Fields:    make([]*avro.SchemaField, 0),
 	}
 
@@ -152,4 +162,30 @@ func (c *CodahaleKafkaReporter) fillRecord(record *avro.GenericRecord, schema *a
 			}
 		}
 	}
+}
+
+type KafkaMetricReporter struct {
+	topic    string
+	producer producer.Producer
+}
+
+func NewKafkaMetricReporter(topic string, producerConfig *producer.ProducerConfig, connectorConfig *siesta.ConnectorConfig) (*KafkaMetricReporter, error) {
+	connector, err := siesta.NewDefaultConnector(connectorConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return &KafkaMetricReporter{
+		topic:    topic,
+		producer: producer.NewKafkaProducer(producerConfig, producer.ByteSerializer, producer.ByteSerializer, connector),
+	}, nil
+}
+
+func (k *KafkaMetricReporter) Write(bytes []byte) (n int, err error) {
+	k.producer.Send(&producer.ProducerRecord{
+		Topic: k.topic,
+		Value: bytes,
+	})
+
+	return len(bytes), nil
 }
