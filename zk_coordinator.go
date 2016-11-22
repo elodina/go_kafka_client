@@ -519,6 +519,8 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 	inputChannels = append(inputChannels, &consumersWatcher, &blueGreenWatcher, &topicsWatcher, &brokersWatcher)
 	stopRedirecting := redirectChannelsTo(inputChannels, zkEvents)
 
+	renewWatcherInterval := time.Duration(5) * time.Minute
+
 	go func() {
 		for {
 			select {
@@ -560,6 +562,67 @@ func (this *ZookeeperCoordinator) trySubscribeForChanges(Groupid string) (<-chan
 						}
 					} else {
 						Warnf(this, "Unknown event path: %s", e.Path)
+					}
+
+					stopRedirecting <- true
+					stopRedirecting = redirectChannelsTo(inputChannels, zkEvents)
+				}
+			case <-time.After(renewWatcherInterval):
+				{
+					// Renew watchers on an interval so as to avoid potential of watcher expiry
+					// during a network event which interrupts and potentially invalidates the watcher.
+					// (We've observed this, where one consumer won't receive watcher notifications
+					// following network i/o issues with zk.)
+					Debugf(this, "Automatically renewing all watchers at interval=%v", renewWatcherInterval)
+
+					// verify there's nothing already in the channel that we'll miss
+					select {
+					case e := <-zkEvents:
+						{
+							Infof(this, "Received zkEvent Type: %s State: %s Path: %s", e.Type.String(), e.State.String(), e.Path)
+							if e.Type != zk.EventNotWatching && e.State != zk.StateDisconnected {
+								if strings.HasPrefix(e.Path, fmt.Sprintf("%s/%s",
+									newZKGroupDirs(this.config.Root, Groupid).ConsumerApiDir, BlueGreenDeploymentAPI)) {
+									groupWatch.coordinatorEvents <- BlueGreenRequest
+								} else if e.Path == groupWatch.poisonPillMessage {
+									stopRedirecting <- true
+									return
+								} else {
+									groupWatch.coordinatorEvents <- Regular
+								}
+							}
+						}
+					case <-time.After(1 * time.Millisecond):
+						// extra safety to insure we don't block
+						// nothing to read
+						break
+					default:
+						// nothing to read
+						break
+					}
+
+					Debugf(this, "Trying to renew watcher for consumer registry")
+					consumersWatcher, err = this.getConsumersInGroupWatcher(Groupid)
+					if err != nil {
+						this.config.PanicHandler(err)
+					}
+
+					Debugf(this, "Trying to renew watcher for consumer API dir")
+					blueGreenWatcher, err = this.getBlueGreenWatcher(Groupid)
+					if err != nil {
+						this.config.PanicHandler(err)
+					}
+
+					Debugf(this, "Trying to renew watcher for consumer topic dir")
+					topicsWatcher, err = this.getTopicsWatcher()
+					if err != nil {
+						this.config.PanicHandler(err)
+					}
+
+					Debugf(this, "Trying to renew watcher for brokers in cluster")
+					brokersWatcher, err = this.getAllBrokersInClusterWatcher()
+					if err != nil {
+						this.config.PanicHandler(err)
 					}
 
 					stopRedirecting <- true
@@ -981,7 +1044,7 @@ func (this *ZookeeperCoordinator) getBlueGreenWatcher(group string) (<-chan zk.E
 	return this.getWatcher(fmt.Sprintf("%s/%s", newZKGroupDirs(this.config.Root, group).ConsumerApiDir, BlueGreenDeploymentAPI))
 }
 
-func (this *ZookeeperCoordinator) getTopicsWatcher() (<-chan zk.Event, error) {
+func (this *ZookeeperCoordinator) getTopicsWatcher() (watcher <-chan zk.Event, err error) {
 	return this.getWatcher(this.rootedPath(brokerTopicsPath))
 }
 
@@ -1109,7 +1172,7 @@ type ZookeeperConfig struct {
 	/* kafka Root */
 	Root string
 
-	// PanicHandler is a function that will be called when unrecoverable error occurs to give the possibility to perform cleanups, recover from panic etc
+	/* PanicHandler is a function that will be called when unrecoverable error occurs to give the possibility to perform cleanups, recover from panic etc */
 	PanicHandler func(error)
 }
 

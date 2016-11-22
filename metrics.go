@@ -41,6 +41,8 @@ type ConsumerMetrics struct {
 	wmsBatchDurationTimer  metrics.Timer
 	wmsIdleTimer           metrics.Timer
 
+	fetcherNetworkErrorCounter metrics.Counter
+	consumerResetCounter       metrics.Counter
 	numFetchedMessagesCounter  metrics.Counter
 	numConsumedMessagesCounter metrics.Counter
 	numAcksCounter             metrics.Counter
@@ -70,6 +72,8 @@ func newConsumerMetrics(consumerName, prefix string) *ConsumerMetrics {
 	kafkaMetrics.activeWorkersCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sWMsActiveWorkers-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.pendingWMsTasksCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sWMsPendingTasks-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.taskTimeoutCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sTaskTimeouts-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.fetcherNetworkErrorCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sFetcherNetworkError-%s", prefix, consumerName), kafkaMetrics.registry)
+	kafkaMetrics.consumerResetCounter = metrics.NewRegisteredCounter(fmt.Sprintf("%sConsumerReset-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsBatchDurationTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsBatchDuration-%s", prefix, consumerName), kafkaMetrics.registry)
 	kafkaMetrics.wmsIdleTimer = metrics.NewRegisteredTimer(fmt.Sprintf("%sWMsIdleTime-%s", prefix, consumerName), kafkaMetrics.registry)
 
@@ -113,6 +117,14 @@ func (this *ConsumerMetrics) taskTimeouts() metrics.Counter {
 
 func (this *ConsumerMetrics) activeWorkers() metrics.Counter {
 	return this.activeWorkersCounter
+}
+
+func (this *ConsumerMetrics) fetcherNetworkErrors() metrics.Counter {
+	return this.fetcherNetworkErrorCounter
+}
+
+func (this *ConsumerMetrics) consumerResets() metrics.Counter {
+	return this.consumerResetCounter
 }
 
 func (this *ConsumerMetrics) numFetchedMessages() metrics.Counter {

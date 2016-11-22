@@ -19,13 +19,14 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"strings"
 )
 
 type messageBuffer struct {
 	OutputChannel  chan []*Message
 	Messages       []*Message
 	Config         *ConsumerConfig
-	Timer          *time.Timer
+	Timer          *timer
 	MessageLock    sync.Mutex
 	Close          chan bool
 	stopSending    bool
@@ -38,7 +39,7 @@ func newMessageBuffer(topicPartition TopicAndPartition, outputChannel chan []*Me
 		OutputChannel:  outputChannel,
 		Messages:       make([]*Message, 0),
 		Config:         config,
-		Timer:          time.NewTimer(config.FetchBatchTimeout),
+		Timer:          newTimer(config.FetchBatchTimeout),
 		Close:          make(chan bool),
 		TopicPartition: topicPartition,
 	}
@@ -57,12 +58,17 @@ func (mb *messageBuffer) autoFlush() {
 			return
 		case <-mb.Timer.C:
 			{
+				mb.Timer.scr()
 				go inLock(&mb.MessageLock, func() {
 					if !mb.stopSending {
 						if Logger.IsAllowed(TraceLevel) {
 							Trace(mb, "Batch accumulation timed out. Flushing...")
 						}
-						mb.Timer.Reset(mb.Config.FetchBatchTimeout)
+						//NOTE: this is for when you want to see flushing timeouts set prefix match
+						if mb.Config.BatchFlushTimeoutPrefix != "" && strings.HasPrefix(mb.TopicPartition.Topic, mb.Config.BatchFlushTimeoutPrefix) {
+							Info(mb, "Batch accumulation timed out. Flushing...")
+						}
+						mb.Timer.safeReset(mb.Config.FetchBatchTimeout)
 						mb.flush()
 					}
 				})
@@ -76,15 +82,18 @@ func (mb *messageBuffer) flush() {
 		if Logger.IsAllowed(TraceLevel) {
 			Trace(mb, "Flushing")
 		}
-		mb.Timer.Reset(mb.Config.FetchBatchTimeout)
+		mb.Timer.safeReset(mb.Config.FetchBatchTimeout)
+
+		flushTimeout := 200 * time.Millisecond
+		timeout := newTimer(flushTimeout)
 	flushLoop:
 		for {
-			timeout := time.NewTimer(200 * time.Millisecond)
 			select {
 			case mb.OutputChannel <- mb.Messages:
-				timeout.Stop()
+				timeout.safeReset(flushTimeout)
 				break flushLoop
 			case <-timeout.C:
+				timeout.scr()
 				if mb.stopSending {
 					return
 				}

@@ -23,9 +23,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+<<<<<<< HEAD:schema_registry.go
+	avro "github.com/stealthly/go-avro"
+=======
 
 	avro "github.com/elodina/go-avro"
 	"sync"
+>>>>>>> 95d107b0c102fa81b8c1e5e556adc23352fad065:Godeps/_workspace/src/github.com/elodina/go-kafka-avro/schema_registry.go
 )
 
 const (

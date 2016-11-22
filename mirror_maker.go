@@ -81,7 +81,7 @@ func NewMirrorMakerConfig() *MirrorMakerConfig {
 // It uses a Kafka consumer to consume messages from the source cluster, and re-publishes those messages to the target cluster.
 type MirrorMaker struct {
 	config          *MirrorMakerConfig
-	metricReporter  *KafkaMetricReporter
+	//metricReporter  *KafkaMetricReporter
 	consumers       []*Consumer
 	producers       []producer.Producer
 	messageChannels []chan *Message

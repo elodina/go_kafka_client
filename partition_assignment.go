@@ -140,7 +140,6 @@ func rangeAssignor(context *assignmentContext) map[TopicAndPartition]ConsumerThr
 			if myConsumerPosition+1 <= nConsumersWithExtraPart {
 				nParts = nPartsPerConsumer + 1
 			}
-
 			if Logger.IsAllowed(TraceLevel) {
 				Tracef(context.ConsumerId, "startPart: %d, nParts: %d", startPart, nParts)
 			}
@@ -153,7 +152,7 @@ func rangeAssignor(context *assignmentContext) map[TopicAndPartition]ConsumerThr
 				for i := startPart; i < startPart+nParts; i++ {
 					partition := partitionsForTopic[i]
 					if Logger.IsAllowed(InfoLevel) {
-						Infof(context.ConsumerId, "%s attempting to claim %s", consumerThreadId, &TopicAndPartition{Topic: topic, Partition: partition})
+						Infof(context.ConsumerId, "%s attempting to claim %s", consumerThreadId.String(), &TopicAndPartition{Topic: topic, Partition: partition})
 					}
 					ownershipDecision[TopicAndPartition{Topic: topic, Partition: partition}] = consumerThreadId
 				}
