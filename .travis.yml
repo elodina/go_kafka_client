@@ -22,7 +22,8 @@ before_install:
 - export KAFKA_VERSION=0.8.2.1
 - export SCALA_VERSION=2.10
 - export KAFKA_RELEASE=kafka_$SCALA_VERSION-$KAFKA_VERSION
-- export KAFKA_URL=https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
+- export KAFKA_URL=https://people.apache.org/~junrao/kafka-0.8.2.1-candidate2/$KAFKA_RELEASE.tgz
+#https://archive.apache.org/dist/kafka/$KAFKA_VERSION/$KAFKA_RELEASE.tgz
 - export KAFKA_PATH=/tmp/$KAFKA_RELEASE
 - export BROKER_ID=1
 - export HOST_IP=localhost
